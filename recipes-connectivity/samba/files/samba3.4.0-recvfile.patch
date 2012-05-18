@@ -1,0 +1,17 @@
+Index: samba-3.4.0/source3/lib/recvfile.c
+===================================================================
+--- samba-3.4.0.orig/source3/lib/recvfile.c	2010-10-27 16:12:44.000000000 +0800
++++ samba-3.4.0/source3/lib/recvfile.c	2010-12-24 16:37:59.000000000 +0800
+@@ -160,6 +160,12 @@
+ 	}
+ 
+ 	/*
++	 * Receive file in kernel space, splice should support
++	 * from socket to file.
++	 */
++	return splice(fromfd, NULL, tofd, &offset, count, SPLICE_F_MOVE);
++
++	/*
+ 	 * Older Linux kernels have splice for sendfile,
+ 	 * but it fails for recvfile. Ensure we only try
+ 	 * this once and always fall back to the userspace
