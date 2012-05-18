@@ -1,0 +1,227 @@
+Index: samba-3.4.0/source3/include/smb.h
+===================================================================
+--- samba-3.4.0.orig/source3/include/smb.h	2010-03-17 13:09:30.000000000 +0800
++++ samba-3.4.0/source3/include/smb.h	2010-03-17 13:12:16.000000000 +0800
+@@ -456,6 +456,7 @@
+ 	bool initial_delete_on_close; /* Only set at NTCreateX if file was created. */
+ 	bool posix_open;
+ 	char *fsp_name;
++	NTSTATUS prereply_write_status;
+ 
+ 	struct vfs_fsp_data *vfs_extension;
+ 	struct fake_file_handle *fake_file_handle;
+Index: samba-3.4.0/source3/param/loadparm.c
+===================================================================
+--- samba-3.4.0.orig/source3/param/loadparm.c	2010-03-17 13:09:29.000000000 +0800
++++ samba-3.4.0/source3/param/loadparm.c	2010-03-17 13:12:16.000000000 +0800
+@@ -346,6 +346,7 @@
+ 	int cups_connection_timeout;
+ 	char *szSMBPerfcountModule;
+ 	bool bMapUntrustedToDomain;
++	bool bPreReplyWrite;
+ };
+ 
+ static struct global Globals;
+@@ -4560,7 +4561,15 @@
+ 		.enum_list	= NULL,
+ 		.flags		= FLAG_ADVANCED,
+ 	},
+-
++	{
++		.label		= "pre-reply write",
++		.type		= P_BOOL,
++		.p_class	= P_GLOBAL,
++		.ptr		= &Globals.bPreReplyWrite,
++		.special	= NULL,
++		.enum_list	= NULL,
++		.flags		= FLAG_ADVANCED,
++	},
+ 	{NULL,  P_BOOL,  P_NONE,  NULL,  NULL,  NULL,  0}
+ };
+ 
+@@ -5082,6 +5091,7 @@
+ 	Globals.bEnablePrivileges = True;
+ 	Globals.bHostMSDfs        = True;
+ 	Globals.bASUSupport       = False;
++	Globals.bPreReplyWrite       = False;
+ 
+ 	/* User defined shares. */
+ 	if (asprintf(&s, "%s/usershares", get_dyn_STATEDIR()) < 0) {
+@@ -5457,6 +5467,7 @@
+ FN_GLOBAL_INTEGER(lp_usershare_max_shares, &Globals.iUsershareMaxShares)
+ FN_GLOBAL_CONST_STRING(lp_socket_options, &Globals.szSocketOptions)
+ FN_GLOBAL_INTEGER(lp_config_backend, &Globals.ConfigBackend)
++FN_GLOBAL_BOOL(lp_prereply_write, &Globals.bPreReplyWrite)
+ 
+ FN_LOCAL_STRING(lp_preexec, szPreExec)
+ FN_LOCAL_STRING(lp_postexec, szPostExec)
+Index: samba-3.4.0/source3/smbd/fileio.c
+===================================================================
+--- samba-3.4.0.orig/source3/smbd/fileio.c	2010-03-17 13:09:29.000000000 +0800
++++ samba-3.4.0/source3/smbd/fileio.c	2010-03-17 13:12:16.000000000 +0800
+@@ -126,7 +126,7 @@
+                 ret = vfs_write_data(req, fsp, data, n);
+         } else {
+ 		fsp->fh->pos = pos;
+-		if (pos && lp_strict_allocate(SNUM(fsp->conn))) {
++		if (pos && (lp_strict_allocate(SNUM(fsp->conn))||lp_prereply_write())) {
+ 			if (vfs_fill_sparse(fsp, pos) == -1) {
+ 				return -1;
+ 			}
+@@ -346,7 +346,7 @@
+ 	}
+ #endif
+ 
+-	if (wcp && req->unread_bytes) {
++	if (wcp && req && req->unread_bytes) {
+ 		/* If we're using receivefile don't
+ 		 * deal with a write cache.
+ 		 */
+Index: samba-3.4.0/source3/smbd/files.c
+===================================================================
+--- samba-3.4.0.orig/source3/smbd/files.c	2010-03-17 13:09:29.000000000 +0800
++++ samba-3.4.0/source3/smbd/files.c	2010-03-17 13:12:16.000000000 +0800
+@@ -566,5 +566,6 @@
+ 	to->modified = from->modified;
+ 	to->is_directory = from->is_directory;
+ 	to->aio_write_behind = from->aio_write_behind;
++	to->prereply_write_status = NT_STATUS_OK;
+         string_set(&to->fsp_name,from->fsp_name);
+ }
+Index: samba-3.4.0/source3/smbd/open.c
+===================================================================
+--- samba-3.4.0.orig/source3/smbd/open.c	2010-03-17 13:09:30.000000000 +0800
++++ samba-3.4.0/source3/smbd/open.c	2010-03-17 13:12:16.000000000 +0800
+@@ -3490,6 +3490,7 @@
+ 	if (!NT_STATUS_IS_OK(status)) {
+ 		goto fail;
+ 	}
++	fsp->prereply_write_status = NT_STATUS_OK;
+ 
+  done:
+ 	DEBUG(10, ("create_file: info=%d\n", info));
+Index: samba-3.4.0/source3/smbd/reply.c
+===================================================================
+--- samba-3.4.0.orig/source3/smbd/reply.c	2010-03-17 13:09:29.000000000 +0800
++++ samba-3.4.0/source3/smbd/reply.c	2010-03-17 13:15:01.000000000 +0800
+@@ -5,6 +5,7 @@
+    Copyright (C) Andrew Bartlett      2001
+    Copyright (C) Jeremy Allison 1992-2007.
+    Copyright (C) Volker Lendecke 2007
++   Copyright (C) Freescale Semiconductor, Inc 2010
+ 
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+@@ -335,6 +336,11 @@
+ 		reply_nterror(req, NT_STATUS_INVALID_HANDLE);
+ 		return False;
+ 	}
++	if (!NT_STATUS_IS_OK(fsp->prereply_write_status)) {
++		reply_nterror(req, fsp->prereply_write_status);
++		fsp->prereply_write_status = NT_STATUS_OK;
++		return False;
++	}
+ 	return True;
+ }
+ 
+@@ -356,6 +362,7 @@
+ 		reply_nterror(req, NT_STATUS_ACCESS_DENIED);
+ 		return False;
+ 	}
++
+ 	(fsp)->num_smb_operations++;
+ 	return True;
+ }
+@@ -4097,6 +4104,7 @@
+ 	unsigned int smblen;
+ 	char *data;
+ 	NTSTATUS status;
++	bool replied = False;
+ 
+ 	START_PROFILE(SMBwriteX);
+ 
+@@ -4216,38 +4224,59 @@
+ 			goto strict_unlock;
+ 		}
+ 
++		if (!req->unread_bytes && lp_prereply_write()) {
++			reply_outbuf(req, 6, 0);
++			SSVAL(req->outbuf,smb_vwv2,numtowrite);
++			SSVAL(req->outbuf,smb_vwv4,numtowrite>>16);
++			chain_reply(req);
++			replied = True;
++		}
++
+ 		nwritten = write_file(req,fsp,data,startpos,numtowrite);
+ 	}
+ 
+-	if(((nwritten == 0) && (numtowrite != 0))||(nwritten < 0)) {
+-		reply_unixerror(req, ERRHRD, ERRdiskfull);
+-		goto strict_unlock;
+-	}
+ 
+-	reply_outbuf(req, 6, 0);
+-	SSVAL(req->outbuf,smb_vwv2,nwritten);
+-	SSVAL(req->outbuf,smb_vwv4,nwritten>>16);
++	
++	if(!replied){
++		if(((nwritten == 0) && (numtowrite != 0))||(nwritten < 0)) {
++			reply_unixerror(req, ERRHRD, ERRdiskfull);
++			goto strict_unlock;
++		}
+ 
+-	if (nwritten < (ssize_t)numtowrite) {
+-		SCVAL(req->outbuf,smb_rcls,ERRHRD);
+-		SSVAL(req->outbuf,smb_err,ERRdiskfull);
++		reply_outbuf(req, 6, 0);
++		SSVAL(req->outbuf,smb_vwv2,nwritten);
++		SSVAL(req->outbuf,smb_vwv4,nwritten>>16);
++
++		if (nwritten < (ssize_t)numtowrite) {
++			SCVAL(req->outbuf,smb_rcls,ERRHRD);
++			SSVAL(req->outbuf,smb_err,ERRdiskfull);
++		}
++	} else {
++		if(((nwritten == 0) && (numtowrite != 0))||(nwritten < numtowrite)) {
++			fsp->prereply_write_status = NT_STATUS_DISK_FULL;
++			goto strict_unlock;
++		}
+ 	}
+ 
+ 	DEBUG(3,("writeX fnum=%d num=%d wrote=%d\n",
+ 		fsp->fnum, (int)numtowrite, (int)nwritten));
+ 
+ 	status = sync_file(conn, fsp, write_through);
+-	if (!NT_STATUS_IS_OK(status)) {
++	if (!replied && !NT_STATUS_IS_OK(status)) {
+ 		DEBUG(5,("reply_write_and_X: sync_file for %s returned %s\n",
+ 			fsp->fsp_name, nt_errstr(status) ));
+ 		reply_nterror(req, status);
+ 		goto strict_unlock;
++	} else if (!NT_STATUS_IS_OK(status)) {
++		fsp->prereply_write_status = status;
+ 	}
+ 
+ 	SMB_VFS_STRICT_UNLOCK(conn, fsp, &lock);
+ 
+ 	END_PROFILE(SMBwriteX);
+-	chain_reply(req);
++	if(!replied){
++		chain_reply(req);
++	}
+ 	return;
+ 
+ strict_unlock:
+@@ -4437,6 +4466,12 @@
+ 		return;
+ 	}
+ 
++	/*if (!NT_STATUS_IS_OK(fsp->prereply_write_status)) {
++		reply_nterror(req, fsp->prereply_write_status);
++		END_PROFILE(SMBclose);
++		return;
++	}*/
++
+ 	if(fsp->is_directory) {
+ 		/*
+ 		 * Special case - close NT SMB directory handle.
