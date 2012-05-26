@@ -1,0 +1,13 @@
+Index: gdb-7.3/gdb/rs6000-tdep.c
+===================================================================
+--- gdb-7.3.orig/gdb/rs6000-tdep.c
++++ gdb-7.3/gdb/rs6000-tdep.c
+@@ -3088,6 +3088,8 @@ gdb_print_insn_powerpc (bfd_vma memaddr,
+ 	 cpu and get much more sane disassembly output.  */
+       if (info->mach == bfd_mach_ppc_e500)
+ 	info->disassembler_options = "e500x2";
++      else if (info->mach == bfd_mach_ppc_e500mc)
++	info->disassembler_options = "e500mc";
+       else
+ 	info->disassembler_options = "any";
+     }
