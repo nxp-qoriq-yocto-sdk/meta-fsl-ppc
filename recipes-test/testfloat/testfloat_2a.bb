@@ -1,6 +1,7 @@
 DESCRIPTION = "A program for testing floating-point implementation"
 SECTION = "test"
 LICENSE = "Distributable: Hauser TestFloat"
+PR = "r1"
 
 LIC_FILES_CHKSUM = "file://testfloat/testfloat.txt;beginline=87;endline=95;md5=bdb2e8111838a48015c29bd97f5b6145"
 
@@ -20,7 +21,13 @@ S = "${WORKDIR}/TestFloat-2a"
 do_unpack2(){
     mv ${WORKDIR}/SoftFloat-2b ${S}/SoftFloat-2b
     cd ${S}
-    find -type f -exec dos2unix {} \;
+    if [ -n "$(which fromdos)" ];then
+        find -type f -exec fromdos {} \;
+    elif [ -n "$(which dos2unix)" ];then
+        find -type f -exec dos2unix {} \;
+    else
+        echo -e "\nERROR: command dos2unix or fromdos not found\n" && return 1
+    fi
 }
 addtask do_unpack2 after do_unpack before do_patch
 
