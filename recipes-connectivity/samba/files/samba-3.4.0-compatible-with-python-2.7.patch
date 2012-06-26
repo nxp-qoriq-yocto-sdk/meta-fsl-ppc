@@ -1,0 +1,75 @@
+diff -urN a/lib/tdb/configure.ac b/lib/tdb/configure.ac
+--- a/lib/tdb/configure.ac	2012-06-26 02:27:01.277588308 -0500
++++ b/lib/tdb/configure.ac	2012-06-26 02:27:43.001726445 -0500
+@@ -13,8 +13,8 @@
+ AC_LIBREPLACE_SHLD_FLAGS
+ AC_LIBREPLACE_RUNTIME_LIB_PATH_VAR
+ m4_include(libtdb.m4)
+-AC_PATH_PROGS([PYTHON_CONFIG], [python2.6-config python2.5-config python2.4-config python-config])
+-AC_PATH_PROGS([PYTHON], [python2.6 python2.5 python2.4 python])
++AC_PATH_PROGS([PYTHON_CONFIG], [python2.7-config python2.6-config python2.5-config python2.4-config python-config])
++AC_PATH_PROGS([PYTHON], [python2.7 python2.6 python2.5 python2.4 python])
+ 
+ PYTHON_BUILD_TARGET="build-python"
+ PYTHON_INSTALL_TARGET="install-python"
+diff -urN a/lib/tevent/configure.ac b/lib/tevent/configure.ac
+--- a/lib/tevent/configure.ac	2012-06-26 02:27:01.279588113 -0500
++++ b/lib/tevent/configure.ac	2012-06-26 02:28:12.338720604 -0500
+@@ -20,8 +20,8 @@
+ m4_include(libtalloc.m4)
+ 
+ m4_include(libtevent.m4)
+-AC_PATH_PROGS([PYTHON_CONFIG], [python2.6-config python2.5-config python2.4-config python-config])
+-AC_PATH_PROGS([PYTHON], [python2.6 python2.5 python2.4 python])
++AC_PATH_PROGS([PYTHON_CONFIG], [python2.7-config python2.6-config python2.5-config python2.4-config python-config])
++AC_PATH_PROGS([PYTHON], [python2.7 python2.6 python2.5 python2.4 python])
+ 
+ PYTHON_BUILD_TARGET="build-python"
+ PYTHON_INSTALL_TARGET="install-python"
+diff -urN a/m4/check_python.m4 b/m4/check_python.m4
+--- a/m4/check_python.m4	2012-06-26 02:27:01.441588143 -0500
++++ b/m4/check_python.m4	2012-06-26 02:29:25.750721330 -0500
+@@ -51,7 +51,7 @@
+ 	working_python=no
+ 
+ 	if test -z "$PYTHON_VERSION"; then 
+-		AC_PATH_PROGS([PYTHON_CONFIG], [python2.6-config python2.5-config python2.4-config python-config])
++		AC_PATH_PROGS([PYTHON_CONFIG], [python2.7-config python2.6-config python2.5-config python2.4-config python-config])
+ 	else 
+ 		AC_PATH_PROG([PYTHON_CONFIG], [python[$PYTHON_VERSION]-config])
+ 	fi
+diff -urN a/source3/configure b/source3/configure
+--- a/source3/configure	2012-06-26 02:27:01.421587912 -0500
++++ b/source3/configure	2012-06-26 02:29:02.542587803 -0500
+@@ -84650,7 +84650,7 @@
+ 		working_python=no
+ 
+ 	if test -z "$PYTHON_VERSION"; then
+-		for ac_prog in python2.6-config python2.5-config python2.4-config python-config
++		for ac_prog in python2.7-config python2.6-config python2.5-config python2.4-config python-config
+ do
+   # Extract the first word of "$ac_prog", so it can be a program name with args.
+ set dummy $ac_prog; ac_word=$2
+@@ -85215,7 +85215,7 @@
+ 		working_python=no
+ 
+ 	if test -z "$PYTHON_VERSION"; then
+-		for ac_prog in python2.6-config python2.5-config python2.4-config python-config
++		for ac_prog in python2.7-config python2.6-config python2.5-config python2.4-config python-config
+ do
+   # Extract the first word of "$ac_prog", so it can be a program name with args.
+ set dummy $ac_prog; ac_word=$2
+diff -urN a/source4/lib/ldb/configure.ac b/source4/lib/ldb/configure.ac
+--- a/source4/lib/ldb/configure.ac	2012-06-26 02:27:01.459588243 -0500
++++ b/source4/lib/ldb/configure.ac	2012-06-26 02:29:46.910740953 -0500
+@@ -82,8 +82,8 @@
+ AC_LIBREPLACE_MDLD_FLAGS
+ AC_LIBREPLACE_RUNTIME_LIB_PATH_VAR
+ 
+-AC_PATH_PROGS([PYTHON_CONFIG], [python2.6-config python2.5-config python2.4-config python-config])
+-AC_PATH_PROGS([PYTHON], [python2.6 python2.5 python2.4 python])
++AC_PATH_PROGS([PYTHON_CONFIG], [python2.7-config python2.6-config python2.5-config python2.4-config python-config])
++AC_PATH_PROGS([PYTHON], [python2.7 python2.6 python2.5 python2.4 python])
+ 
+ PYTHON_BUILD_TARGET="build-python"
+ PYTHON_INSTALL_TARGET="install-python"
