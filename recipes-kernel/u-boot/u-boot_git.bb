@@ -5,13 +5,13 @@ PROVIDES = "virtual/bootloader"
 LICENSE = "GPLv2"
 LIC_FILES_CHKSUM = "file://COPYING;md5=1707d6db1d42237583f50183a5651ecb"
 
-PR = "r18"
+PR = "r19"
 INHIBIT_DEFAULT_DEPS = "1"
 DEPENDS = "boot-format-native virtual/${TARGET_PREFIX}gcc"
 
 inherit deploy
 
-SRCREV = "bfb0c9a0ac732221ca78b5af37172b4f80ff9a6d"
+SRCREV = "8296b56b5d17d42099858c581300e753f715feec"
 SRC_URI = "git://git.freescale.com/ppc/sdk/u-boot.git \
 		"
 DEPENDS_append_e5500-64b = " lib32-gcc-cross"
@@ -50,7 +50,7 @@ do_compile () {
 
 		if [ "x${UBOOT_TARGET}" != "x" ]; then
 			if [ "${UBOOT_TARGET}" == "u-boot-nand" ]; then
-				:
+				cp ${S}/${board}/u-boot.bin  ${S}/${board}/${UBOOT_TARGET}.bin
 			elif [ "${MACHINE_ARCH}" == "p1023rds" ] || \
 				[ "${MACHINE_ARCH}" == "p2041rdb" ] || \
 	                        [ "${MACHINE_ARCH}" == "p3041ds" ] || \
