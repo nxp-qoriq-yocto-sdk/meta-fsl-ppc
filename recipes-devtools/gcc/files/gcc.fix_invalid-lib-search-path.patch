@@ -1,0 +1,26 @@
+--- a/gcc/configure.ac	2012-08-23 11:42:34.000000000 +0800
++++ b/gcc/configure.ac	2012-08-23 11:42:51.000000000 +0800
+@@ -945,9 +945,7 @@
+ # We may need a special search path to get them linked.
+ AC_CACHE_CHECK(for collect2 libraries, gcc_cv_collect2_libs,
+ [save_LIBS="$LIBS"
+-for libs in '' -lld -lmld \
+-		'-L/usr/lib/cmplrs/cc2.11 -lmld' \
+-		'-L/usr/lib/cmplrs/cc3.11 -lmld'
++for libs in '' -lld -lmld
+ do
+ 	LIBS="$libs"
+ 	AC_TRY_LINK_FUNC(ldopen,
+--- a/gcc/configure	2012-08-23 11:56:30.000000000 +0800
++++ b/gcc/configure	2012-08-23 11:56:48.000000000 +0800
+@@ -8641,9 +8641,7 @@
+   $as_echo_n "(cached) " >&6
+ else
+   save_LIBS="$LIBS"
+-for libs in '' -lld -lmld \
+-		'-L/usr/lib/cmplrs/cc2.11 -lmld' \
+-		'-L/usr/lib/cmplrs/cc3.11 -lmld'
++for libs in '' -lld -lmld
+ do
+ 	LIBS="$libs"
+ 	cat confdefs.h - <<_ACEOF >conftest.$ac_ext
