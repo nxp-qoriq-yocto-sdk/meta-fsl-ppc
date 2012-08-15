@@ -1,7 +1,7 @@
 DESCRIPTION = "Reset Control Words (RCW)"
 SECTION = "rcw"
 LICENSE = "BSD"
-PR = "r4"
+PR = "r5"
 
 LIC_FILES_CHKSUM = " \
 	file://p2041rdb/LICENSE;md5=96dd72f26e9bb861de5c76c60e35e1bc \
@@ -16,7 +16,7 @@ PACKAGE_ARCH = "${MACHINE_ARCH}"
 
 inherit deploy
 
-SRCREV = "394db85c496f6e41dd7e29e54dab3db2b380b187"
+SRCREV = "v1.2.1"
 SRC_URI = "git://git.freescale.com/ppc/sdk/rcw.git"
 
 S = "${WORKDIR}/git"
