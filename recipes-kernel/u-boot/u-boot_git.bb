@@ -11,7 +11,7 @@ DEPENDS = "boot-format-native virtual/${TARGET_PREFIX}gcc"
 
 inherit deploy
 
-SRCREV = "8296b56b5d17d42099858c581300e753f715feec"
+SRCREV = "fsl-sdk-v1.2.1"
 SRC_URI = "git://git.freescale.com/ppc/sdk/u-boot.git \
 		"
 DEPENDS_append_e5500-64b = " lib32-gcc-cross"
