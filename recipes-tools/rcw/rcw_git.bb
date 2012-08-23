@@ -1,14 +1,9 @@
 DESCRIPTION = "Reset Control Words (RCW)"
 SECTION = "rcw"
 LICENSE = "BSD"
-PR = "r5"
+PR = "r6"
 
-LIC_FILES_CHKSUM = " \
-	file://p2041rdb/LICENSE;md5=96dd72f26e9bb861de5c76c60e35e1bc \
-	file://p3041ds/LICENSE;md5=96dd72f26e9bb861de5c76c60e35e1bc \
-	file://p4080ds/LICENSE;md5=96dd72f26e9bb861de5c76c60e35e1bc \
-	file://p5020ds/LICENSE;md5=96dd72f26e9bb861de5c76c60e35e1bc \
-"
+LIC_FILES_CHKSUM = "file://rcw.py;beginline=8;endline=28;md5=9ba0b28922dd187b06b6c8ebcfdd208e"
 
 # this package is specific to the machine itself
 INHIBIT_DEFAULT_DEPS = "1"
