@@ -28,3 +28,5 @@ do_install() {
         # The ..install.cmd conflicts between various configure runs
         find ${D}${includedir} -name ..install.cmd | xargs rm -f
 }
+
+BBCLASSEXTEND = " ${MULTILIBS}"
