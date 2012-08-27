@@ -29,4 +29,5 @@ do_install() {
         find ${D}${includedir} -name ..install.cmd | xargs rm -f
 }
 
-BBCLASSEXTEND = " ${MULTILIBS}"
+MULTILIBS ?= ""
+BBCLASSEXTEND_append := " ${MULTILIBS}"
