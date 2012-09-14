@@ -27,6 +27,12 @@ PATH_append_e5500-64b = ":${STAGING_BINDIR_NATIVE}/${DEFAULTTUNE_virtclass-multi
 TOOLCHAIN_OPTIONS_append_e5500-64b = "/../lib32-${MACHINE}"
 WRAP_TARGET_PREFIX_e5500-64b = "powerpc${TARGET_VENDOR_virtclass-multilib-lib32}-${HOST_OS}-"
 
+DEPENDS_append_e6500-64b = " lib32-gcc-cross"
+PATH_append_e6500-64b = ":${STAGING_BINDIR_NATIVE}/${DEFAULTTUNE_virtclass-multilib-lib32}${TARGET_VENDOR_virtclass-multilib-lib32}-${HOST_OS}/"
+TOOLCHAIN_OPTIONS_append_e6500-64b = "/../lib32-${MACHINE}"
+TARGET_VENDOR_virtclass-multilib-lib32 = "-${DISTRO}mllib32"
+WRAP_TARGET_PREFIX_e6500-64b = "powerpc${TARGET_VENDOR_virtclass-multilib-lib32}-${HOST_OS}-"
+
 WRAP_TARGET_PREFIX = "${TARGET_PREFIX}"
 EXTRA_OEMAKE = 'CROSS_COMPILE=${WRAP_TARGET_PREFIX} CC="${WRAP_TARGET_PREFIX}gcc ${TOOLCHAIN_OPTIONS}"'
 
