@@ -1,0 +1,30 @@
+--- a/Makefile.org	2012-09-20 18:45:50.000000000 +0800
++++ b/Makefile.org	2012-09-20 18:48:39.000000000 +0800
+@@ -160,7 +160,8 @@
+ MANDIR=/usr/share/man
+ MAN1=1
+ MAN3=3
+-MANSUFFIX=
++MANSUFFIX=ssl
++MANSECTION=SSL
+ HTMLSUFFIX=html
+ HTMLDIR=$(OPENSSLDIR)/html
+ SHELL=/bin/sh
+@@ -651,7 +652,7 @@
+ 		echo "installing man$$sec/$$fn.$${sec}$(MANSUFFIX)"; \
+ 		(cd `$(PERL) util/dirname.pl $$i`; \
+ 		sh -c "$$pod2man \
+-			--section=$$sec --center=OpenSSL \
++			--section=$${sec}$(MANSECTION) --center=OpenSSL \
+ 			--release=$(VERSION) `basename $$i`") \
+ 			>  $(INSTALL_PREFIX)$(MANDIR)/man$$sec/$$fn.$${sec}$(MANSUFFIX); \
+ 		$(PERL) util/extract-names.pl < $$i | \
+@@ -668,7 +669,7 @@
+ 		echo "installing man$$sec/$$fn.$${sec}$(MANSUFFIX)"; \
+ 		(cd `$(PERL) util/dirname.pl $$i`; \
+ 		sh -c "$$pod2man \
+-			--section=$$sec --center=OpenSSL \
++			--section=$${sec}$(MANSECTION) --center=OpenSSL \
+ 			--release=$(VERSION) `basename $$i`") \
+ 			>  $(INSTALL_PREFIX)$(MANDIR)/man$$sec/$$fn.$${sec}$(MANSUFFIX); \
+ 		$(PERL) util/extract-names.pl < $$i | \
