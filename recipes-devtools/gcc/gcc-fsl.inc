@@ -42,8 +42,9 @@ SRC_URI_fsl = "svn://gcc.gnu.org/svn/gcc/branches;module=${BRANCH};proto=http \
 	   file://GPLUSPLUS_INCLUDE_DIR_with_sysroot_fsl.patch \
 	   file://gcc.fix_min_max.patch \
 	   file://gcc.fix_invalid-lib-search-path.patch \
+	   file://gcc.PR-bootstrap-51969.patch \
 "
 
 FILESEXTRAPATHS_prepend := "${THISDIR}/files:"
 
-PR_append_fsl = "+${DISTRO}.5"
+PR_append_fsl = "+${DISTRO}.6"
