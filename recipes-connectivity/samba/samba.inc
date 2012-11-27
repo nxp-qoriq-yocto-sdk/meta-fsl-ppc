@@ -2,7 +2,7 @@ SECTION = "console/network"
 LICENSE = "GPL"
 DEPENDS = "readline virtual/libiconv talloc avahi"
 
-INC_PR = "r1"
+INC_PR = "r2"
 
 SRC_URI = "http://samba.org/samba/ftp/stable/samba-${PV}.tar.gz \
            file://volatiles.03_samba \
@@ -86,5 +86,7 @@ do_install_append() {
 	install -D -m 644 ${WORKDIR}/volatiles.03_samba ${D}${sysconfdir}/default/volatiles/volatiles.03_samba
 	install -d ${D}/var/log/samba
 	install -d ${D}/var/spool/samba
+	sed -i -e '1s,#!.*perl,#! ${bindir}/env perl,'  ${D}${bindir}/findsmb
+
 }
 
