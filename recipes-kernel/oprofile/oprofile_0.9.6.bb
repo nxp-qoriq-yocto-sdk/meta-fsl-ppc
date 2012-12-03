@@ -11,6 +11,8 @@ LIC_FILES_CHKSUM = "file://COPYING;md5=94d55d512a9ba36caa9b7df079bae19f \
 
 SECTION = "devel"
 
+PR = "r1"
+
 DEPENDS = "popt binutils"
 RDEPENDS_${PN} = "binutils-symlinks"
 RRECOMMENDS_${PN} = "kernel-vmlinux"
@@ -24,7 +26,8 @@ SRC_URI = "${SOURCEFORGE_MIRROR}/oprofile/oprofile-${PV}.tar.gz \
            file://oprofile-no-query-modules.patch \
            file://oprofile-0.9.6-e500mc-support.patch \
            file://oprofile-0.9.6-e500mc-support-2.patch \
-           file://oprofile-0.9.6-add-e500mc-support-in-op_events.patch"
+           file://oprofile-0.9.6-add-e500mc-support-in-op_events.patch \
+           file://oprofile-0.9.6-add-e6500-support.patch"
 
 SRC_URI[md5sum] = "4e407093ac06200185d5a5e6437d7242"
 SRC_URI[sha256sum] = "3f0dd40a7749fc650d25d79d42ebbff8f3b6db310c36e7c3839696cc09077880"
