@@ -11,6 +11,7 @@ PREFERRED_VERSION_virtual/kernel ?= "3.0.34"
 PREFERRED_PROVIDER_linux-libc-headers ?= "linux-qoriq-sdk-headers"
 PREFERRED_VERSION_qemu = "1.0+fsl"
 PREFERRED_VERSION_oprofile = "0.9.6"
+PREFERRED_VERSION_fmc = "0.9.23"
 
 KERNEL_IMAGETYPE ?= "uImage"
 # disable the images below for now
