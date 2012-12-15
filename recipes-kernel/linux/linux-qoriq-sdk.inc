@@ -1,12 +1,17 @@
 LIC_FILES_CHKSUM = "file://COPYING;md5=d7810fab7487fb0aad327b76f1be7cd7"
 
 PV = "3.0.51"
-PR = "r6"
+PR = "r7"
 
 SRCREV = "dd5a5aac3e15b16a4bccbab29c736bda0e7d55e7"
 SRC_URI = "git://git.freescale.com/ppc/sdk/linux.git \
 		file://0001-compiler.h-Undef-before-redefining-__attribute_const.patch \
 	  "
+
+SRCREV_e6500 = "c294ca97427698b749c6fe4b768b9cc1dd37dc04"
+SRCREV_e6500-64b = "c294ca97427698b749c6fe4b768b9cc1dd37dc04"
+SRC_URI_e6500 = "git://git.freescale.com/ppc/sdk/linux.git"
+SRC_URI_e6500-64b = "git://git.freescale.com/ppc/sdk/linux.git"
 
 KSRC ?= ""
 S = '${@base_conditional("KSRC", "", "${WORKDIR}/git", "${KSRC}", d)}'
