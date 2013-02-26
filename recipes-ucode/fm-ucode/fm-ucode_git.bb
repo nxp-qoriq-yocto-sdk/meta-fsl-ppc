@@ -24,8 +24,8 @@ FMAN_UCODE_INSTALL_FILE_append_t4240qds-64b = "_T4240"
 COMPATIBLE_MACHINE = "(p1023rds|p4080ds|p5020ds|p5040ds|p5020ds-64b|p5040ds-64b|p3041ds|p2041rdb|b4420qds|b4420qds-64b|b4860qds|b4860qds-64b|t4160qds|t4160qds-64b|t4240qds|t4240qds-64b)"
 inherit deploy
 
-SRC_URI = "git://git.am.freescale.net/gitolite/dpaa-modules/fm-ucode.git"
-SRCREV = "2b7d6626b5ec49f726d078f22f177694d081f5e4"
+SRC_URI = "git://git.freescale.com/ppc/sdk/fm-ucode.git"
+SRCREV = "f4a43e8ad6a6e5fdedff6e1484386f963bccfdff"
 
 S = "${WORKDIR}/git"
 
