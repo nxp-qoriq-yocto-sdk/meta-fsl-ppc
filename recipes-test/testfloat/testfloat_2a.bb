@@ -1,7 +1,7 @@
 DESCRIPTION = "A program for testing floating-point implementation"
 SECTION = "test"
 LICENSE = "Hauser TestFloat"
-PR = "r1"
+PR = "r2"
 
 LIC_FILES_CHKSUM = "file://testfloat/testfloat.txt;beginline=87;endline=95;md5=bdb2e8111838a48015c29bd97f5b6145"
 
@@ -15,6 +15,8 @@ SRC_URI[TestFloat.md5sum] = "4dc889319ae1e0c5381ec511f784553a"
 SRC_URI[TestFloat.sha256sum] = "84d14aa42adefbda2ec9708b42946f7fa59f93689b042684bd027863481f8e4e"
 SRC_URI[SoftFloat.md5sum] = "b4a58b5c941f1a2317e4c2500086e3fa"
 SRC_URI[SoftFloat.sha256sum] = "89d14b55113a2ba8cbda7011443ba1d298d381c89d939515d56c5f18f2febf81"
+
+COMPATIBLE_MACHINE = "(p1023rds|p1020rdb|p1020mbg|p1020utm|p1021rdb|p1022ds|p1024rdb|p1025rdb|p1010rdb|p2020ds|p2020rdb|mpc8536ds|mpc8544ds|mpc8548cds|mpc8572ds)"
 
 S = "${WORKDIR}/TestFloat-2a"
 
