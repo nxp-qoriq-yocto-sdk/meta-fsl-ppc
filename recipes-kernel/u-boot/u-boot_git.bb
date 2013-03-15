@@ -5,13 +5,13 @@ PROVIDES = "virtual/bootloader"
 LICENSE = "GPLv2"
 LIC_FILES_CHKSUM = "file://COPYING;md5=1707d6db1d42237583f50183a5651ecb"
 
-PR = "r28"
+PR = "r29"
 INHIBIT_DEFAULT_DEPS = "1"
 DEPENDS = "boot-format-native virtual/${TARGET_PREFIX}gcc libgcc"
 
 inherit deploy
 
-SRCREV = "c6d9d502924ade8877f53eecdd5cf37e05d6d6b4"
+SRCREV = "7bcd7f45c8974978f8eb73ae4d32e71cb6a49b77"
 SRC_URI = "git://git.freescale.com/ppc/sdk/u-boot.git \
 		"
 python () {
@@ -66,18 +66,18 @@ do_compile () {
 		if [ "x${UBOOT_TARGET}" != "x" ]; then
 			if [ "${UBOOT_TARGET}" == "u-boot-sd" ]; then
 				cp ${S}/${board}/u-boot.bin  ${S}/${board}/${UBOOT_TARGET}.bin
-            elif [ "${UBOOT_TARGET}" == "u-boot-nand" ];then
+		        elif [ "${UBOOT_TARGET}" == "u-boot-nand" ];then
 				if [ "${DEFAULTTUNE}" != "ppce500v2" ];then
-                    cp ${S}/${board}/u-boot.bin  ${S}/${board}/${UBOOT_TARGET}.bin
-                fi
+                    			cp ${S}/${board}/u-boot.bin  ${S}/${board}/${UBOOT_TARGET}.bin
+                		fi
 			else
 				if [ -n "${BOOTFORMAT_CONFIG}" ];then
-                    ${STAGING_BINDIR_NATIVE}/boot_format \
-					${STAGING_DATADIR_NATIVE}/boot_format/${BOOTFORMAT_CONFIG} \
-					${S}/${board}/u-boot.bin -spi ${S}/${board}/${UBOOT_TARGET}.bin
-                else
-                    cp ${S}/${board}/u-boot.bin  ${S}/${board}/${UBOOT_TARGET}.bin
-                fi
+               			     	${STAGING_BINDIR_NATIVE}/boot_format \
+						${STAGING_DATADIR_NATIVE}/boot_format/${BOOTFORMAT_CONFIG} \
+						${S}/${board}/u-boot.bin -spi ${S}/${board}/${UBOOT_TARGET}.bin
+                		else
+                    			cp ${S}/${board}/u-boot.bin  ${S}/${board}/${UBOOT_TARGET}.bin
+                		fi
 			fi 
 		fi
 	done
