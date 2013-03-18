@@ -5,7 +5,7 @@ PROVIDES = "virtual/bootloader"
 LICENSE = "GPLv2"
 LIC_FILES_CHKSUM = "file://COPYING;md5=1707d6db1d42237583f50183a5651ecb"
 
-PR = "r29"
+PR = "r30"
 INHIBIT_DEFAULT_DEPS = "1"
 DEPENDS = "boot-format-native virtual/${TARGET_PREFIX}gcc libgcc"
 
@@ -66,10 +66,14 @@ do_compile () {
 		if [ "x${UBOOT_TARGET}" != "x" ]; then
 			if [ "${UBOOT_TARGET}" == "u-boot-sd" ]; then
 				cp ${S}/${board}/u-boot.bin  ${S}/${board}/${UBOOT_TARGET}.bin
-		        elif [ "${UBOOT_TARGET}" == "u-boot-nand" ];then
-				if [ "${DEFAULTTUNE}" != "ppce500v2" ];then
-                    			cp ${S}/${board}/u-boot.bin  ${S}/${board}/${UBOOT_TARGET}.bin
-                		fi
+            elif [ "${UBOOT_TARGET}" == "u-boot-nand" ];then
+				if [ "${DEFAULTTUNE}" = "ppce500v2" ];then
+                    if echo $board |egrep "(P1020RDB|P1021RDB|P1024RDB|P2020RDB|P1022DS|P1025RDB)" 2>&1 >/dev/null;then
+                        cp ${S}/${board}/u-boot-with-spl.bin ${S}/${board}/${UBOOT_TARGET}.bin
+                    fi
+                else
+                    cp ${S}/${board}/u-boot.bin  ${S}/${board}/${UBOOT_TARGET}.bin
+                fi
 			else
 				if [ -n "${BOOTFORMAT_CONFIG}" ];then
                			     	${STAGING_BINDIR_NATIVE}/boot_format \
