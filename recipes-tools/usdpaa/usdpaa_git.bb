@@ -2,7 +2,7 @@ DESCRIPTION = "User-Space Data-Path Acceleration Architecture drivers"
 SECTION = "usdpaa"
 LICENSE = "BSD & GPLv2"
 LIC_FILES_CHKSUM = "file://Makefile;endline=30;md5=39e58bedc879163c9338596e52df5b1f"
-PR = "r2"
+PR = "r3"
 
 inherit pkgconfig
 
@@ -10,7 +10,7 @@ DEPENDS = "libxml2 libedit ncurses readline flib"
 RDEPENDS_${PN} = "libgcc"
 
 SRC_URI = "git://git.freescale.com/ppc/sdk/usdpaa.git"
-SRCREV = "2e21af59ea1eddd938404d29ee0864e6cfe936a8"
+SRCREV = "670ad8827fd83169ccb54a008c638dbb497b1c61"
 
 S = "${WORKDIR}/git"
 
