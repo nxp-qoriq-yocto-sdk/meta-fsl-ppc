@@ -3,10 +3,10 @@ SECTION = "eth-config"
 LICENSE = "Freescale EULA"
 LIC_FILES_CHKSUM = "file://COPYING;md5=cf02dc8eb5ac4a76f3812826520dea87"
 
-PR = "r1"
+PR = "r2"
 
 SRC_URI = "git://git.freescale.com/ppc/sdk/eth-config.git"
-SRCREV = "847191454aa557d19c19fdcd9e0a145da5d43c49"
+SRCREV = "c1400695e56aa80f2f4c88c4e0582028248ae06f"
 
 S = "${WORKDIR}/git"
 
