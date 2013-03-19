@@ -1,9 +1,9 @@
 LIC_FILES_CHKSUM = "file://COPYING;md5=d7810fab7487fb0aad327b76f1be7cd7"
 
 PV = "3.0.51"
-PR = "r8"
+PR = "r9"
 
-SRCREV = "dd5a5aac3e15b16a4bccbab29c736bda0e7d55e7"
+SRCREV = "faac5211f398f25e2be44ac996895335d5218516"
 SRC_URI = "git://git.freescale.com/ppc/sdk/linux.git \
 		file://0001-compiler.h-Undef-before-redefining-__attribute_const.patch \
 	  "
