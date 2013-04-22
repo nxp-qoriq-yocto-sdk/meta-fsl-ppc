@@ -7,7 +7,7 @@ LICENSE = "GPLv2"
 
 require recipes-kernel/linux/linux-qoriq-sdk.inc
 
-PR = "r9"
+PR = "${INC_PR}.0"
 
 SRC_URI += "file://fix_getrusage_for_perf.patch \
            "

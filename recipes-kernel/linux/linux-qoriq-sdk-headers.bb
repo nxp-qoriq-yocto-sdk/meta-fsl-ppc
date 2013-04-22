@@ -2,6 +2,8 @@ DESCRIPTION = "Linux kernel headers for Freescale platforms"
 SECTION = "devel"
 LICENSE = "GPLv2"
 
+PR = "${INC_PR}.0"
+
 INHIBIT_DEFAULT_DEPS = "1"
 PROVIDES = "linux-libc-headers ${PN}"
 RPROVIDES_${PN}-dev += "linux-libc-headers-dev"
