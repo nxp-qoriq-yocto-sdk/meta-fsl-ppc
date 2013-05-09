@@ -3,7 +3,7 @@ SECTION = "fmc"
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://COPYING;md5=a504ab5a8ff235e67c7301214749346c"
 
-PR = "r2"
+PR = "r3"
 
 SRC_URI = "git://git.freescale.com/ppc/sdk/fmc.git"
 SRCREV = "6db53fae9dfe72db0312a383733e0d3598aad3f2"
@@ -41,7 +41,7 @@ do_install () {
     install -m 755 ${S}/source/fmc ${D}/${bindir}/fmc
 
     install -d ${D}/etc/fmc/config
-    install -m 644 ${S}/etc/fmc/config/hxs_pdl_v3.xml ${D}/etc/fmc/configa
+    install -m 644 ${S}/etc/fmc/config/hxs_pdl_v3.xml ${D}/etc/fmc/config
 
     install -d ${D}/${includedir}/fmc
     install ${S}/source/fmc.h ${D}/${includedir}/fmc
