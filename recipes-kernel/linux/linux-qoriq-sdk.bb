@@ -7,7 +7,7 @@ LICENSE = "GPLv2"
 
 require recipes-kernel/linux/linux-qoriq-sdk.inc
 
-PR = "${INC_PR}.0"
+PR = "${INC_PR}.1"
 
 SRC_URI += "file://fix_getrusage_for_perf.patch \
            "
@@ -16,4 +16,9 @@ DEPENDS_append = " libgcc"
 do_configure_prepend() {
 	# copy desired defconfig so we pick it up for the real kernel_do_configure
 	cp ${KERNEL_DEFCONFIG} ${B}/.config
+
+	# append sdk version in kernel version if SDK_VERSION is defined
+	if [ -n "${SDK_VERSION}" ]; then
+		echo "CONFIG_LOCALVERSION=\"-${SDK_VERSION}\"" >> ${S}/.config
+	fi
 }
