@@ -5,15 +5,15 @@ PROVIDES = "virtual/bootloader"
 LICENSE = "GPLv2"
 LIC_FILES_CHKSUM = "file://COPYING;md5=1707d6db1d42237583f50183a5651ecb"
 
-PR = "r32"
+PR = "r33"
 INHIBIT_DEFAULT_DEPS = "1"
 DEPENDS = "boot-format-native virtual/${TARGET_PREFIX}gcc libgcc"
 
 inherit deploy
 
-SRCREV = "7bcd7f45c8974978f8eb73ae4d32e71cb6a49b77"
-SRC_URI = "git://git.freescale.com/ppc/sdk/u-boot.git \
-		"
+SRC_URI = "git://git.freescale.com/ppc/sdk/u-boot.git"
+SRCREV = "831b30de4b768f0b3b7dbfa11739b14cea612d7e"
+
 python () {
 	ml = d.getVar("MULTILIB_VARIANTS", True)
 	arch = d.getVar("OVERRIDES", True)
