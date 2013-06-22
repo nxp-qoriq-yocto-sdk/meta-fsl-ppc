@@ -5,7 +5,6 @@ INC_PR = "r14"
 
 SRCREV = "4b66366af2d77de68f4bd6548d07421e13d3df05"
 SRC_URI = "git://git.freescale.com/ppc/sdk/linux.git \
-           file://0001-compiler.h-Undef-before-redefining-__attribute_const.patch \
 	  "
 
 KSRC ?= ""

@@ -7,10 +7,8 @@ LICENSE = "GPLv2"
 
 require recipes-kernel/linux/linux-qoriq-sdk.inc
 
-PR = "${INC_PR}.2"
+PR = "${INC_PR}.3"
 
-SRC_URI += "file://fix_getrusage_for_perf.patch \
-           "
 DEPENDS_append = " libgcc"
 KERNEL_CC_append = " ${TOOLCHAIN_OPTIONS}"
 KERNEL_LD_append = " ${TOOLCHAIN_OPTIONS}"
