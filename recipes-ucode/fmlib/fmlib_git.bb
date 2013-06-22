@@ -3,13 +3,13 @@ SECTION = "fman"
 LICENSE = "BSD & GPLv2"
 LIC_FILES_CHKSUM = "file://COPYING;md5=3f16fa8e677e45af3127c5c4bafc3c00"
 
-PR = "r1"
+PR = "r2"
 
 DEPENDS = "linux-libc-headers"
 DEPENDS_virtclass-native = ""
 
 SRC_URI = "git://git.freescale.com/ppc/sdk/fmlib.git"
-SRCREV = "e80c0625d4f2671ac4f15cabfdd1b334143eb515"
+SRCREV = "7d843485bdac963d98f81773c0f3cb15936e09da"
 
 S = "${WORKDIR}/git"
 
