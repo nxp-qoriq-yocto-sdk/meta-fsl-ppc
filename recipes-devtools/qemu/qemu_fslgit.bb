@@ -45,3 +45,5 @@ INSANE_SKIP_${PN} += "dev-deps"
 # because it was too generic
 COMPATIBLE_MACHINE = "a^"
 COMPATIBLE_MACHINE_libc-glibc_fslmachine = ".*"
+
+RDEPENDS_${PN}_append += " libaio libcap"
