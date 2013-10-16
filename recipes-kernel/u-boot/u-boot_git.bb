@@ -31,11 +31,11 @@ TOOLCHAIN_OPTIONS_append_e5500-64b = "${@base_contains('TCMODE', 'external-fsl',
 TARGET_VENDOR_virtclass-multilib-lib32 ?= "${@base_contains('TCMODE', 'external-fsl', '', '-${DISTRO}mllib32', d)}"
 WRAP_TARGET_PREFIX_e5500-64b := "powerpc${TARGET_VENDOR_virtclass-multilib-lib32}-${HOST_OS}-"
 
-DEPENDS_append_e6500-64b = " lib32-gcc-cross lib32-libgcc"
+DEPENDS_append_e6500-64b = "${@base_contains('TCMODE', 'external-fsl', '', ' lib32-gcc-cross lib32-libgcc', d)}"
 PATH_append_e6500-64b = ":${STAGING_BINDIR_NATIVE}/${DEFAULTTUNE_virtclass-multilib-lib32}${TARGET_VENDOR_virtclass-multilib-lib32}-${HOST_OS}/"
-TOOLCHAIN_OPTIONS_append_e6500-64b = "/../lib32-${MACHINE}"
-TARGET_VENDOR_virtclass-multilib-lib32 ?= "-${DISTRO}mllib32"
-WRAP_TARGET_PREFIX_e6500-64b = "powerpc${TARGET_VENDOR_virtclass-multilib-lib32}-${HOST_OS}-"
+TOOLCHAIN_OPTIONS_append_e6500-64b = "${@base_contains('TCMODE', 'external-fsl', '', '/../lib32-${MACHINE}', d)}"
+TARGET_VENDOR_virtclass-multilib-lib32 ?= "${@base_contains('TCMODE', 'external-fsl', '', '-${DISTRO}mllib32', d)}"
+WRAP_TARGET_PREFIX_e6500-64b := "powerpc${TARGET_VENDOR_virtclass-multilib-lib32}-${HOST_OS}-"
 WRAP_TARGET_PREFIX = "${TARGET_PREFIX}"
 
 PACKAGE_ARCH = "${MACHINE_ARCH}"
