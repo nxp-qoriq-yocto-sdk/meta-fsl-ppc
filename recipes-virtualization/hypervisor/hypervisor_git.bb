@@ -22,9 +22,9 @@ SRC_URI = " \
 	  "
 
 SRCREV_FORMAT="hypervisor"
-SRCREV = "e6092cdf2a225c66c1ea46b1151eb828da29d139"
+SRCREV = "ac860fabba52ac4bb0f71a6a81d164f36dc1f612"
 SRCREV_kconfig = "a56025d4da992b856796b0eccac2e410d751dbac"
-SRCREV_libos = "5268371581f3ef3959be2a53235edfa6a8c6aa7c"
+SRCREV_libos = "8090dcca97827defd545cf2eb015bcee016dd540"
 SRCREV_dtc = "033089f29099bdfd5c2d6986cdb9fd07b16cfde0"
 SRCREV_hypertrk = "975c98b562186afbd3bbf103ae54b96cf9b3e533"
 
