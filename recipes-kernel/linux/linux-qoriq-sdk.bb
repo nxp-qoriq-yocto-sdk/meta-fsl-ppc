@@ -16,6 +16,11 @@ KERNEL_LD_append = " ${TOOLCHAIN_OPTIONS}"
 do_configure_prepend() {
 	# copy desired defconfig so we pick it up for the real kernel_do_configure
 	cp ${KERNEL_DEFCONFIG} ${B}/.config
+	
+	# add config fragments    
+	if [ -f "${DELTA_KERNEL_DEFCONFIG}" ]; then
+        	${S}/scripts/kconfig/merge_config.sh -m .config ${DELTA_KERNEL_DEFCONFIG}
+	fi
 
 	# append sdk version in kernel version if SDK_VERSION is defined
 	if [ -n "${SDK_VERSION}" ]; then
