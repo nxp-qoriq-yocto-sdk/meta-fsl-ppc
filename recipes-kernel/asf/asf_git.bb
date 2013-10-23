@@ -7,6 +7,7 @@ SRC_URI = "git://git.freescale.com/ppc/sdk/asf.git"
 SRCREV = "0b80c1df6a7490486d5106b28103598906793da0"
 
 DEPENDS="virtual/kernel"
+RDEPENDS_${PN} += "ipsec-tools"
 
 inherit module
 
