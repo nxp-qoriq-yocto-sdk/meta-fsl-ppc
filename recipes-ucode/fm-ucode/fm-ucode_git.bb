@@ -9,7 +9,7 @@ COMPATIBLE_MACHINE = "(p1023rdb|p2041rdb|p3041ds|p4080ds|p5020ds|p5040ds|p5020ds
 inherit deploy
 
 SRC_URI = "git://git.freescale.com/ppc/sdk/fm-ucode.git"
-SRCREV = "4ca0e41de225b34962e1517c2c75bbb31a381e1a"
+SRCREV = "b193068b6166b828d5a7caa3c8d60017d14d7c60"
 
 S = "${WORKDIR}/git"
 
