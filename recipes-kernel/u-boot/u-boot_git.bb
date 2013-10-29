@@ -83,10 +83,8 @@ do_compile () {
                     cp ${S}/${board}/u-boot.bin  ${S}/${board}/${UBOOT_TARGET}.bin
                 fi
             elif [ "${UBOOT_TARGET}" = "u-boot-nand" ];then
-                if [ "${DEFAULTTUNE}" = "ppce500v2" ];then
-                    if echo $board |egrep -q "(P1010RDB|P1020RDB|P1021RDB|P1024RDB|P2020RDB|P1022DS|P1025RDB|BSC9131RDB|BSC9132QDS)";then
-                        cp ${S}/${board}/u-boot-with-spl.bin ${S}/${board}/${UBOOT_TARGET}.bin
-                    fi
+                if echo $board |egrep -q "(P1010RDB|P1020RDB|P1021RDB|P1024RDB|P2020RDB|P1022DS|P1025RDB|BSC913)";then
+                    cp ${S}/${board}/u-boot-with-spl.bin ${S}/${board}/${UBOOT_TARGET}.bin
                 else
                     cp ${S}/${board}/u-boot.bin  ${S}/${board}/${UBOOT_TARGET}.bin
                 fi
