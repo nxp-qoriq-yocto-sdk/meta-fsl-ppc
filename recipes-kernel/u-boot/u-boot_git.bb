@@ -77,7 +77,11 @@ do_compile () {
 
         if [ "x${UBOOT_TARGET}" != "x" ]; then
             if [ "${UBOOT_TARGET}" = "u-boot-sd" ]; then
-                cp ${S}/${board}/u-boot.bin  ${S}/${board}/${UBOOT_TARGET}.bin
+                if echo $board |egrep -q "(P1020RDB|P1021RDB|P2020RDB|P1022DS)";then
+                    cp ${S}/${board}/u-boot-with-spl.bin  ${S}/${board}/${UBOOT_TARGET}.bin
+                else
+                    cp ${S}/${board}/u-boot.bin  ${S}/${board}/${UBOOT_TARGET}.bin
+                fi
             elif [ "${UBOOT_TARGET}" = "u-boot-nand" ];then
                 if [ "${DEFAULTTUNE}" = "ppce500v2" ];then
                     if echo $board |egrep -q "(P1010RDB|P1020RDB|P1021RDB|P1024RDB|P2020RDB|P1022DS|P1025RDB|BSC9131RDB|BSC9132QDS)";then
@@ -87,12 +91,17 @@ do_compile () {
                     cp ${S}/${board}/u-boot.bin  ${S}/${board}/${UBOOT_TARGET}.bin
                 fi
             else
+                if echo $board |egrep -q "(P1020RDB|P1021RDB|P2020RDB|P1022DS)";then
+                    UBOOT_TARGET_SPI=u-boot-with-spl.bin
+                else
+                    UBOOT_TARGET_SPI=u-boot.bin
+                fi
                 if [ -n "${BOOTFORMAT_CONFIG}" ];then
                     ${STAGING_BINDIR_NATIVE}/boot_format \
                     ${STAGING_DATADIR_NATIVE}/boot_format/${BOOTFORMAT_CONFIG} \
-                    ${S}/${board}/u-boot.bin -spi ${S}/${board}/${UBOOT_TARGET}.bin
+                    ${S}/${board}/${UBOOT_TARGET_SPI} -spi ${S}/${board}/${UBOOT_TARGET}.bin
                 else
-                    cp ${S}/${board}/u-boot.bin  ${S}/${board}/${UBOOT_TARGET}.bin
+                    cp ${S}/${board}/${UBOOT_TARGET_SPI}  ${S}/${board}/${UBOOT_TARGET}.bin
                 fi
             fi 
         fi
