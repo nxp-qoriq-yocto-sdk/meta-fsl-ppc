@@ -77,19 +77,19 @@ do_compile () {
 
         if [ "x${UBOOT_TARGET}" != "x" ]; then
             if [ "${UBOOT_TARGET}" = "u-boot-sd" ]; then
-                if echo $board |egrep -q "(P1020RDB|P1021RDB|P2020RDB|P1022DS)";then
+                if echo $board |egrep -q "(P1010RDB|P1020RDB|P1021RDB|P2020RDB|P1022DS)";then
                     cp ${S}/${board}/u-boot-with-spl.bin  ${S}/${board}/${UBOOT_TARGET}.bin
                 else
                     cp ${S}/${board}/u-boot.bin  ${S}/${board}/${UBOOT_TARGET}.bin
                 fi
             elif [ "${UBOOT_TARGET}" = "u-boot-nand" ];then
-                if echo $board |egrep -q "(P1010RDB|P1020RDB|P1021RDB|P1024RDB|P2020RDB|P1022DS|P1025RDB|BSC913)";then
+                if echo $board |egrep -q "(P1010RDB|P1020RDB|P1021RDB|P2020RDB|P1022DS|BSC913)";then
                     cp ${S}/${board}/u-boot-with-spl.bin ${S}/${board}/${UBOOT_TARGET}.bin
                 else
                     cp ${S}/${board}/u-boot.bin  ${S}/${board}/${UBOOT_TARGET}.bin
                 fi
             else
-                if echo $board |egrep -q "(P1020RDB|P1021RDB|P2020RDB|P1022DS)";then
+                if echo $board |egrep -q "(P1010RDB|P1020RDB|P1021RDB|P2020RDB|P1022DS)";then
                     UBOOT_TARGET_SPI=u-boot-with-spl.bin
                 else
                     UBOOT_TARGET_SPI=u-boot.bin
