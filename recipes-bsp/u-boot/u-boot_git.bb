@@ -78,10 +78,11 @@ do_compile () {
             *SDCARD*)   UBOOT_TARGET="u-boot-sd";;
             *SPIFLASH*) UBOOT_TARGET="u-boot-spi";;
             *NAND*)     UBOOT_TARGET="u-boot-nand";;
+            *SRIO*)     UBOOT_TARGET="u-boot-srio";;
             *)      UBOOT_TARGET="";;
         esac
 
-        # deal with sd/spi/nand image
+        # deal with sd/spi/nand/srio image
         UBOOT_SOURCE=u-boot
         if [ "x${UBOOT_TARGET}" != "x" ]; then
             # some boards' nand image was named as u-boot-with-spl
@@ -120,6 +121,7 @@ do_install(){
             *SDCARD*)   UBOOT_TARGET="u-boot-sd";;
             *SPIFLASH*) UBOOT_TARGET="u-boot-spi";;
             *NAND*)     UBOOT_TARGET="u-boot-nand";;
+            *SRIO*)     UBOOT_TARGET="u-boot-srio";;
             *)      UBOOT_TARGET="u-boot";;
         esac
 
@@ -141,6 +143,7 @@ do_deploy(){
             *SDCARD*)   UBOOT_TARGET="u-boot-sd";;
             *SPIFLASH*) UBOOT_TARGET="u-boot-spi";;
             *NAND*)     UBOOT_TARGET="u-boot-nand";;
+            *SRIO*)     UBOOT_TARGET="u-boot-srio";;
             *)      UBOOT_TARGET="u-boot";;
         esac
 
