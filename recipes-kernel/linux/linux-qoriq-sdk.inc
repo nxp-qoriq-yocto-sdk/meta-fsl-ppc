@@ -3,7 +3,7 @@ LIC_FILES_CHKSUM = "file://COPYING;md5=d7810fab7487fb0aad327b76f1be7cd7"
 PV = "3.8"
 INC_PR = "r11"
 
-SRCREV = "869e11868e475d4c2946e70030e18384af5d7795"
+SRCREV = "8aef22eb9d0862edf0259e7642efafebc8892282"
 SRC_URI = "git://git.freescale.com/ppc/sdk/linux.git \
 	  "
 
