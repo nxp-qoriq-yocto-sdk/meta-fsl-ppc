@@ -4,7 +4,7 @@ LICENSE = "GPLv2 & GPLv2+ & BSD"
 LIC_FILES_CHKSUM = "file://COPYING;md5=b5881ecf398da8a03a3f4c501e29d287"
 
 SRC_URI = "git://git.freescale.com/ppc/sdk/asf.git"
-SRCREV = "0b80c1df6a7490486d5106b28103598906793da0"
+SRCREV = "c262d7701af325b50cae54279a021ae7b5081e24"
 
 DEPENDS="virtual/kernel"
 RDEPENDS_${PN} += "ipsec-tools"
