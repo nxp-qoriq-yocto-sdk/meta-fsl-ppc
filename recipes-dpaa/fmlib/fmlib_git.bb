@@ -9,7 +9,7 @@ DEPENDS = "linux-libc-headers"
 DEPENDS_virtclass-native = ""
 
 SRC_URI = "git://git.freescale.com/ppc/sdk/fmlib.git"
-SRCREV = "1fce11f17a102820a20cdbf80f557d74b169fc4c"
+SRCREV = "49f50a4bf4f0e34708003d7b49ce629630b68489"
 
 S = "${WORKDIR}/git"
 
