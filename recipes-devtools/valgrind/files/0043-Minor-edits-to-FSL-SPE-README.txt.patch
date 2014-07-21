@@ -1,0 +1,72 @@
+From 57c7f823fd60b9a19f9f63a9a35ba75da70037a2 Mon Sep 17 00:00:00 2001
+From: Anmol P. Paralkar <anmol@freescale.com>
+Date: Thu, 28 Mar 2013 18:38:24 -0700
+Subject: [PATCH 43/65] Minor edits to FSL-SPE-README.txt.
+
+---
+ FSL-SPE-README.txt |   38 +++++++++++++++++++++++++-------------
+ 1 files changed, 25 insertions(+), 13 deletions(-)
+
+diff --git a/FSL-SPE-README.txt b/FSL-SPE-README.txt
+index 4729803..312a50e 100644
+--- a/FSL-SPE-README.txt
++++ b/FSL-SPE-README.txt
+@@ -5,30 +5,42 @@
+  Introduction:
+  -------------
+  
+- This document contains instructions for building and details the current status
+- of the SPE port for the Valgrind/memcheck tool.
++ This document contains instructions for installation, building and details the
++ current status of the SPE port for the Valgrind/memcheck tool.
+ 
+- Note: Let $TOP be the "top-level" directory, in which valgrind-3.8.1.tar.gz has
+-       been unzipped and untarred.
++ Installation:
++ -------------
++
++ Let $TOP be the "top-level" directory that contains:
++
++  valgrind-3.8.1-<id>.tar.gz
+ 
+-       This document appears as: $TOP/valgrind-3.8.1/FSL-SPE-README.txt
++ $TOP# mkdir valgrind-3.8.1-<id>
++ $TOP# mv valgrind-3.8.1-<id>.tar.gz valgrind-3.8.1-<id>
++ $TOP# cd valgrind-3.8.1-<id>
++ $TOP/valgrind-3.8.1-<id># gunzip -d valgrind-3.8.1-<id>.tar.gz
++ $TOP/valgrind-3.8.1-<id># tar -xvf valgrind-3.8.1-<id>.tar
+ 
+  Building:
+  ---------
+ 
+- $TOP/valgrind-3.8.1# make distclean # (To start all over)
+- $TOP/valgrind-3.8.1# ./autogen.sh
+- $TOP/valgrind-3.8.1# ./configure --prefix=$PWD
+- $TOP/valgrind-3.8.1# make
+- $TOP/valgrind-3.8.1# make install
++ $TOP/valgrind-3.8.1-<id># make distclean # (To start all over)
++ $TOP/valgrind-3.8.1-<id># ./autogen.sh
++ $TOP/valgrind-3.8.1-<id># ./configure --prefix=$PWD
++ $TOP/valgrind-3.8.1-<id># make
++ $TOP/valgrind-3.8.1-<id># make install
++
++ The resultant Valgrind binary is found as:
++
++  $TOP/valgrind-3.8.1-<id>/bin/valgrind
+ 
+- The resultant Valgrind binary is found as: $TOP/valgrind-3.8.1/bin/valgrind
++ To check the Valgrind version:
+ 
+- To check the Valgrind version: $TOP/valgrind-3.8.1/bin/valgrind --version
++ $TOP/valgrind-3.8.1-<id># ./bin/valgrind --version
+ 
+  The Valgrind User Manual is found as:
+ 
+- $TOP/valgrind-3.8.1/share/doc/valgrind/valgrind_manual.pdf
++ $TOP/valgrind-3.8.1-<id>/share/doc/valgrind/valgrind_manual.pdf
+ 
+  Current Status:
+  ---------------
+-- 
+1.7.3.4
+

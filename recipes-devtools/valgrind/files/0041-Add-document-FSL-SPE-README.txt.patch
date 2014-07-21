@@ -1,0 +1,104 @@
+From b6fa475a97c8b818e76bf64470473463e982f7f8 Mon Sep 17 00:00:00 2001
+From: Anmol P. Paralkar <anmol@freescale.com>
+Date: Thu, 28 Mar 2013 16:53:25 -0700
+Subject: [PATCH 41/65] Add document: FSL-SPE-README.txt
+
+---
+ FSL-SPE-README.txt |   85 ++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 files changed, 85 insertions(+), 0 deletions(-)
+ create mode 100644 FSL-SPE-README.txt
+
+diff --git a/FSL-SPE-README.txt b/FSL-SPE-README.txt
+new file mode 100644
+index 0000000..4729803
+--- /dev/null
++++ b/FSL-SPE-README.txt
+@@ -0,0 +1,85 @@
++
++                               FSL-SPE-README
++                               ==============
++
++ Introduction:
++ -------------
++ 
++ This document contains instructions for building and details the current status
++ of the SPE port for the Valgrind/memcheck tool.
++
++ Note: Let $TOP be the "top-level" directory, in which valgrind-3.8.1.tar.gz has
++       been unzipped and untarred.
++
++       This document appears as: $TOP/valgrind-3.8.1/FSL-SPE-README.txt
++
++ Building:
++ ---------
++
++ $TOP/valgrind-3.8.1# make distclean # (To start all over)
++ $TOP/valgrind-3.8.1# ./autogen.sh
++ $TOP/valgrind-3.8.1# ./configure --prefix=$PWD
++ $TOP/valgrind-3.8.1# make
++ $TOP/valgrind-3.8.1# make install
++
++ The resultant Valgrind binary is found as: $TOP/valgrind-3.8.1/bin/valgrind
++
++ To check the Valgrind version: $TOP/valgrind-3.8.1/bin/valgrind --version
++
++ The Valgrind User Manual is found as:
++
++ $TOP/valgrind-3.8.1/share/doc/valgrind/valgrind_manual.pdf
++
++ Current Status:
++ ---------------
++
++ The following SPE instructions have been implemented as a part of the SPE port
++ and are verified to now execute under Valgrind:
++
++ evldd, evstdd, evxor, evlddx, evstddx, evldh, evstdh, evor, _evmr, evldhx,
++ evstdhx, evldw, evstdw, evldwx, evstdwx, evlwhe, evstwhe, evlwhex, evstwhex,
++ evlwhos, evlwhosx, evlwhou, evlwhoux, evstwho, evstwhox, evstwwe, evstwwex,
++ evstwwo, evstwwox, evlhhesplat, evlhhesplatx, evlhhossplat, evlhhossplatx,
++ evlhhousplat, evlhhousplatx evlwhsplat, evlwhsplatx, evlwwsplat, evlwwsplatx
++ evmergehi, evmergehilo, evmergelo, evmergelohi, evand, evandc, eveqv, evnand,
++ evnor, _evnot, evorc, evrlw, evrlwi, evslw, evslwi, evsrwu, evsrwiu, evsrws,
++ evsrwis, evextsb, evextsh, evcntlsw, evcntlzw, evsplatfi, evsplati, evneg,
++ evabs, evrndw, evcmpeq, evcmpgts, evcmpgtu, evcmplts, evcmpltu, evsel,
++ evmra, evaddsmiaaw, evaddumiaaw, evsubfsmiaaw, evsubfumiaaw, evaddiw, evaddw,
++ evsubifw, evsubfw, evmhesmi, evmhesmia, evmhesmiaaw, evmhesmianw, evmheumi,
++ evmheumia, evmheumiaaw, evmheumianw, evmhosmi, evmhosmia, evmhosmiaaw,
++ evmhosmianw, evmhoumi, evmhoumia, evmhoumiaaw, evmhoumianw, evmwlumi,
++ evmwlumia, evmwlumiaaw, evmwlumianw, evmwsmi, evmwsmia, evmwsmiaa, evmwsmian,
++ evmwumi, evmwumia, evmwumiaa, evmwumian, evmwhsm, evmwhsma, evmwhum, evmwhuma,
++ evmwlsmiaaw, evmwlsmianw, evmwsmfan, evmwsmfaa, evmwsmf, evmwsmfa, evmwhsmf,
++ evmwhsmfa, evmhosmf, evmhosmfa, evmhosmfaaw, evmhosmfanw, evmhesmf, evmhesmfa,
++ evmhesmfaaw, evmhesmfanw
++
++ Note: Synthetic instructions appear prefixed with a leading underscore in the
++       above list. All synthetic instructions are tested as working under
++       Valgrind even though, strictly speaking, such an instruction is not
++       explcitly implemented, but works as a result of some other instruction
++       being implemented.
++
++ The following instructions have not been implemented yet:
++
++ Note: Non SPE instructions are indicated by suffixing them with a '?' sign.
++
++ eciwx?, ecowx?, efdabs, efdadd, efdcfs, efdcfsf, efdcfsi, efdcfsid, efdcfuf,
++ efdcfui, efdcfuid, efdcmpeq, efdcmpgt, efdcmplt, efdctsf, efdctsi, efdctsidz,
++ efdctsiz, efdctuf, efdctui, efdctuidz, efdctuiz, efddiv, efdmul, efdnabs,
++ efdneg, efdsub, efdtsteq, efdtstgt, efdtstlt, efsabs, efsadd, efscfd, efscfsf,
++ efscfsi, efscfuf, efscfui, efscmpeq, efscmpgt, efscmplt, efsctsf, efsctsi,
++ efsctsiz, efsctuf, efsctui, efsctuiz, efsdiv, efsmul, efsnabs, efsneg, efssub,
++ efststeq, efststgt, efststlt, ehpriv?, eqv?, eqv.?, evfsabs, evfsadd,
++ evfscfsf, evfscfsi, evfscfuf, evfscfui, evfscmpeq, evfscmpgt, evfscmplt,
++ evfsctsf, evfsctsi, evfsctsiz, evfsctuf, evfsctui, evfsctuiz, evfsdiv,
++ evfsmul, evfsnabs, evfsneg, evfssub, evfststeq, evfststgt, evfststlt,
++ evmhegsmfaa, evmhegsmfan, evmhegsmiaa, evmhegsmian, evmhegumiaa, evmhegumian,
++ evmhessf, evmhessfa, evmhessfaaw, evmhessfanw, evmhessiaaw, evmhessianw,
++ evmheusiaaw, evmheusianw, evmhogsmfaa, evmhogsmfan, evmhogsmiaa, evmhogsmian,
++ evmhogumiaa, evmhogumian, evmhossf, evmhossfa, evmhossfaaw, evmhossfanw,
++ evmhossiaaw, evmhossianw, evmhousiaaw, evmhousianw, evmwhsmi, evmwhsmia,
++ evmwhssf, evmwhssfa, evmwhumi, evmwhumia, evmwlssiaaw, evmwlssianw,
++ evmwlusiaaw, evmwlusianw, evmwssf, evmwssfa, evmwssfaa, evmwssfan,
++ evsubfssiaaw, evsubfusiaaw, extsb?, extsb.?, extsh?, extsh.?
+-- 
+1.7.3.4
+

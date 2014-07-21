@@ -1,0 +1,1568 @@
+From edc9209e573e6ae7fcdf5c647e59ac038b232712 Mon Sep 17 00:00:00 2001
+From: Anmol P. Paralkar <anmol@freescale.com>
+Date: Fri, 15 Feb 2013 19:27:44 -0800
+Subject: [PATCH 27/65] Tests based on SPE Programming Interface Manual, Chapter 3: SPE2 Operations. [ For currently implemented instructions. ]
+
+---
+ memcheck/tests/ppc32/test_spe.c          | 1344 ++++++++++++++++++++++++++++++
+ memcheck/tests/ppc32/test_spe.stderr.exp |    6 +-
+ memcheck/tests/ppc32/test_spe.stdout.exp |   57 ++
+ regtest-power7-64.log                    |   18 +-
+ 4 files changed, 1413 insertions(+), 12 deletions(-)
+
+diff --git a/memcheck/tests/ppc32/test_spe.c b/memcheck/tests/ppc32/test_spe.c
+index 6da8902..06ba119 100644
+--- a/memcheck/tests/ppc32/test_spe.c
++++ b/memcheck/tests/ppc32/test_spe.c
+@@ -4461,6 +4461,1278 @@ uint64_t strtoufix64(const char *str, char **endptr);
+ }
+ TEST_SPE_DECL(chapter4_spe2pim, "Chapter 4: Additional Operations");
+ 
++int __ev_ldd_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++
++  int32_t u = 32, l = 24;
++  __ev64_opaque__ ev_src = __ev_create_u32 (u, l);
++  __ev64_opaque__ ev_dst = __ev_ldd (&ev_src, 0);
++  VERIFY(__ev_get_u32 (ev_dst, 0) == u);
++  VERIFY(__ev_get_u32 (ev_dst, 1) == l);
++
++  __ev64_u16__ vs[4] = {
++    (__ev64_u16__) { 21, 46, 22, 56 },
++    (__ev64_u16__) { 11, 29, 18, 63 },
++    (__ev64_u16__) { 81, 99, 26, 67 },
++    (__ev64_u16__) { 38, 53, 50, 49 },
++  };
++  __ev64_u16__ tv;
++
++  tv = __ev_ldd (&vs[0], 0);
++  VERIFY(__ev_get_u16 (tv, 0) == 21);
++  VERIFY(__ev_get_u16 (tv, 1) == 46);
++  VERIFY(__ev_get_u16 (tv, 2) == 22);
++  VERIFY(__ev_get_u16 (tv, 3) == 56);
++
++  tv = __ev_ldd (&vs[0], 1);
++  VERIFY(__ev_get_u16 (tv, 0) == 11);
++  VERIFY(__ev_get_u16 (tv, 1) == 29);
++  VERIFY(__ev_get_u16 (tv, 2) == 18);
++  VERIFY(__ev_get_u16 (tv, 3) == 63);
++
++  tv = __ev_ldd (&vs[0], 2);
++  VERIFY(__ev_get_u16 (tv, 0) == 81);
++  VERIFY(__ev_get_u16 (tv, 1) == 99);
++  VERIFY(__ev_get_u16 (tv, 2) == 26);
++  VERIFY(__ev_get_u16 (tv, 3) == 67);
++
++  tv = __ev_ldd (&vs[0], 3);
++  VERIFY(__ev_get_u16 (tv, 0) == 38);
++  VERIFY(__ev_get_u16 (tv, 1) == 53);
++  VERIFY(__ev_get_u16 (tv, 2) == 50);
++  VERIFY(__ev_get_u16 (tv, 3) == 49);
++
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_ldd_intrinsic, "__ev_ldd");
++
++int __ev_stdd_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ src = __ev_create_u32 (100, 200);
++  __ev64_opaque__ dst;
++  __ev_stdd (src, &dst, 0);
++  VERIFY(__ev_get_u32 (dst, 0) == 100);
++  VERIFY(__ev_get_u32 (dst, 1) == 200);
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_stdd_intrinsic, "__ev_stdd");
++
++int __ev_lddx_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  int i;
++  __ev64_opaque__ v;
++  __ev64_u32__ vs_src[10] = {
++
++    /*    0 */ (__ev64_u32__) { 0x6082912b, 0xfc532c1d },
++    /*    1 */ (__ev64_u32__) { 0x0d9c7241, 0xdbfec80e },
++    /*    2 */ (__ev64_u32__) { 0xee528fac, 0x2df5d7a4 },
++    /*    3 */ (__ev64_u32__) { 0xee3fd3c6, 0xf872209c },
++    /*    4 */ (__ev64_u32__) { 0x3cb0b533, 0x9403dfa5 },
++    /*    5 */ (__ev64_u32__) { 0x241bf114, 0x816f22e6 },
++    /*    6 */ (__ev64_u32__) { 0x3dd89a42, 0xcd1655fc },
++    /*    7 */ (__ev64_u32__) { 0xa0449d66, 0x53958e74 },
++    /*    8 */ (__ev64_u32__) { 0xebbf0cb2, 0x3590a4fb },
++    /*    9 */ (__ev64_u32__) { 0xafcee950, 0xe206f851 },
++  };
++  __ev64_u32__ vs_mst[10] = {
++
++    /*    0 */ (__ev64_u32__) { 0x6082912b, 0xfc532c1d },
++    /*    1 */ (__ev64_u32__) { 0x0d9c7241, 0xdbfec80e },
++    /*    2 */ (__ev64_u32__) { 0xee528fac, 0x2df5d7a4 },
++    /*    3 */ (__ev64_u32__) { 0xee3fd3c6, 0xf872209c },
++    /*    4 */ (__ev64_u32__) { 0x3cb0b533, 0x9403dfa5 },
++    /*    5 */ (__ev64_u32__) { 0x241bf114, 0x816f22e6 },
++    /*    6 */ (__ev64_u32__) { 0x3dd89a42, 0xcd1655fc },
++    /*    7 */ (__ev64_u32__) { 0xa0449d66, 0x53958e74 },
++    /*    8 */ (__ev64_u32__) { 0xebbf0cb2, 0x3590a4fb },
++    /*    9 */ (__ev64_u32__) { 0xafcee950, 0xe206f851 },
++  };
++
++  for (i = 0; i < 10; i++) {
++    v = __ev_lddx (vs_src, sizeof (__ev64_u32__) * i);
++    VERIFY(__ev_get_upper_u32 (v) == __ev_get_u32 (vs_mst [i], 0));
++    VERIFY(__ev_get_lower_u32 (v) == __ev_get_u32 (vs_mst [i], 1));
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_lddx_intrinsic, "__ev_lddx");
++
++int __ev_stddx_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  int i;
++  __ev64_u32__ vs_src[10] = {
++
++    /*    0 */ (__ev64_u32__) { 0x6082912b, 0xfc532c1d },
++    /*    1 */ (__ev64_u32__) { 0x0d9c7241, 0xdbfec80e },
++    /*    2 */ (__ev64_u32__) { 0xee528fac, 0x2df5d7a4 },
++    /*    3 */ (__ev64_u32__) { 0xee3fd3c6, 0xf872209c },
++    /*    4 */ (__ev64_u32__) { 0x3cb0b533, 0x9403dfa5 },
++    /*    5 */ (__ev64_u32__) { 0x241bf114, 0x816f22e6 },
++    /*    6 */ (__ev64_u32__) { 0x3dd89a42, 0xcd1655fc },
++    /*    7 */ (__ev64_u32__) { 0xa0449d66, 0x53958e74 },
++    /*    8 */ (__ev64_u32__) { 0xebbf0cb2, 0x3590a4fb },
++    /*    9 */ (__ev64_u32__) { 0xafcee950, 0xe206f851 },
++  };
++  __ev64_u32__ vs_dst[10];
++  __ev64_u32__ vs_mst[10] = {
++
++    /*    0 */ (__ev64_u32__) { 0x6082912b, 0xfc532c1d },
++    /*    1 */ (__ev64_u32__) { 0x0d9c7241, 0xdbfec80e },
++    /*    2 */ (__ev64_u32__) { 0xee528fac, 0x2df5d7a4 },
++    /*    3 */ (__ev64_u32__) { 0xee3fd3c6, 0xf872209c },
++    /*    4 */ (__ev64_u32__) { 0x3cb0b533, 0x9403dfa5 },
++    /*    5 */ (__ev64_u32__) { 0x241bf114, 0x816f22e6 },
++    /*    6 */ (__ev64_u32__) { 0x3dd89a42, 0xcd1655fc },
++    /*    7 */ (__ev64_u32__) { 0xa0449d66, 0x53958e74 },
++    /*    8 */ (__ev64_u32__) { 0xebbf0cb2, 0x3590a4fb },
++    /*    9 */ (__ev64_u32__) { 0xafcee950, 0xe206f851 },
++  };
++  __ev64_opaque__ v;
++
++  for (i = 0; i < 10; i++) {
++    v = __ev_lddx (vs_src, sizeof (__ev64_u32__) * i);
++    __ev_stddx(v,  vs_dst, sizeof (__ev64_u32__) * i);
++    VERIFY(__ev_get_u32 (vs_dst [i], 0) == __ev_get_u32 (vs_mst [i], 0));
++    VERIFY(__ev_get_u32 (vs_dst [i], 1) == __ev_get_u32 (vs_mst [i], 1));
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_stddx_intrinsic, "__ev_stddx");
++
++int __ev_ldh_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ vsrc = __ev_create_u16 (0xaa, 0xbb, 0xcc, 0xdd);
++  __ev64_opaque__ vdst = __ev_ldh (&vsrc, 0);
++  VERIFY(__ev_get_u16 (vdst, 0) == 0xaa);
++  VERIFY(__ev_get_u16 (vdst, 1) == 0xbb);
++  VERIFY(__ev_get_u16 (vdst, 2) == 0xcc);
++  VERIFY(__ev_get_u16 (vdst, 3) == 0xdd);
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_ldh_intrinsic, "__ev_ldh");
++
++int __ev_stdh_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ vsrc = __ev_create_u16 (0xaa, 0xbb, 0xcc, 0xdd);
++  __ev64_opaque__ vdst;
++  __ev_stdh (vsrc, &vdst, 0);
++  VERIFY(__ev_get_u16 (vdst, 0) == 0xaa);
++  VERIFY(__ev_get_u16 (vdst, 1) == 0xbb);
++  VERIFY(__ev_get_u16 (vdst, 2) == 0xcc);
++  VERIFY(__ev_get_u16 (vdst, 3) == 0xdd);
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_stdh_intrinsic, "__ev_stdh");
++
++int __ev_ldhx_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ vs[100], vx;
++  int i, j;
++
++  for (i = 0; i < 100; i++)
++    for (j = 0; j < 4; j++)
++      vs[i] = __ev_set_u16 (vs[i], (4 * i + j), j);
++
++  for (i = 0; i < 100; i++) {
++    for (j = 0; j < 4; j++) {
++      vx = __ev_ldhx (vs, i * sizeof (typeof (vs [i])));
++      VERIFY(__ev_get_u16 (vx, j) == (4 * i + j));
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_ldhx_intrinsic, "__ev_ldhx");
++
++int __ev_stdhx_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ vs[100], vx;
++  __ev64_opaque__ vd[100];
++  int i, j;
++
++  for (i = 0; i < 100; i++)
++    for (j = 0; j < 4; j++)
++      vs[i] = __ev_set_u16 (vs[i], (4 * i + j), j);
++
++  for (i = 0; i < 100; i++) {
++    for (j = 0; j < 4; j++) {
++      vx = __ev_ldhx (vs, i * sizeof (typeof (vs [i])));
++      __ev_stdhx (vx, vd, i * sizeof (typeof (vd [i])));
++      VERIFY(__ev_get_u16 (vd[i], j) == (4 * i + j));
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_stdhx_intrinsic, "__ev_stdhx");
++
++int __ev_ldw_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ vs = __ev_create_u32 (0x11111111, 0xffffffff);
++  __ev64_opaque__ vd = __ev_ldw (&vs, 0);
++  VERIFY(__ev_get_upper_u32 (vd) == 0x11111111);
++  VERIFY(__ev_get_lower_u32 (vd) == 0xffffffff);
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_ldw_intrinsic, "__ev_ldw");
++
++int __ev_stdw_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ vs = __ev_create_u32 (0x11111111, 0xffffffff);
++  __ev64_opaque__ vd;
++  __ev_stdw (vs, &vd, 0);
++  VERIFY(__ev_get_upper_u32 (vd) == 0x11111111);
++  VERIFY(__ev_get_lower_u32 (vd) == 0xffffffff);
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_stdw_intrinsic, "__ev_stdw");
++
++int __ev_ldwx_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  int i;
++  for (i = 0; i < 64; i++) {
++    rD2u32[i] = __ev_ldwx ((__ev64_opaque__*) rA2u32, sizeof (typeof (rA2u32[0])) * i);
++    VERIFY(__ev_get_upper_u32 (rA2u32[i]) == __ev_get_upper_u32 (rD2u32[i]));
++    VERIFY(__ev_get_lower_u32 (rA2u32[i]) == __ev_get_lower_u32 (rD2u32[i]));
++    rD2u32[i] = __ev_set_upper_u32 (rD2u32[i], 0x0);
++    rD2u32[i] = __ev_set_lower_u32 (rD2u32[i], 0x0);
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_ldwx_intrinsic, "__ev_ldwx");
++
++int __ev_stdwx_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  int i;
++  for (i = 0; i < 64; i++) {
++    __ev_stdwx ((__ev64_opaque__) rA2u32[i], rD2u32, sizeof (typeof (rA2u32[0])) * i);
++    VERIFY(__ev_get_upper_u32 (rA2u32[i]) == __ev_get_upper_u32 (rD2u32[i]));
++    VERIFY(__ev_get_lower_u32 (rA2u32[i]) == __ev_get_lower_u32 (rD2u32[i]));
++    rD2u32[i] = __ev_set_upper_u32 (rD2u32[i], 0x0);
++    rD2u32[i] = __ev_set_lower_u32 (rD2u32[i], 0x0);
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_stdwx_intrinsic, "__ev_stdwx");
++
++int __ev_lwhe_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  uint32_t n = 0xdeadbeef;
++  __ev64_opaque__ vdst = __ev_lwhe (&n, 0);
++  VERIFY(__ev_get_u16 (vdst, 0) == 0xdead);
++  VERIFY(__ev_get_u16 (vdst, 1) == 0x0);
++  VERIFY(__ev_get_u16 (vdst, 2) == 0xbeef);
++  VERIFY(__ev_get_u16 (vdst, 3) == 0x0);
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_lwhe_intrinsic, "__ev_lwhe");
++
++int __ev_stwhe_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ v = __ev_create_u64 (0xdeadffffbeef0000);
++  int a[8];
++  __ev_stwhe(v, a, 5);
++  VERIFY(a[5] == 0xdeadbeef);
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_stwhe_intrinsic, "__ev_stwhe");
++
++int __ev_lwhex_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  uint32_t a[16], i;
++  __ev64_opaque__ v;
++  for (i = 0; i < 16; i++) {
++    a[i] = (0x00010000 << i) | (0x0001 << i);
++    v = __ev_lwhex (a, i * sizeof (typeof (a[0])));
++    VERIFY(__ev_get_u16 (v, 0) == (0x0001 << i));
++    VERIFY(__ev_get_u16 (v, 1) == 0x0);
++    VERIFY(__ev_get_u16 (v, 2) == (0x0001 << i));
++    VERIFY(__ev_get_u16 (v, 3) == 0x0);
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_lwhex_intrinsic, "__ev_lwhex");
++
++int __ev_stwhex_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  uint32_t a[16], i;
++  __ev64_opaque__ v;
++  for (i = 0; i < 16; i++) {
++    v = __ev_set_u16 (v, (0x0001 << i), 0);
++    v = __ev_set_u16 (v, 0x0,           1);
++    v = __ev_set_u16 (v, (0x0001 << i), 2);
++    v = __ev_set_u16 (v, 0x0,           3);
++    __ev_stwhex (v, a,  i * sizeof (typeof (a[0])));
++    VERIFY(a[i] == ((0x00010000 << i) | (0x0001 << i)));
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_stwhex_intrinsic, "__ev_stwhex");
++
++int __ev_lwhos_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  int32_t n = 0xdead7eef;
++  __ev64_opaque__ v;
++  v = __ev_lwhos (&n, 0);
++  VERIFY(__ev_get_upper_u32 (v) == 0xffffdead);
++  VERIFY(__ev_get_lower_u32 (v) == 0x00007eef);
++
++#if 0
++  VERIFY(__ev_get_s16 (v, 0) == 0xffff); // FAILS
++  VERIFY(__ev_get_s16 (v, 1) == 0xdead); // FAILS
++  VERIFY(__ev_get_s16 (v, 2) == 0x0000); // FAILS
++  VERIFY(__ev_get_s16 (v, 3) == 0x7eef); // FAILS
++
++  // Something strange is going on here:
++  printf("0x%x\n", __ev_get_s16 (v, 0)); // 0xffffffff
++  printf("0x%x\n", __ev_get_s16 (v, 1)); // 0xffffdead
++  printf("0x%x\n", __ev_get_s16 (v, 2)); // 0x0
++  printf("0x%x\n", __ev_get_s16 (v, 3)); // 0x7eef
++
++  // This sounds like a GCC bug!
++  // Note that the test /as coded/, passes
++#endif
++
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_lwhos_intrinsic, "__ev_lwhos");
++
++int __ev_lwhosx_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  int32_t a[] = {
++    0xff010023,
++    0xff2300aa,
++    0x0045f33f,
++    0x0067ff76,
++    0x0089ff92,
++    0xffab00ea,
++    0x00cdfff4,
++    0xffef0017,
++  };
++  __ev64_opaque__ v;
++  int i;
++  for (i = 0; i < NELTS(a); i++) {
++    v = __ev_lwhosx (&a[0], (&a[i] - &a[0]) * sizeof (int32_t));
++    switch (i) {
++    case 0:
++      VERIFY(__ev_get_upper_u32 (v) == 0xffffff01);
++      VERIFY(__ev_get_lower_u32 (v) == 0x00000023);
++      break;
++    case 1:
++      VERIFY(__ev_get_upper_u32 (v) == 0xffffff23);
++      VERIFY(__ev_get_lower_u32 (v) == 0x000000aa);
++      break;
++    case 2:
++      VERIFY(__ev_get_upper_u32 (v) == 0x00000045);
++      VERIFY(__ev_get_lower_u32 (v) == 0xfffff33f);
++      break;
++    case 3:
++      VERIFY(__ev_get_upper_u32 (v) == 0x00000067);
++      VERIFY(__ev_get_lower_u32 (v) == 0xffffff76);
++      break;
++    case 4:
++      VERIFY(__ev_get_upper_u32 (v) == 0x00000089);
++      VERIFY(__ev_get_lower_u32 (v) == 0xffffff92);
++      break;
++    case 5:
++      VERIFY(__ev_get_upper_u32 (v) == 0xffffffab);
++      VERIFY(__ev_get_lower_u32 (v) == 0x000000ea);
++      break;
++    case 6:
++      VERIFY(__ev_get_upper_u32 (v) == 0x000000cd);
++      VERIFY(__ev_get_lower_u32 (v) == 0xfffffff4);
++      break;
++    case 7:
++      VERIFY(__ev_get_upper_u32 (v) == 0xffffffef);
++      VERIFY(__ev_get_lower_u32 (v) == 0x00000017);
++      break;
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_lwhosx_intrinsic, "__ev_lwhosx");
++
++int __ev_lwhou_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  int32_t n = 0xdeadbeef;
++  __ev64_opaque__ v;
++  v = __ev_lwhou (&n, 0);
++  VERIFY(__ev_get_upper_u32 (v) == 0x0000dead);
++  VERIFY(__ev_get_lower_u32 (v) == 0x0000beef);
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_lwhou_intrinsic, "__ev_lwhou");
++
++int __ev_lwhoux_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  int32_t a[] = {
++    0xff010023,
++    0xff2300aa,
++    0x0045f33f,
++    0x0067ff76,
++    0x0089ff92,
++    0xffab00ea,
++    0x00cdfff4,
++    0xffef0017,
++  };
++  int i;
++  __ev64_opaque__ v;
++  for (i = 0; i < NELTS(a); i++) {
++    v = __ev_lwhoux (&a[0], (&a[i] - &a[0]) * sizeof (int32_t));
++    switch (i) {
++    case 0:
++      VERIFY(__ev_get_upper_u32 (v) == 0x0000ff01);
++      VERIFY(__ev_get_lower_u32 (v) == 0x00000023);
++      break;
++    case 1:
++      VERIFY(__ev_get_upper_u32 (v) == 0x0000ff23);
++      VERIFY(__ev_get_lower_u32 (v) == 0x000000aa);
++      break;
++    case 2:
++      VERIFY(__ev_get_upper_u32 (v) == 0x00000045);
++      VERIFY(__ev_get_lower_u32 (v) == 0x0000f33f);
++      break;
++    case 3:
++      VERIFY(__ev_get_upper_u32 (v) == 0x00000067);
++      VERIFY(__ev_get_lower_u32 (v) == 0x0000ff76);
++      break;
++    case 4:
++      VERIFY(__ev_get_upper_u32 (v) == 0x00000089);
++      VERIFY(__ev_get_lower_u32 (v) == 0x0000ff92);
++      break;
++    case 5:
++      VERIFY(__ev_get_upper_u32 (v) == 0x0000ffab);
++      VERIFY(__ev_get_lower_u32 (v) == 0x000000ea);
++      break;
++    case 6:
++      VERIFY(__ev_get_upper_u32 (v) == 0x000000cd);
++      VERIFY(__ev_get_lower_u32 (v) == 0x0000fff4);
++      break;
++    case 7:
++      VERIFY(__ev_get_upper_u32 (v) == 0x0000ffef);
++      VERIFY(__ev_get_lower_u32 (v) == 0x00000017);
++      break;
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_lwhoux_intrinsic, "__ev_lwhoux");
++
++int __ev_stwho_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ v = __ev_create_u64 (0xdeadbeefdeadbeef);
++  uint32_t n;
++  __ev_stwho (v, &n, 0);
++  VERIFY(n == 0xbeefbeef);
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_stwho_intrinsic, "__ev_stwho");
++
++int __ev_stwhox_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ v = __ev_create_u64 (0xdeadbeefdeadbeef);
++  uint32_t n, k = 0;
++  __ev_stwhox (v, &n, k);
++  VERIFY(n == 0xbeefbeef);
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_stwhox_intrinsic, "__ev_stwhox");
++
++int __ev_stwwe_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ v = __ev_create_u64 (0x7bf1384a42e7d288);
++  uint32_t n;
++  __ev_stwwe(v, &n, 0);
++  VERIFY(n == 0x7bf1384a);
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_stwwe_intrinsic, "__ev_stwwe");
++
++int __ev_stwwex_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ v = __ev_create_u64 (0x7bf1384a42e7d288);
++  uint32_t n, k = 0;
++  __ev_stwwex(v, &n, k);
++  VERIFY(n == 0x7bf1384a);
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_stwwex_intrinsic, "__ev_stwwex");
++
++int __ev_stwwo_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ v = __ev_create_u64 (0x7bf1384a42e7d288);
++  uint32_t n;
++  __ev_stwwo(v, &n, 0);
++  VERIFY(n == 0x42e7d288);
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_stwwo_intrinsic, "__ev_stwwo");
++
++int __ev_stwwox_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ v = __ev_create_u64 (0x7bf1384a42e7d288);
++  uint32_t n, k = 0;
++  __ev_stwwox(v, &n, k);
++  VERIFY(n == 0x42e7d288);
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_stwwox_intrinsic, "__ev_stwwox");
++
++int __ev_lhhesplat_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  uint16_t s = 0xdead;
++  __ev64_opaque__ v;
++
++ v = __ev_lhhesplat (&s, 0);
++ VERIFY(__ev_get_upper_u32 (v) == 0xdead0000);
++ VERIFY(__ev_get_lower_u32 (v) == 0xdead0000);
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_lhhesplat_intrinsic, "__ev_lhhesplat");
++
++int __ev_lhhesplatx_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  uint16_t s = 0xdead;
++  __ev64_opaque__ v;
++
++ v = __ev_lhhesplatx (&s, 0);
++ VERIFY(__ev_get_upper_u32 (v) == 0xdead0000);
++ VERIFY(__ev_get_lower_u32 (v) == 0xdead0000);
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_lhhesplatx_intrinsic, "__ev_lhhesplatx");
++
++int __ev_lhhossplat_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  uint16_t s = 0xdead;
++  __ev64_opaque__ v;
++
++ v = __ev_lhhossplat (&s, 0);
++ VERIFY(__ev_get_upper_u32 (v) == 0xffffdead);
++ VERIFY(__ev_get_lower_u32 (v) == 0xffffdead);
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_lhhossplat_intrinsic, "__ev_lhhossplat");
++
++int __ev_lhhossplatx_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  uint16_t s = 0xdead;
++  __ev64_opaque__ v;
++
++ v = __ev_lhhossplatx (&s, 0);
++ VERIFY(__ev_get_upper_u32 (v) == 0xffffdead);
++ VERIFY(__ev_get_lower_u32 (v) == 0xffffdead);
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_lhhossplatx_intrinsic, "__ev_lhhossplatx");
++
++int __ev_lhhousplat_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  uint16_t s = 0xdead;
++  __ev64_opaque__ v;
++
++ v = __ev_lhhousplat (&s, 0);
++ VERIFY(__ev_get_upper_u32 (v) == 0x0000dead);
++ VERIFY(__ev_get_lower_u32 (v) == 0x0000dead);
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_lhhousplat_intrinsic, "__ev_lhhousplat");
++
++int __ev_lhhousplatx_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  uint16_t s = 0xdead;
++  __ev64_opaque__ v;
++
++ v = __ev_lhhousplatx (&s, 0);
++ VERIFY(__ev_get_upper_u32 (v) == 0x0000dead);
++ VERIFY(__ev_get_lower_u32 (v) == 0x0000dead);
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_lhhousplatx_intrinsic, "__ev_lhhousplatx");
++
++int __ev_lwhsplat_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  uint32_t n = 0xdeadbeef;
++  __ev64_opaque__ v;
++  v = __ev_lwhsplat (&n, 0);
++ VERIFY(__ev_get_upper_u32 (v) == 0xdeaddead);
++ VERIFY(__ev_get_lower_u32 (v) == 0xbeefbeef);
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_lwhsplat_intrinsic, "__ev_lwhsplat");
++
++int __ev_lwhsplatx_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  uint32_t n = 0xdeadbeef, k = 0;
++  __ev64_opaque__ v;
++  v = __ev_lwhsplatx (&n, k);
++ VERIFY(__ev_get_upper_u32 (v) == 0xdeaddead);
++ VERIFY(__ev_get_lower_u32 (v) == 0xbeefbeef);
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_lwhsplatx_intrinsic, "__ev_lwhsplatx");
++
++int __ev_lwwsplat_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  uint32_t n = 0xdeadbeef;
++  __ev64_opaque__ v;
++  v = __ev_lwwsplat (&n, 0);
++ VERIFY(__ev_get_upper_u32 (v) == 0xdeadbeef);
++ VERIFY(__ev_get_lower_u32 (v) == 0xdeadbeef);
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_lwwsplat_intrinsic, "__ev_lwwsplat");
++
++int __ev_lwwsplatx_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  uint32_t n = 0xdeadbeef, k = 0;
++  __ev64_opaque__ v;
++  v = __ev_lwwsplatx (&n, k);
++ VERIFY(__ev_get_upper_u32 (v) == 0xdeadbeef);
++ VERIFY(__ev_get_lower_u32 (v) == 0xdeadbeef);
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_lwwsplatx_intrinsic, "__ev_lwwsplatx");
++
++int __ev_mergehi_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ vd, va, vb;
++  int i;
++  for (i = 0; i < NELTS(rA1u32); i += 4) {
++    va = __ev_create_u32 (rA1u32[i+0], rA1u32[i+1]);
++    vb = __ev_create_u32 (rA1u32[i+2], rA1u32[i+3]);
++    vd = __ev_mergehi (va, vb);
++    VERIFY(__ev_get_lower_u32 (vd) == __ev_get_upper_u32 (vb));
++    VERIFY(__ev_get_upper_u32 (vd) == __ev_get_upper_u32 (va));
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_mergehi_intrinsic, "__ev_mergehi");
++
++int __ev_mergehilo_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ vd, va, vb;
++  int i;
++  for (i = 0; i < NELTS(rA1u32); i += 4) {
++    va = __ev_create_u32 (rA1u32[i+0], rA1u32[i+1]);
++    vb = __ev_create_u32 (rA1u32[i+2], rA1u32[i+3]);
++    vd = __ev_mergehilo (va, vb);
++    VERIFY(__ev_get_lower_u32 (vd) == __ev_get_lower_u32 (vb));
++    VERIFY(__ev_get_upper_u32 (vd) == __ev_get_upper_u32 (va));
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_mergehilo_intrinsic, "__ev_mergehilo");
++
++int __ev_mergelo_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ vd, va, vb;
++  int i;
++  for (i = 0; i < NELTS(rA1u32); i += 4) {
++    va = __ev_create_u32 (rA1u32[i+0], rA1u32[i+1]);
++    vb = __ev_create_u32 (rA1u32[i+2], rA1u32[i+3]);
++    vd = __ev_mergelo (va, vb);
++    VERIFY(__ev_get_lower_u32 (vd) == __ev_get_lower_u32 (vb));
++    VERIFY(__ev_get_upper_u32 (vd) == __ev_get_lower_u32 (va));
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_mergelo_intrinsic, "__ev_mergelo");
++
++int __ev_mergelohi_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ vd, va, vb;
++  int i;
++  for (i = 0; i < NELTS(rA1u32); i += 4) {
++    va = __ev_create_u32 (rA1u32[i+0], rA1u32[i+1]);
++    vb = __ev_create_u32 (rA1u32[i+2], rA1u32[i+3]);
++    vd = __ev_mergelo (va, vb);
++    vd = __ev_mergelohi (va, vb);
++    VERIFY(__ev_get_lower_u32 (vd) == __ev_get_upper_u32 (vb));
++    VERIFY(__ev_get_upper_u32 (vd) == __ev_get_lower_u32 (va));
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_mergelohi_intrinsic, "__ev_mergelohi");
++
++int __ev_and_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ vd, va, vb;
++  int i;
++  for (i = 0; i < NELTS(rA1u32); i += 4) {
++    va = __ev_create_u32 (rA1u32[i+0], rA1u32[i+1]);
++    vb = __ev_create_u32 (rA1u32[i+2], rA1u32[i+3]);
++    vd = __ev_and (va, vb);
++    VERIFY(__ev_get_upper_u32 (vd) == (rA1u32[i+0] & rA1u32[i+2]));
++    VERIFY(__ev_get_lower_u32 (vd) == (rA1u32[i+1] & rA1u32[i+3]));
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_and_intrinsic, "__ev_and");
++
++int __ev_andc_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ vd, va, vb;
++  int i;
++  for (i = 0; i < NELTS(rA1u32); i += 4) {
++    va = __ev_create_u32 (rA1u32[i+0], rA1u32[i+1]);
++    vb = __ev_create_u32 (rA1u32[i+2], rA1u32[i+3]);
++    vd = __ev_andc (va, vb);
++    VERIFY(__ev_get_upper_u32 (vd) == (rA1u32[i+0] & ~rA1u32[i+2]));
++    VERIFY(__ev_get_lower_u32 (vd) == (rA1u32[i+1] & ~rA1u32[i+3]));
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_andc_intrinsic, "__ev_andc");
++
++int __ev_eqv_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ vd, va, vb;
++  int i;
++  for (i = 0; i < NELTS(rA1u32); i += 4) {
++    va = __ev_create_u32 (rA1u32[i+0], rA1u32[i+1]);
++    vb = __ev_create_u32 (rA1u32[i+2], rA1u32[i+3]);
++    vd = __ev_eqv (va, vb);
++    VERIFY(__ev_get_upper_u32 (vd) == ~(rA1u32[i+0] ^ rA1u32[i+2]));
++    VERIFY(__ev_get_lower_u32 (vd) == ~(rA1u32[i+1] ^ rA1u32[i+3]));
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_eqv_intrinsic, "__ev_eqv");
++
++#if 0 // No such intrinsic
++int __ev_mr_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_mr_intrinsic, "__ev_mr");
++#endif
++
++int __ev_nand_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ vd, va, vb;
++  int i;
++  for (i = 0; i < NELTS(rA1u32); i += 4) {
++    va = __ev_create_u32 (rA1u32[i+0], rA1u32[i+1]);
++    vb = __ev_create_u32 (rA1u32[i+2], rA1u32[i+3]);
++    vd = __ev_nand (va, vb);
++    VERIFY(__ev_get_upper_u32 (vd) == ~(rA1u32[i+0] & rA1u32[i+2]));
++    VERIFY(__ev_get_lower_u32 (vd) == ~(rA1u32[i+1] & rA1u32[i+3]));
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_nand_intrinsic, "__ev_nand");
++
++int __ev_nor_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ vd, va, vb;
++  int i;
++  for (i = 0; i < NELTS(rA1u32); i += 4) {
++    va = __ev_create_u32 (rA1u32[i+0], rA1u32[i+1]);
++    vb = __ev_create_u32 (rA1u32[i+2], rA1u32[i+3]);
++    vd = __ev_nor (va, vb);
++    VERIFY(__ev_get_upper_u32 (vd) == ~(rA1u32[i+0] | rA1u32[i+2]));
++    VERIFY(__ev_get_lower_u32 (vd) == ~(rA1u32[i+1] | rA1u32[i+3]));
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_nor_intrinsic, "__ev_nor");
++
++#if 0 // No such intrinsic
++int __ev_not_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_not_intrinsic, "__ev_not");
++#endif
++
++int __ev_or_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ vd, va, vb;
++  int i;
++  for (i = 0; i < NELTS(rA1u32); i += 4) {
++    va = __ev_create_u32 (rA1u32[i+0], rA1u32[i+1]);
++    vb = __ev_create_u32 (rA1u32[i+2], rA1u32[i+3]);
++    vd = __ev_or (va, vb);
++    VERIFY(__ev_get_upper_u32 (vd) == ((rA1u32[i+0] | rA1u32[i+2])));
++    VERIFY(__ev_get_lower_u32 (vd) == ((rA1u32[i+1] | rA1u32[i+3])));
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_or_intrinsic, "__ev_or");
++
++int __ev_orc_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ vd, va, vb;
++  int i;
++  for (i = 0; i < NELTS(rA1u32); i += 4) {
++    va = __ev_create_u32 (rA1u32[i+0], rA1u32[i+1]);
++    vb = __ev_create_u32 (rA1u32[i+2], rA1u32[i+3]);
++    vd = __ev_orc (va, vb);
++    VERIFY(__ev_get_upper_u32 (vd) == (rA1u32[i+0] | ~rA1u32[i+2]));
++    VERIFY(__ev_get_lower_u32 (vd) == (rA1u32[i+1] | ~rA1u32[i+3]));
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_orc_intrinsic, "__ev_orc");
++
++int __ev_xor_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ vd, va, vb;
++  int i;
++  for (i = 0; i < NELTS(rA1u32); i += 4) {
++    va = __ev_create_u32 (rA1u32[i+0], rA1u32[i+1]);
++    vb = __ev_create_u32 (rA1u32[i+2], rA1u32[i+3]);
++    vd = __ev_xor (va, vb);
++    VERIFY(__ev_get_upper_u32 (vd) == ((rA1u32[i+0] ^ rA1u32[i+2])));
++    VERIFY(__ev_get_lower_u32 (vd) == ((rA1u32[i+1] ^ rA1u32[i+3])));
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_xor_intrinsic, "__ev_xor");
++
++int __ev_rlw_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ vd, va, vb;
++  int i, u, l;
++  for (i = 0; i < NELTS(rA1u32); i += 2) {
++    va = __ev_create_u32 (rA1u32[i+0], rA1u32[i+1]);
++    for (u = 0; u < 32; u++) {
++      for (l = 0; l < 32; l++) {
++        vb = __ev_create_u32 (u, l);
++        vd = __ev_rlw (va, vb);
++        VERIFY(__ev_get_upper_u32 (vd) == rotate_left (__ev_get_upper_u32 (va), __ev_get_upper_u32 (vb)));
++        VERIFY(__ev_get_lower_u32 (vd) == rotate_left (__ev_get_lower_u32 (va), __ev_get_lower_u32 (vb)));
++      }
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_rlw_intrinsic, "__ev_rlw");
++
++int __ev_rlwi_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ vd, va;
++  int i;
++  for (i = 0; i < NELTS(rA1u32); i += 2) {
++    va = __ev_create_u32 (rA1u32[i+0], rA1u32[i+1]);
++#define __EV_RLWI_INTRINSIC(amt)                                         \
++    vd = __ev_rlwi (va, (amt));                                          \
++    VERIFY(__ev_get_upper_u32 (vd) == rotate_left (rA1u32[i+0], (amt))); \
++    VERIFY(__ev_get_lower_u32 (vd) == rotate_left (rA1u32[i+1], (amt)));
++    __EV_RLWI_INTRINSIC(0);
++    __EV_RLWI_INTRINSIC(1);
++    __EV_RLWI_INTRINSIC(2);
++    __EV_RLWI_INTRINSIC(3);
++    __EV_RLWI_INTRINSIC(4);
++    __EV_RLWI_INTRINSIC(5);
++    __EV_RLWI_INTRINSIC(6);
++    __EV_RLWI_INTRINSIC(7);
++    __EV_RLWI_INTRINSIC(8);
++    __EV_RLWI_INTRINSIC(9);
++    __EV_RLWI_INTRINSIC(10);
++    __EV_RLWI_INTRINSIC(11);
++    __EV_RLWI_INTRINSIC(12);
++    __EV_RLWI_INTRINSIC(13);
++    __EV_RLWI_INTRINSIC(14);
++    __EV_RLWI_INTRINSIC(15);
++    __EV_RLWI_INTRINSIC(16);
++    __EV_RLWI_INTRINSIC(17);
++    __EV_RLWI_INTRINSIC(18);
++    __EV_RLWI_INTRINSIC(19);
++    __EV_RLWI_INTRINSIC(10);
++    __EV_RLWI_INTRINSIC(21);
++    __EV_RLWI_INTRINSIC(22);
++    __EV_RLWI_INTRINSIC(23);
++    __EV_RLWI_INTRINSIC(24);
++    __EV_RLWI_INTRINSIC(25);
++    __EV_RLWI_INTRINSIC(26);
++    __EV_RLWI_INTRINSIC(27);
++    __EV_RLWI_INTRINSIC(28);
++    __EV_RLWI_INTRINSIC(29);
++    __EV_RLWI_INTRINSIC(30);
++    __EV_RLWI_INTRINSIC(31);
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_rlwi_intrinsic, "__ev_rlwi");
++
++int __ev_slw_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ vd, va, vb;
++  int i, u, l;
++  for (i = 0; i < NELTS(rA1u32); i += 2) {
++    va = __ev_create_u32 (rA1u32[i+0], rA1u32[i+1]);
++    for (u = 0; u < 64; u++) {
++      for (l = 0; l < 64; l++) {
++        vb = __ev_create_u32 (u, l);
++        vd = __ev_slw (va, vb);
++        VERIFY(__ev_get_upper_u32 (vd) == shift_left (__ev_get_upper_u32 (va), __ev_get_upper_u32 (vb)));
++        VERIFY(__ev_get_lower_u32 (vd) == shift_left (__ev_get_lower_u32 (va), __ev_get_lower_u32 (vb)));
++        VERIFY(__ev_get_upper_u32 (vd) == ((u >= 32) ? 0x0 : __ev_get_upper_u32 (vd)));
++        VERIFY(__ev_get_lower_u32 (vd) == ((l >= 32) ? 0x0 : __ev_get_lower_u32 (vd)));
++      }
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_slw_intrinsic, "__ev_slw");
++
++int __ev_slwi_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ vd, va;
++  int i;
++  for (i = 0; i < NELTS(rA1u32); i += 2) {
++    va = __ev_create_u32 (rA1u32[i+0], rA1u32[i+1]);
++#define __EV_SLWI_INTRINSIC(amt)                                        \
++    vd = __ev_slwi (va, (amt));                                         \
++    VERIFY(__ev_get_upper_u32 (vd) == shift_left (rA1u32[i+0], (amt))); \
++    VERIFY(__ev_get_lower_u32 (vd) == shift_left (rA1u32[i+1], (amt)));
++    __EV_SLWI_INTRINSIC(0);
++    __EV_SLWI_INTRINSIC(1);
++    __EV_SLWI_INTRINSIC(2);
++    __EV_SLWI_INTRINSIC(3);
++    __EV_SLWI_INTRINSIC(4);
++    __EV_SLWI_INTRINSIC(5);
++    __EV_SLWI_INTRINSIC(6);
++    __EV_SLWI_INTRINSIC(7);
++    __EV_SLWI_INTRINSIC(8);
++    __EV_SLWI_INTRINSIC(9);
++    __EV_SLWI_INTRINSIC(10);
++    __EV_SLWI_INTRINSIC(11);
++    __EV_SLWI_INTRINSIC(12);
++    __EV_SLWI_INTRINSIC(13);
++    __EV_SLWI_INTRINSIC(14);
++    __EV_SLWI_INTRINSIC(15);
++    __EV_SLWI_INTRINSIC(16);
++    __EV_SLWI_INTRINSIC(17);
++    __EV_SLWI_INTRINSIC(18);
++    __EV_SLWI_INTRINSIC(19);
++    __EV_SLWI_INTRINSIC(10);
++    __EV_SLWI_INTRINSIC(21);
++    __EV_SLWI_INTRINSIC(22);
++    __EV_SLWI_INTRINSIC(23);
++    __EV_SLWI_INTRINSIC(24);
++    __EV_SLWI_INTRINSIC(25);
++    __EV_SLWI_INTRINSIC(26);
++    __EV_SLWI_INTRINSIC(27);
++    __EV_SLWI_INTRINSIC(28);
++    __EV_SLWI_INTRINSIC(29);
++    __EV_SLWI_INTRINSIC(30);
++    __EV_SLWI_INTRINSIC(31);
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_slwi_intrinsic, "__ev_slwi");
++
++int __ev_srwu_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ vd, va, vb;
++  int i, u, l;
++  for (i = 0; i < NELTS(rA1u32); i += 2) {
++    va = __ev_create_u32 (rA1u32[i+0], rA1u32[i+1]);
++    for (u = 0; u < 64; u++) {
++      for (l = 0; l < 64; l++) {
++        vb = __ev_create_u32 (u, l);
++        vd = __ev_srwu (va, vb);
++        VERIFY(__ev_get_upper_u32 (vd) == shift_rightu (__ev_get_upper_u32 (va), __ev_get_upper_u32 (vb)));
++        VERIFY(__ev_get_lower_u32 (vd) == shift_rightu (__ev_get_lower_u32 (va), __ev_get_lower_u32 (vb)));
++        VERIFY(__ev_get_upper_u32 (vd) == ((u >= 32) ? (0x0) : (__ev_get_upper_u32 (vd))));
++        VERIFY(__ev_get_lower_u32 (vd) == ((l >= 32) ? (0x0) : (__ev_get_lower_u32 (vd))));
++      }
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_srwu_intrinsic, "__ev_srwu");
++
++int __ev_srwiu_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ vd, va;
++  int i;
++  for (i = 0; i < NELTS(rA1u32); i += 2) {
++    va = __ev_create_u32 (rA1u32[i+0], rA1u32[i+1]);
++#define __EV_SRWIU_INTRINSIC(amt)                                          \
++    vd = __ev_srwiu (va, (amt));                                           \
++    VERIFY(__ev_get_upper_u32 (vd) == shift_rightu (rA1u32[i+0], (amt)));  \
++    VERIFY(__ev_get_lower_u32 (vd) == shift_rightu (rA1u32[i+1], (amt)));
++    __EV_SRWIU_INTRINSIC(0);
++    __EV_SRWIU_INTRINSIC(1);
++    __EV_SRWIU_INTRINSIC(2);
++    __EV_SRWIU_INTRINSIC(3);
++    __EV_SRWIU_INTRINSIC(4);
++    __EV_SRWIU_INTRINSIC(5);
++    __EV_SRWIU_INTRINSIC(6);
++    __EV_SRWIU_INTRINSIC(7);
++    __EV_SRWIU_INTRINSIC(8);
++    __EV_SRWIU_INTRINSIC(9);
++    __EV_SRWIU_INTRINSIC(10);
++    __EV_SRWIU_INTRINSIC(11);
++    __EV_SRWIU_INTRINSIC(12);
++    __EV_SRWIU_INTRINSIC(13);
++    __EV_SRWIU_INTRINSIC(14);
++    __EV_SRWIU_INTRINSIC(15);
++    __EV_SRWIU_INTRINSIC(16);
++    __EV_SRWIU_INTRINSIC(17);
++    __EV_SRWIU_INTRINSIC(18);
++    __EV_SRWIU_INTRINSIC(19);
++    __EV_SRWIU_INTRINSIC(10);
++    __EV_SRWIU_INTRINSIC(21);
++    __EV_SRWIU_INTRINSIC(22);
++    __EV_SRWIU_INTRINSIC(23);
++    __EV_SRWIU_INTRINSIC(24);
++    __EV_SRWIU_INTRINSIC(25);
++    __EV_SRWIU_INTRINSIC(26);
++    __EV_SRWIU_INTRINSIC(27);
++    __EV_SRWIU_INTRINSIC(28);
++    __EV_SRWIU_INTRINSIC(29);
++    __EV_SRWIU_INTRINSIC(30);
++    __EV_SRWIU_INTRINSIC(31);
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_srwiu_intrinsic, "__ev_srwiu");
++
++int __ev_srws_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ vd, va, vb;
++  int i, u, l;
++  for (i = 0; i < NELTS(rA1u32); i += 2) {
++    va = __ev_create_s32 (rA1u32[i+0], rA1u32[i+1]);
++    for (u = 0; u < 64; u++) {
++      for (l = 0; l < 64; l++) {
++        vb = __ev_create_u32 (u, l);
++        vd = __ev_srws (va, vb);
++        VERIFY(__ev_get_upper_s32 (vd) == shift_rights (__ev_get_upper_s32 (va), __ev_get_upper_u32 (vb)));
++        VERIFY(__ev_get_lower_s32 (vd) == shift_rights (__ev_get_lower_s32 (va), __ev_get_lower_u32 (vb)));
++        VERIFY(__ev_get_upper_s32 (vd) == ((u >= 32) ? ((__ev_get_upper_s32 (va) < 0) ? 0xffffffff : 0x0) : (__ev_get_upper_s32 (vd))));
++        VERIFY(__ev_get_lower_s32 (vd) == ((l >= 32) ? ((__ev_get_lower_s32 (va) < 0) ? 0xffffffff : 0x0) : (__ev_get_lower_s32 (vd))));
++      }
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_srws_intrinsic, "__ev_srws");
++
++int __ev_srwis_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ vd, va;
++  int i;
++  for (i = 0; i < NELTS(rA1u32); i += 2) {
++    va = __ev_create_s32 (rA1u32[i+0], rA1u32[i+1]);
++#define __EV_SRWIS_INTRINSIC(amt)                                          \
++    vd = __ev_srwis (va, (amt));                                           \
++    VERIFY(__ev_get_upper_s32 (vd) == shift_rights (rA1u32[i+0], (amt)));  \
++    VERIFY(__ev_get_lower_s32 (vd) == shift_rights (rA1u32[i+1], (amt)));
++    __EV_SRWIS_INTRINSIC(0);
++    __EV_SRWIS_INTRINSIC(1);
++    __EV_SRWIS_INTRINSIC(2);
++    __EV_SRWIS_INTRINSIC(3);
++    __EV_SRWIS_INTRINSIC(4);
++    __EV_SRWIS_INTRINSIC(5);
++    __EV_SRWIS_INTRINSIC(6);
++    __EV_SRWIS_INTRINSIC(7);
++    __EV_SRWIS_INTRINSIC(8);
++    __EV_SRWIS_INTRINSIC(9);
++    __EV_SRWIS_INTRINSIC(10);
++    __EV_SRWIS_INTRINSIC(11);
++    __EV_SRWIS_INTRINSIC(12);
++    __EV_SRWIS_INTRINSIC(13);
++    __EV_SRWIS_INTRINSIC(14);
++    __EV_SRWIS_INTRINSIC(15);
++    __EV_SRWIS_INTRINSIC(16);
++    __EV_SRWIS_INTRINSIC(17);
++    __EV_SRWIS_INTRINSIC(18);
++    __EV_SRWIS_INTRINSIC(19);
++    __EV_SRWIS_INTRINSIC(10);
++    __EV_SRWIS_INTRINSIC(21);
++    __EV_SRWIS_INTRINSIC(22);
++    __EV_SRWIS_INTRINSIC(23);
++    __EV_SRWIS_INTRINSIC(24);
++    __EV_SRWIS_INTRINSIC(25);
++    __EV_SRWIS_INTRINSIC(26);
++    __EV_SRWIS_INTRINSIC(27);
++    __EV_SRWIS_INTRINSIC(28);
++    __EV_SRWIS_INTRINSIC(29);
++    __EV_SRWIS_INTRINSIC(30);
++    __EV_SRWIS_INTRINSIC(31);
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_srwis_intrinsic, "__ev_srwis");
++
+ /* NOTE: To avoid having to remaster the .exp files entirely, add
+  *       new test functions /just above/ this comment.
+  *       That way, you only need to worry about the test that you
+@@ -4621,6 +5893,77 @@ test_t pool_demo_table = {
+   }
+ };
+ 
++test_t chapter3_spe2pim_intrinsics_tests_table = {
++
++  .type = table,
++  .description = "Chapter 3: SPE2 Operations",
++  .table = {
++    F(__ev_ldd_intrinsic),
++    F(__ev_stdd_intrinsic),
++    F(__ev_lddx_intrinsic),
++    F(__ev_stddx_intrinsic),
++    F(__ev_ldh_intrinsic),
++    F(__ev_stdh_intrinsic),
++    F(__ev_ldhx_intrinsic),
++    F(__ev_stdhx_intrinsic),
++    F(__ev_ldw_intrinsic),
++    F(__ev_stdw_intrinsic),
++    F(__ev_ldwx_intrinsic),
++    F(__ev_stdwx_intrinsic),
++    F(__ev_lwhe_intrinsic),
++    F(__ev_stwhe_intrinsic),
++    F(__ev_lwhex_intrinsic),
++    F(__ev_stwhex_intrinsic),
++    F(__ev_lwhos_intrinsic),
++    F(__ev_lwhosx_intrinsic),
++    F(__ev_lwhou_intrinsic),
++    F(__ev_lwhoux_intrinsic),
++    F(__ev_stwho_intrinsic),
++    F(__ev_stwhox_intrinsic),
++    F(__ev_stwwe_intrinsic),
++    F(__ev_stwwex_intrinsic),
++    F(__ev_stwwo_intrinsic),
++    F(__ev_stwwox_intrinsic),
++    F(__ev_lhhesplat_intrinsic),
++    F(__ev_lhhesplatx_intrinsic),
++    F(__ev_lhhossplat_intrinsic),
++    F(__ev_lhhossplatx_intrinsic),
++    F(__ev_lhhousplat_intrinsic),
++    F(__ev_lhhousplatx_intrinsic),
++    F(__ev_lwhsplat_intrinsic),
++    F(__ev_lwhsplatx_intrinsic),
++    F(__ev_lwwsplat_intrinsic),
++    F(__ev_lwwsplatx_intrinsic),
++    F(__ev_mergehi_intrinsic),
++    F(__ev_mergehilo_intrinsic),
++    F(__ev_mergelo_intrinsic),
++    F(__ev_mergelohi_intrinsic),
++    F(__ev_and_intrinsic),
++    F(__ev_andc_intrinsic),
++    F(__ev_eqv_intrinsic),
++#if 0 // No such intrinsic
++    F(__ev_mr_intrinsic),
++#endif
++    F(__ev_nand_intrinsic),
++    F(__ev_nor_intrinsic),
++#if 0 // No such intrinsic
++    F(__ev_not_intrinsic),
++#endif
++    F(__ev_or_intrinsic),
++    F(__ev_orc_intrinsic),
++    F(__ev_xor_intrinsic),
++    F(__ev_rlw_intrinsic),
++    F(__ev_rlwi_intrinsic),
++    F(__ev_slw_intrinsic),
++    F(__ev_slwi_intrinsic),
++    F(__ev_srwu_intrinsic),
++    F(__ev_srwiu_intrinsic),
++    F(__ev_srws_intrinsic),
++    F(__ev_srwis_intrinsic),
++    NULL
++  }
++};
++
+ test_t spe2pim_tests_table = {
+ 
+   /* Enhanced Signal Processing Extension and
+@@ -4637,6 +5980,7 @@ test_t spe2pim_tests_table = {
+     F(chapter2_spe2pim),
+     F(chapter5_spe2pim),
+     F(chapter4_spe2pim),
++    &chapter3_spe2pim_intrinsics_tests_table,
+     NULL
+   }
+ };
+diff --git a/memcheck/tests/ppc32/test_spe.stderr.exp b/memcheck/tests/ppc32/test_spe.stderr.exp
+index aecee58..87f4c78 100644
+--- a/memcheck/tests/ppc32/test_spe.stderr.exp
++++ b/memcheck/tests/ppc32/test_spe.stderr.exp
+@@ -5,7 +5,7 @@ Invalid write of size 4
+    by 0x........: run (test_spe.h:42)
+    by 0x........: run (test_spe.h:48)
+    by 0x........: run (test_spe.h:48)
+-   by 0x........: main (test_spe.c:4685)
++   by 0x........: main (test_spe.c:6029)
+  Address 0x........ is 0 bytes after a block of size 40 alloc'd
+    at 0x........: malloc (vg_replace_malloc.c:...)
+    by 0x........: vg_quick_start_guide_aux (test_spe.c:26)
+@@ -13,7 +13,7 @@ Invalid write of size 4
+    by 0x........: run (test_spe.h:42)
+    by 0x........: run (test_spe.h:48)
+    by 0x........: run (test_spe.h:48)
+-   by 0x........: main (test_spe.c:4685)
++   by 0x........: main (test_spe.c:6029)
+ 
+ 
+ HEAP SUMMARY:
+@@ -27,7 +27,7 @@ HEAP SUMMARY:
+    by 0x........: run (test_spe.h:42)
+    by 0x........: run (test_spe.h:48)
+    by 0x........: run (test_spe.h:48)
+-   by 0x........: main (test_spe.c:4685)
++   by 0x........: main (test_spe.c:6029)
+ 
+ LEAK SUMMARY:
+    definitely lost: 40 bytes in 1 blocks
+diff --git a/memcheck/tests/ppc32/test_spe.stdout.exp b/memcheck/tests/ppc32/test_spe.stdout.exp
+index 33201ad..5bf07b5 100644
+--- a/memcheck/tests/ppc32/test_spe.stdout.exp
++++ b/memcheck/tests/ppc32/test_spe.stdout.exp
+@@ -79,6 +79,63 @@ SPE Regression Tests: PASS
+ ...Chapter 2: High-Level Language Interface: PASS
+ ...Chapter 5: Programming Interface Examples: PASS
+ ...Chapter 4: Additional Operations: PASS
++...Chapter 3: SPE2 Operations: PASS
++....__ev_ldd: PASS
++....__ev_stdd: PASS
++....__ev_lddx: PASS
++....__ev_stddx: PASS
++....__ev_ldh: PASS
++....__ev_stdh: PASS
++....__ev_ldhx: PASS
++....__ev_stdhx: PASS
++....__ev_ldw: PASS
++....__ev_stdw: PASS
++....__ev_ldwx: PASS
++....__ev_stdwx: PASS
++....__ev_lwhe: PASS
++....__ev_stwhe: PASS
++....__ev_lwhex: PASS
++....__ev_stwhex: PASS
++....__ev_lwhos: PASS
++....__ev_lwhosx: PASS
++....__ev_lwhou: PASS
++....__ev_lwhoux: PASS
++....__ev_stwho: PASS
++....__ev_stwhox: PASS
++....__ev_stwwe: PASS
++....__ev_stwwex: PASS
++....__ev_stwwo: PASS
++....__ev_stwwox: PASS
++....__ev_lhhesplat: PASS
++....__ev_lhhesplatx: PASS
++....__ev_lhhossplat: PASS
++....__ev_lhhossplatx: PASS
++....__ev_lhhousplat: PASS
++....__ev_lhhousplatx: PASS
++....__ev_lwhsplat: PASS
++....__ev_lwhsplatx: PASS
++....__ev_lwwsplat: PASS
++....__ev_lwwsplatx: PASS
++....__ev_mergehi: PASS
++....__ev_mergehilo: PASS
++....__ev_mergelo: PASS
++....__ev_mergelohi: PASS
++....__ev_and: PASS
++....__ev_andc: PASS
++....__ev_eqv: PASS
++....__ev_nand: PASS
++....__ev_nor: PASS
++....__ev_or: PASS
++....__ev_orc: PASS
++....__ev_xor: PASS
++....__ev_rlw: PASS
++....__ev_rlwi: PASS
++....__ev_slw: PASS
++....__ev_slwi: PASS
++....__ev_srwu: PASS
++....__ev_srwiu: PASS
++....__ev_srws: PASS
++....__ev_srwis: PASS
+ ..SPE ISA Miscellaneous Tests: PASS
+ ...Memory transfer using evldd-evstdd: PASS
+ ...Value pool demo: PASS
+diff --git a/regtest-power7-64.log b/regtest-power7-64.log
+index c21e8e7..fb0e635 100644
+--- a/regtest-power7-64.log
++++ b/regtest-power7-64.log
+@@ -461,7 +461,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -gdwarf-4 -fdebug-types-section -Wno-long-lo
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests'
+-make[5]: Warning: File `.deps/xml1.Po' has modification time 69 s in the future
++make[5]: Warning: File `.deps/xml1.Po' has modification time 64 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1158,7 +1158,7 @@ gcc -Winline -Wall -Wshadow -g -m32 -Winline -Wall -O -lm -g -mregnames -DHAS_DF
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc32'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc32'
+-make[5]: Warning: File `.deps/xlc_dbl_u32.Po' has modification time 71 s in the future
++make[5]: Warning: File `.deps/xlc_dbl_u32.Po' has modification time 70 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1418,7 +1418,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/helgrind/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/helgrind/tests'
+-make[4]: Warning: File `.deps/tc24_nonzero_sem.Po' has modification time 73 s in the future
++make[4]: Warning: File `.deps/tc24_nonzero_sem.Po' has modification time 72 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1980,7 +1980,7 @@ badfree-2trace:  valgrind   --num-callers=2 -q ./badfree
+ badfree:         valgrind   -q ./badfree 
+ badfree3:        valgrind   -q --fullpath-after=/proj/ppc/DT/labhome/anmol/valgrind-3.8.1/ ./badfree 
+ badjump:         valgrind   ./badjump 
+-sh: line 1:   562 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
++sh: line 1: 29570 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
+ badjump2:        valgrind   -q ./badjump2 
+ badloop:         valgrind   -q ./badloop 
+ badpoll:         valgrind   -q ./badpoll 
+@@ -1997,7 +1997,7 @@ clo_redzone_default: valgrind   --leak-check=no -q ./clo_redzone
+ custom-overlap:  valgrind   --leak-check=summary -q ./custom-overlap 
+ custom_alloc:    valgrind   -q ./custom_alloc 
+ deep-backtrace:  valgrind   -q --num-callers=500 ./deep-backtrace 
+-sh: line 1:  1241 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
++sh: line 1: 30129 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
+ deep_templates:  valgrind   -q ./deep_templates 
+ describe-block:  valgrind   ./describe-block 
+ doublefree:      valgrind   -q ./doublefree 
+@@ -2110,7 +2110,7 @@ supp-dir:        valgrind   --suppressions=x86/ ./../../tests/true
+ supp1:           valgrind   --suppressions=supp.supp -q ./supp1 
+ supp2:           valgrind   --suppressions=supp.supp -q ./supp2 
+ supp_unknown:    valgrind   -q --suppressions=supp_unknown.supp ./badjump 
+-sh: line 1:  5947 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
++sh: line 1:  2490 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
+ *** supp_unknown failed (stderr) ***
+ suppfree:        valgrind   --suppressions=suppfree.supp -q ./suppfree 
+ test-plo-no:     valgrind   -q ./test-plo 
+@@ -2246,7 +2246,7 @@ gxx304:          valgrind   ./gxx304
+ ifunc:           (skipping, prereq failed: test -e ifunc)
+ -- Running  tests in none/tests/linux ----------------------------------
+ blockfault:      valgrind   ./blockfault 
+-sh: line 1: 10490 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
++sh: line 1:  6975 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
+ mremap:          valgrind   ./mremap 
+ mremap2:         valgrind   ./mremap2 
+ mremap3:         valgrind   ./mremap3 
+@@ -2412,7 +2412,7 @@ tc20_verifywrap: valgrind   --read-var-info=yes ./tc20_verifywrap
+ *** tc20_verifywrap failed (stderr) ***
+ tc21_pthonce:    valgrind   --read-var-info=yes ./tc21_pthonce 
+ tc22_exit_w_lock: valgrind   ./tc22_exit_w_lock 
+-sh: line 1: 27912 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1: 24464 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   ./tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --hg-sanity-flags=111111 ./tc24_nonzero_sem 
+ -- Finished tests in helgrind/tests ------------------------------------
+@@ -2531,7 +2531,7 @@ tc18_semabuse:   valgrind   ./../../helgrind/tests/tc18_semabuse
+ tc19_shadowmem:  valgrind   --error-limit=no --read-var-info=yes --show-confl-seg=no --num-callers=3 ./../../helgrind/tests/tc19_shadowmem 
+ tc21_pthonce:    valgrind   --num-callers=3 ./../../helgrind/tests/tc21_pthonce 
+ tc22_exit_w_lock: valgrind   --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock 
+-sh: line 1:   823 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1: 29808 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   --num-callers=3 ./../../helgrind/tests/tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --read-var-info=yes ./../../helgrind/tests/tc24_nonzero_sem 
+ thread_name:     valgrind   --read-var-info=yes --check-stack-var=yes --num-callers=3 ./thread_name 
+-- 
+1.7.3.4
+

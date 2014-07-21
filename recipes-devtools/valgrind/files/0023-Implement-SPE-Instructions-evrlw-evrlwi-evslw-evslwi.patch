@@ -1,0 +1,902 @@
+From 47572d403b7c61f1f253144f1b880bf5e85e5b99 Mon Sep 17 00:00:00 2001
+From: Anmol P. Paralkar <anmol@freescale.com>
+Date: Mon, 11 Feb 2013 13:43:21 -0800
+Subject: [PATCH 23/65] Implement SPE Instructions: { evrlw, evrlwi, evslw, evslwi, evsrwu, evsrwiu, evsrws, evsrwis }.
+
+---
+ VEX/priv/guest_ppc_toIR.c                |  213 +++++++++++++++++
+ memcheck/tests/ppc32/test_spe.c          |  373 ++++++++++++++++++++++++++++++
+ memcheck/tests/ppc32/test_spe.stderr.exp |    6 +-
+ memcheck/tests/ppc32/test_spe.stdout.exp |    9 +
+ regtest-power7-64.log                    |   44 ++--
+ 5 files changed, 620 insertions(+), 25 deletions(-)
+
+diff --git a/VEX/priv/guest_ppc_toIR.c b/VEX/priv/guest_ppc_toIR.c
+index 4c9bcad..62395fe 100644
+--- a/VEX/priv/guest_ppc_toIR.c
++++ b/VEX/priv/guest_ppc_toIR.c
+@@ -12455,6 +12455,208 @@ static Bool dis_spe_merge ( UInt theInstr )
+    }
+    return True;
+ }
++
++/*
++ * SPE Shift/Rotate Instructions
++ */
++static IRExpr* spe_evsrws ( IRExpr* src,
++                            IRExpr* amt )
++{
++  IRTemp d0 = newTemp( Ity_I64 );
++  IRTemp w0 = newTemp( Ity_I32 );
++  IRTemp w1 = newTemp( Ity_I32 );
++  IRTemp w2 = newTemp( Ity_I32 );
++  IRTemp c0 = newTemp( Ity_I1 );
++  IRTemp w4 = newTemp( Ity_I32 );
++  IRTemp w5 = newTemp( Ity_I32 );
++  IRTemp b0 = newTemp( Ity_I8 );
++
++  assign( d0, unop( Iop_32Sto64, src ) );
++  assign( w0, unop( Iop_64HIto32,
++                    mkexpr ( d0 ) ) );
++  assign( w1, binop( Iop_Shr32,
++                     mkexpr ( w0 ),
++                     amt ) );
++  assign( w2, unop( Iop_Not32,
++                    mkexpr ( w1 ) ) );
++  assign( c0, binop( Iop_CmpEQ32,
++                      mkexpr ( w0 ),
++                      mkU32 ( 0xffffffff ) ) );
++  assign( b0, unop( Iop_1Uto8,
++                    mkexpr ( c0 ) ) );
++  assign( w4, IRExpr_Mux0X ( mkexpr ( b0 ),
++                             mkU32 ( 0x0 ),
++                             mkexpr ( w2 ) ) );
++  assign( w5, binop( Iop_Shr32, src, amt ) );
++  return binop( Iop_Or32,
++                mkexpr ( w4 ),
++                mkexpr ( w5 ) );
++}
++
++static IRExpr* spe_shift_amount ( IRExpr* src,
++                                  IRExpr* msk )
++{
++  return binop( Iop_And8,
++                unop( Iop_32to8,
++                      src ),
++                msk );
++}
++
++static Bool dis_spe_shift_rotate ( UInt theInstr )
++{
++   /* EVX-Form */
++   UChar opc1    = evxOpcode( theInstr );
++   UInt  opc2    = evxXO( theInstr );
++   UChar rD_addr = evxRD( theInstr );
++   UChar rA_addr = evxRA( theInstr );
++   UChar rB_addr = evxRB( theInstr );
++   UChar uimm    = evxRB( theInstr );
++
++   IRTemp rA = newTemp( Ity_I64 );
++   IRTemp rB = newTemp( Ity_I64 );
++
++   IRTemp rAU  = newTemp( Ity_I32 );
++   IRTemp rAL  = newTemp( Ity_I32 );
++   IRTemp rBU  = newTemp( Ity_I32 );
++   IRTemp rBL  = newTemp( Ity_I32 );
++   IRTemp rDU  = newTemp( Ity_I32 );
++   IRTemp rDL  = newTemp( Ity_I32 );
++
++   IRTemp rD = newTemp( Ity_I64 );
++
++   if (opc1 != 0x4) {
++      vex_printf( "dis_spe_shift_rotate(ppc)(opc1 != 0x4)\n" );
++      return False;
++   }
++   switch (opc2) {
++   case 0x220:
++      // evsrwu (Vector Shift Right Word Unsigned, SPEPEM p5-227)
++      DIP( "evsrwu r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++      break;
++   case 0x221:
++      // evsrws (Vector Shift Right Word Signed, SPEPEM p5-226)
++      DIP( "evsrws r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++      break;
++   case 0x222:
++      // evsrwiu (Vector Shift Right Word Immediate Unsigned, SPEPEM p5-225)
++      DIP( "evsrwiu r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++      break;
++   case 0x223:
++      // evsrwis (Vector Shift Right Word Immediate Signed, SPEPEM p5-224)
++      DIP( "evsrwis r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++      break;
++   case 0x224:
++      // evslw (Vector Shift Left Word, SPEPEM p5-220)
++      DIP( "evslw r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++      break;
++   case 0x226:
++      // evslwi (Vector Shift Left Word Immediate, SPEPEM p5-221)
++      DIP( "evslwi r%d, r%d, %d\n", rD_addr, rA_addr, uimm );
++      break;
++   case 0x228:
++      // evrlw (Vector Rotate Left Word, SPEPEM p5-216)
++      DIP( "evrlw r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++      break;
++   case 0x22a:
++      // evrlwi (Vector Rotate Left Word Immediate, SPEPEM p5-217)
++      DIP( "evrlwi r%d, r%d, %d\n", rD_addr, rA_addr, uimm );
++      break;
++   default:
++      return False;
++   }
++
++   assign ( rA, getSPEReg( rA_addr ) );
++   assign ( rB, getSPEReg( rB_addr ) );
++
++   assign ( rAL, unop( Iop_64to32,
++                       mkexpr ( rA ) ) );
++   assign ( rAU, unop( Iop_64HIto32,
++                       mkexpr ( rA ) ) );
++   assign ( rBL, unop( Iop_64to32,
++                       mkexpr ( rB ) ) );
++   assign ( rBU, unop( Iop_64HIto32,
++                       mkexpr ( rB ) ) );
++
++   switch (opc2) {
++   case 0x220: // evsrwu
++
++      assign( rDL, binop( Iop_Shr32,
++                          mkexpr ( rAL ),
++                          spe_shift_amount ( mkexpr ( rBL ),
++                                             mkU8   ( 0x3f ) ) ) );
++      assign( rDU, binop( Iop_Shr32,
++                          mkexpr ( rAU ),
++                          spe_shift_amount ( mkexpr ( rBU ),
++                                             mkU8   ( 0x3f ) ) ) );
++      break;
++   case 0x221: // evsrws
++
++      assign( rDL, spe_evsrws ( mkexpr ( rAL ),
++                                spe_shift_amount ( mkexpr ( rBL ),
++                                                   mkU8   ( 0x3f ) ) ) );
++      assign( rDU, spe_evsrws ( mkexpr ( rAU ),
++                                spe_shift_amount ( mkexpr ( rBU ),
++                                                   mkU8   ( 0x3f ) ) ) );
++      break;
++   case 0x222: // evsrwiu
++      assign( rDL, binop( Iop_Shr32,
++                          mkexpr ( rAL ),
++                          mkU8 ( uimm ) ) );
++      assign( rDU, binop( Iop_Shr32,
++                          mkexpr ( rAU ),
++                          mkU8 ( uimm ) ) );
++      break;
++   case 0x223: // evsrwis
++      assign( rDL, spe_evsrws ( mkexpr ( rAL ),
++                                mkU8 ( uimm ) ) );
++      assign( rDU, spe_evsrws ( mkexpr ( rAU ),
++                                mkU8 ( uimm ) ) );
++      break;
++   case 0x224: // evslw
++      assign( rDL, binop( Iop_Shl32,
++                          mkexpr ( rAL ),
++                          spe_shift_amount ( mkexpr ( rBL ),
++                                             mkU8   ( 0x3f ) ) ) );
++      assign( rDU, binop( Iop_Shl32,
++                          mkexpr ( rAU ),
++                          spe_shift_amount ( mkexpr ( rBU ),
++                                             mkU8   ( 0x3f ) ) ) );
++      break;
++   case 0x226: // evslwi
++      assign( rDL, binop( Iop_Shl32,
++                          mkexpr ( rAL ),
++                          mkU8 ( uimm ) ) );
++      assign( rDU, binop( Iop_Shl32,
++                          mkexpr ( rAU ),
++                          mkU8 ( uimm ) ) );
++      break;
++   case 0x228: // evrlw
++      assign( rDL, ROTL( mkexpr ( rAL ),
++                         spe_shift_amount ( mkexpr ( rBL ),
++                                            mkU8   ( 0x1f ) ) ) );
++      assign( rDU, ROTL( mkexpr ( rAU ),
++                         spe_shift_amount ( mkexpr ( rBU ),
++                                            mkU8   ( 0x1f ) ) ) );
++      break;
++   case 0x22a: // evrlwi
++      assign( rDL, ROTL( mkexpr ( rAL ),
++                         mkU8 ( uimm ) ) );
++      assign( rDU, ROTL( mkexpr ( rAU ),
++                         mkU8 ( uimm ) ) );
++      break;
++   default:
++      return False;
++   }
++
++   assign ( rD, binop( Iop_32HLto64,
++                       mkexpr ( rDU ),
++                       mkexpr ( rDL ) ) );
++
++   putSPEReg( rD_addr, mkexpr ( rD ) );
++
++   return True;
++}
++
+ /*------------------------------------------------------------*/
+ /*--- AltiVec Instruction Translation                      ---*/
+ /*------------------------------------------------------------*/
+@@ -18496,6 +18698,17 @@ DisResult disInstr_PPC_WRK (
+          if (!allow_SPE) goto decode_noSPE;
+          if (dis_spe_bitwise( theInstr )) goto decode_success;
+          goto decode_failure;
++      case 0x220: // evsrwu
++      case 0x221: // evsrws
++      case 0x222: // evsrwiu
++      case 0x223: // evsrwis
++      case 0x224: // evslw
++      case 0x226: // evslwi
++      case 0x228: // evrlw
++      case 0x22a: // evrlwi
++         if (!allow_SPE) goto decode_noSPE;
++         if (dis_spe_shift_rotate( theInstr )) goto decode_success;
++         goto decode_failure;
+       default:
+          vex_printf("disInstr_PPC_WRK (ppc): unhandled SPE instruction: "
+                     "0x%x\n", theInstr);
+diff --git a/memcheck/tests/ppc32/test_spe.c b/memcheck/tests/ppc32/test_spe.c
+index e16180e..c8669d4 100644
+--- a/memcheck/tests/ppc32/test_spe.c
++++ b/memcheck/tests/ppc32/test_spe.c
+@@ -3110,6 +3110,359 @@ int evorc_asm(void)
+ }
+ TEST_SPE_DECL(evorc_asm, "evorc");
+ 
++/* Rotate x left by amount n */
++static inline unsigned int rotate_left(unsigned int x, unsigned int n)
++{
++  unsigned int length = sizeof (n) << 3;
++  unsigned int mask = ((0x1 << n) - 1);
++  unsigned int top_n = x & (mask << (length - n));
++  unsigned int displaced_part = (top_n) >> (length - n);
++  return (x << n) | displaced_part;
++}
++
++int evrlw_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_u32__ regA asm ("30");
++  register __ev64_u32__ regB asm ("29");
++  register __ev64_u32__ regD asm ("28");
++  int i, upper_amount, lower_amount;
++
++  for (i = 0; i < NELTS(rA2u32); i++) {
++
++    regA = rA2u32[i];
++    for (upper_amount = 0; upper_amount < 32; upper_amount++) {
++      for (lower_amount = 0; lower_amount < 32; lower_amount++) {
++        regB = (__ev64_u32__) { upper_amount, lower_amount };
++        asm volatile ("evrlw %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++        VERIFY(regD[0] == rotate_left (regA[0], upper_amount));
++        VERIFY(regD[1] == rotate_left (regA[1], lower_amount));
++      }
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evrlw_asm, "evrlw");
++
++int evrlwi_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_u32__ regA asm ("30");
++  register __ev64_u32__ regD asm ("29");
++  int i;
++
++#define EVRLWI(rotate_amount)                                                               \
++    asm volatile ("evrlwi %[d], %[a], " #rotate_amount : [d] "=r" (regD) : [a] "r" (regA)); \
++    VERIFY(regD[0] == rotate_left (regA[0], rotate_amount));                                \
++    VERIFY(regD[1] == rotate_left (regA[1], rotate_amount));
++
++  for (i = 0; i < NELTS(rA2u32); i++) {
++    regA = rA2u32[i];
++    EVRLWI(0);
++    EVRLWI(1);
++    EVRLWI(2);
++    EVRLWI(3);
++    EVRLWI(4);
++    EVRLWI(5);
++    EVRLWI(6);
++    EVRLWI(7);
++    EVRLWI(8);
++    EVRLWI(9);
++    EVRLWI(10);
++    EVRLWI(11);
++    EVRLWI(12);
++    EVRLWI(13);
++    EVRLWI(14);
++    EVRLWI(15);
++    EVRLWI(16);
++    EVRLWI(17);
++    EVRLWI(18);
++    EVRLWI(19);
++    EVRLWI(10);
++    EVRLWI(21);
++    EVRLWI(22);
++    EVRLWI(23);
++    EVRLWI(24);
++    EVRLWI(25);
++    EVRLWI(26);
++    EVRLWI(27);
++    EVRLWI(28);
++    EVRLWI(29);
++    EVRLWI(30);
++    EVRLWI(31);
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evrlwi_asm, "evrlwi");
++
++/* Shift x left by amount n */
++static inline unsigned int shift_left(unsigned int x, unsigned int n)
++{
++  return x << n;
++}
++
++int evslw_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_u32__ regA asm ("30");
++  register __ev64_u32__ regB asm ("29");
++  register __ev64_u32__ regD asm ("28");
++
++  int i, upper_amount, lower_amount;
++
++  for (i = 0; i < NELTS(rA2u32); i++) {
++
++    regA = rA2u32[i];
++    for (upper_amount = 0; upper_amount < 64; upper_amount++) {
++      for (lower_amount = 0; lower_amount < 64; lower_amount++) {
++        regB = (__ev64_u32__) { upper_amount, lower_amount };
++        asm volatile ("evslw %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++        VERIFY(regD[0] == (shift_left (regA[0], upper_amount)));
++        VERIFY(regD[1] == (shift_left (regA[1], lower_amount)));
++        VERIFY(regD[0] == ((upper_amount >= 32) ? 0x0 : regD[0]));
++        VERIFY(regD[1] == ((lower_amount >= 32) ? 0x0 : regD[1]));
++      }
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evslw_asm, "evslw");
++
++int evslwi_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_u32__ regA asm ("30");
++  register __ev64_u32__ regD asm ("29");
++  int i;
++
++#define EVSLWI(shift_amount)                                                               \
++    asm volatile ("evslwi %[d], %[a], " #shift_amount : [d] "=r" (regD) : [a] "r" (regA)); \
++    VERIFY(regD[0] == shift_left (regA[0], shift_amount));                                 \
++    VERIFY(regD[1] == shift_left (regA[1], shift_amount));
++
++  for (i = 0; i < NELTS(rA2u32); i++) {
++    regA = rA2u32[i];
++    EVSLWI(0);
++    EVSLWI(1);
++    EVSLWI(2);
++    EVSLWI(3);
++    EVSLWI(4);
++    EVSLWI(5);
++    EVSLWI(6);
++    EVSLWI(7);
++    EVSLWI(8);
++    EVSLWI(9);
++    EVSLWI(10);
++    EVSLWI(11);
++    EVSLWI(12);
++    EVSLWI(13);
++    EVSLWI(14);
++    EVSLWI(15);
++    EVSLWI(16);
++    EVSLWI(17);
++    EVSLWI(18);
++    EVSLWI(19);
++    EVSLWI(20);
++    EVSLWI(21);
++    EVSLWI(22);
++    EVSLWI(23);
++    EVSLWI(24);
++    EVSLWI(25);
++    EVSLWI(26);
++    EVSLWI(27);
++    EVSLWI(28);
++    EVSLWI(29);
++    EVSLWI(30);
++    EVSLWI(31);
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evslwi_asm, "evslwi");
++
++/* Shift x right unsigned by amount n */
++static inline unsigned int shift_rightu(unsigned int x, unsigned int n)
++{
++  return x >> n;
++}
++
++int evsrwu_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_u32__ regA asm ("30");
++  register __ev64_u32__ regB asm ("29");
++  register __ev64_u32__ regD asm ("28");
++
++  int i, upper_amount, lower_amount;
++
++  for (i = 0; i < NELTS(rA2u32); i++) {
++
++    regA = rA2u32[i];
++    for (upper_amount = 0; upper_amount < 64; upper_amount++) {
++      for (lower_amount = 0; lower_amount < 64; lower_amount++) {
++        regB = (__ev64_u32__) { upper_amount, lower_amount };
++        asm volatile ("evsrwu %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++        VERIFY(regD[0] == (shift_rightu (regA[0], upper_amount)));
++        VERIFY(regD[1] == (shift_rightu (regA[1], lower_amount)));
++        VERIFY(regD[0] == ((upper_amount >= 32) ? 0x0 : regD[0]));
++        VERIFY(regD[1] == ((lower_amount >= 32) ? 0x0 : regD[1]));
++      }
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evsrwu_asm, "evsrwu");
++
++int evsrwiu_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_u32__ regA asm ("30");
++  register __ev64_u32__ regD asm ("29");
++  int i;
++
++#define EVSRWIU(shift_amount)                                                                 \
++    asm volatile ("evsrwiu %[d], %[a], " #shift_amount : [d] "=r" (regD) : [a] "r" (regA));  \
++    VERIFY(regD[0] == shift_rightu (regA[0], shift_amount));                                 \
++    VERIFY(regD[1] == shift_rightu (regA[1], shift_amount));
++
++  for (i = 0; i < NELTS(rA2u32); i++) {
++    regA = rA2u32[i];
++    EVSRWIU(0);
++    EVSRWIU(1);
++    EVSRWIU(2);
++    EVSRWIU(3);
++    EVSRWIU(4);
++    EVSRWIU(5);
++    EVSRWIU(6);
++    EVSRWIU(7);
++    EVSRWIU(8);
++    EVSRWIU(9);
++    EVSRWIU(10);
++    EVSRWIU(11);
++    EVSRWIU(12);
++    EVSRWIU(13);
++    EVSRWIU(14);
++    EVSRWIU(15);
++    EVSRWIU(16);
++    EVSRWIU(17);
++    EVSRWIU(18);
++    EVSRWIU(19);
++    EVSRWIU(20);
++    EVSRWIU(21);
++    EVSRWIU(22);
++    EVSRWIU(23);
++    EVSRWIU(24);
++    EVSRWIU(25);
++    EVSRWIU(26);
++    EVSRWIU(27);
++    EVSRWIU(28);
++    EVSRWIU(29);
++    EVSRWIU(30);
++    EVSRWIU(31);
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evsrwiu_asm, "evsrwiu");
++
++/* Shift x right signed by amount n */
++static inline signed int shift_rights(signed int x, unsigned int n)
++{
++  return x >> n;
++}
++
++int evsrws_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_s32__ regA asm ("30");
++  register __ev64_s32__ regB asm ("29");
++  register __ev64_s32__ regD asm ("28");
++
++  int i, upper_amount, lower_amount;
++
++  for (i = 0; i < NELTS(rA2s32); i++) {
++
++    regA = rA2s32[i];
++    for (upper_amount = 0; upper_amount < 64; upper_amount++) {
++      for (lower_amount = 0; lower_amount < 64; lower_amount++) {
++        regB = (__ev64_s32__) { upper_amount, lower_amount };
++        asm volatile ("evsrws %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++        VERIFY(regD[0] == (shift_rights (regA[0], upper_amount)));
++        VERIFY(regD[1] == (shift_rights (regA[1], lower_amount)));
++        VERIFY(regD[0] == ((upper_amount >= 32) ? ((regA[0] < 0) ? 0xffffffff : 0x0) : regD[0]));
++        VERIFY(regD[1] == ((lower_amount >= 32) ? ((regA[1] < 0) ? 0xffffffff : 0x0) : regD[1]));
++      }
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evsrws_asm, "evsrws");
++
++int evsrwis_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_s32__ regA asm ("30");
++  register __ev64_s32__ regD asm ("29");
++  int i;
++
++#define EVSRWIS(shift_amount)                                                               \
++    asm volatile ("evsrwis %[d], %[a], " #shift_amount : [d] "=r" (regD) : [a] "r" (regA)); \
++    VERIFY(regD[0] == shift_rights (regA[0], shift_amount));                                \
++    VERIFY(regD[1] == shift_rights (regA[1], shift_amount));
++
++  for (i = 0; i < NELTS(rA2s32); i++) {
++    regA = rA2s32[i];
++    EVSRWIS(0);
++    EVSRWIS(1);
++    EVSRWIS(2);
++    EVSRWIS(3);
++    EVSRWIS(4);
++    EVSRWIS(5);
++    EVSRWIS(6);
++    EVSRWIS(7);
++    EVSRWIS(8);
++    EVSRWIS(9);
++    EVSRWIS(10);
++    EVSRWIS(11);
++    EVSRWIS(12);
++    EVSRWIS(13);
++    EVSRWIS(14);
++    EVSRWIS(15);
++    EVSRWIS(16);
++    EVSRWIS(17);
++    EVSRWIS(18);
++    EVSRWIS(19);
++    EVSRWIS(20);
++    EVSRWIS(21);
++    EVSRWIS(22);
++    EVSRWIS(23);
++    EVSRWIS(24);
++    EVSRWIS(25);
++    EVSRWIS(26);
++    EVSRWIS(27);
++    EVSRWIS(28);
++    EVSRWIS(29);
++    EVSRWIS(30);
++    EVSRWIS(31);
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evsrwis_asm, "evsrwis");
++
+ /* NOTE: To avoid having to remaster the .exp files entirely, add
+  *       new test functions /just above/ this comment.
+  *       That way, you only need to worry about the test that you
+@@ -3225,6 +3578,23 @@ test_t spe_isa_merge_insns_test_table = {
+   }
+ };
+ 
++test_t spe_isa_shift_rotate_insns_test_table = {
++
++  .type = table,
++  .description = "SPE ISA Shift/Rotate Instructions Tests",
++  .table = {
++    F(evrlw_asm),
++    F(evrlwi_asm),
++    F(evslw_asm),
++    F(evslwi_asm),
++    F(evsrwu_asm),
++    F(evsrwiu_asm),
++    F(evsrws_asm),
++    F(evsrwis_asm),
++    NULL
++  }
++};
++
+ test_t spe_isa_insn_test_table = {
+ 
+   .type = table,
+@@ -3233,6 +3603,7 @@ test_t spe_isa_insn_test_table = {
+     &spe_isa_load_store_test_table,
+     &spe_isa_bitwise_operators_test_table,
+     &spe_isa_merge_insns_test_table,
++    &spe_isa_shift_rotate_insns_test_table,
+     NULL
+   }
+ };
+@@ -3312,3 +3683,5 @@ int main(void)
+ // 11. Make each test allocate (and deallocate!) it's own memory, so that in a minimal sense, we are testing memcheck.
+ //     (Use the pre-populated arrays as master inout data, replicating them as necessary).
+ // 12. register __ev64_u16__ vec asm ("29"); // Why does this test fail if we use __ev64_s16__?
++// 13. Add a category of tests: Trivial meaning - easy to verify - e.g. slwi (14, 1) == 28, etc.
++// 14. Add option to run just one test.
+diff --git a/memcheck/tests/ppc32/test_spe.stderr.exp b/memcheck/tests/ppc32/test_spe.stderr.exp
+index 169747e..adf4fdc 100644
+--- a/memcheck/tests/ppc32/test_spe.stderr.exp
++++ b/memcheck/tests/ppc32/test_spe.stderr.exp
+@@ -5,7 +5,7 @@ Invalid write of size 4
+    by 0x........: run (test_spe.h:42)
+    by 0x........: run (test_spe.h:48)
+    by 0x........: run (test_spe.h:48)
+-   by 0x........: main (test_spe.c:3295)
++   by 0x........: main (test_spe.c:3666)
+  Address 0x........ is 0 bytes after a block of size 40 alloc'd
+    at 0x........: malloc (vg_replace_malloc.c:...)
+    by 0x........: vg_quick_start_guide_aux (test_spe.c:26)
+@@ -13,7 +13,7 @@ Invalid write of size 4
+    by 0x........: run (test_spe.h:42)
+    by 0x........: run (test_spe.h:48)
+    by 0x........: run (test_spe.h:48)
+-   by 0x........: main (test_spe.c:3295)
++   by 0x........: main (test_spe.c:3666)
+ 
+ 
+ HEAP SUMMARY:
+@@ -27,7 +27,7 @@ HEAP SUMMARY:
+    by 0x........: run (test_spe.h:42)
+    by 0x........: run (test_spe.h:48)
+    by 0x........: run (test_spe.h:48)
+-   by 0x........: main (test_spe.c:3295)
++   by 0x........: main (test_spe.c:3666)
+ 
+ LEAK SUMMARY:
+    definitely lost: 40 bytes in 1 blocks
+diff --git a/memcheck/tests/ppc32/test_spe.stdout.exp b/memcheck/tests/ppc32/test_spe.stdout.exp
+index f1dd397..4037c13 100644
+--- a/memcheck/tests/ppc32/test_spe.stdout.exp
++++ b/memcheck/tests/ppc32/test_spe.stdout.exp
+@@ -66,6 +66,15 @@ SPE Regression Tests: PASS
+ ....evmergehilo: PASS
+ ....evmergelo: PASS
+ ....evmergelohi: PASS
++...SPE ISA Shift/Rotate Instructions Tests: PASS
++....evrlw: PASS
++....evrlwi: PASS
++....evslw: PASS
++....evslwi: PASS
++....evsrwu: PASS
++....evsrwiu: PASS
++....evsrws: PASS
++....evsrwis: PASS
+ ..SPE ISA Miscellaneous Tests: PASS
+ ...Memory transfer using evldd-evstdd: PASS
+ ...Value pool demo: PASS
+diff --git a/regtest-power7-64.log b/regtest-power7-64.log
+index 94291b8..067c7e2 100644
+--- a/regtest-power7-64.log
++++ b/regtest-power7-64.log
+@@ -484,7 +484,7 @@ gcc -Winline -Wall -Wshadow -g -Wno-long-long  -Wno-pointer-sign -fno-stack-prot
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/ppc32'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/ppc32'
+-make[5]: Warning: File `.deps/test_spe.Po' has modification time 72 s in the future
++make[5]: Warning: File `.deps/test_spe.Po' has modification time 73 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -504,7 +504,7 @@ gcc -Winline -Wall -Wshadow -g  -Winline -Wall -Wshadow -g -I../../../include -m
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/ppc64'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/ppc64'
+-make[5]: Warning: File `.deps/power_ISA2_05-power_ISA2_05.Po' has modification time 72 s in the future
++make[5]: Warning: File `.deps/power_ISA2_05-power_ISA2_05.Po' has modification time 73 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -551,7 +551,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/linux'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/linux'
+-make[5]: Warning: File `.deps/timerfd-syscall.Po' has modification time 72 s in the future
++make[5]: Warning: File `.deps/timerfd-syscall.Po' has modification time 73 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -605,7 +605,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -fPIC -Wno-long-long  -Wno-pointer-sign -fno
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/cachegrind/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/cachegrind/tests'
+-make[5]: Warning: File `.deps/myprint_so-myprint.Po' has modification time 72 s in the future
++make[5]: Warning: File `.deps/myprint_so-myprint.Po' has modification time 73 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -656,7 +656,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/callgrind/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/callgrind/tests'
+-make[5]: Warning: File `.deps/threads.Po' has modification time 72 s in the future
++make[5]: Warning: File `.deps/threads.Po' has modification time 73 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -764,7 +764,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/massif/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/massif/tests'
+-make[4]: Warning: File `.deps/zero.Po' has modification time 72 s in the future
++make[4]: Warning: File `.deps/zero.Po' has modification time 73 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1066,7 +1066,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests'
+-make[5]: Warning: File `.deps/vgprintf.Po' has modification time 71 s in the future
++make[5]: Warning: File `.deps/vgprintf.Po' has modification time 72 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1158,7 +1158,7 @@ gcc -Winline -Wall -Wshadow -g -m32 -Winline -Wall -O -lm -g -mregnames -DHAS_DF
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc32'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc32'
+-make[5]: Warning: File `.deps/xlc_dbl_u32.Po' has modification time 69 s in the future
++make[5]: Warning: File `.deps/xlc_dbl_u32.Po' has modification time 70 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1226,7 +1226,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Winline -Wall -O -lm -g -mregnames -DHAS_DF
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc64'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc64'
+-make[5]: Warning: File `.deps/twi_tdi.Po' has modification time 69 s in the future
++make[5]: Warning: File `.deps/twi_tdi.Po' has modification time 70 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1255,7 +1255,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/linux'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/linux'
+-make[5]: Warning: File `.deps/mremap3.Po' has modification time 72 s in the future
++make[5]: Warning: File `.deps/mremap3.Po' has modification time 73 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1418,7 +1418,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/helgrind/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/helgrind/tests'
+-make[4]: Warning: File `.deps/tc24_nonzero_sem.Po' has modification time 71 s in the future
++make[4]: Warning: File `.deps/tc24_nonzero_sem.Po' has modification time 72 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1628,7 +1628,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wextra -Wno-inline -Wno-unused-parameter -W
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/drd/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/drd/tests'
+-make[4]: Warning: File `.deps/unit_vc-unit_vc.Po' has modification time 66 s in the future
++make[4]: Warning: File `.deps/unit_vc-unit_vc.Po' has modification time 67 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1689,7 +1689,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-sgcheck/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-sgcheck/tests'
+-make[4]: Warning: File `.deps/stackerr.Po' has modification time 72 s in the future
++make[4]: Warning: File `.deps/stackerr.Po' has modification time 73 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1759,7 +1759,7 @@ gcc -Winline -Wall -Wshadow -g -Wno-long-long  -Wno-pointer-sign -fno-stack-prot
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-bbv/tests/ppc32-linux'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-bbv/tests/ppc32-linux'
+-make[5]: Warning: File `.deps/million.Po' has modification time 72 s in the future
++make[5]: Warning: File `.deps/million.Po' has modification time 73 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1819,7 +1819,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[3]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/tests'
+ make  check-local
+ make[3]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/tests'
+-make[3]: Warning: File `.deps/x86_amd64_features-x86_amd64_features.Po' has modification time 72 s in the future
++make[3]: Warning: File `.deps/x86_amd64_features-x86_amd64_features.Po' has modification time 73 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1901,7 +1901,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[3]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/gdbserver_tests'
+ make  check-local
+ make[3]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/gdbserver_tests'
+-make[3]: Warning: File `.deps/watchpoints.Po' has modification time 72 s in the future
++make[3]: Warning: File `.deps/watchpoints.Po' has modification time 73 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1980,7 +1980,7 @@ badfree-2trace:  valgrind   --num-callers=2 -q ./badfree
+ badfree:         valgrind   -q ./badfree 
+ badfree3:        valgrind   -q --fullpath-after=/proj/ppc/DT/labhome/anmol/valgrind-3.8.1/ ./badfree 
+ badjump:         valgrind   ./badjump 
+-sh: line 1:  8513 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
++sh: line 1: 23894 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
+ badjump2:        valgrind   -q ./badjump2 
+ badloop:         valgrind   -q ./badloop 
+ badpoll:         valgrind   -q ./badpoll 
+@@ -1997,7 +1997,7 @@ clo_redzone_default: valgrind   --leak-check=no -q ./clo_redzone
+ custom-overlap:  valgrind   --leak-check=summary -q ./custom-overlap 
+ custom_alloc:    valgrind   -q ./custom_alloc 
+ deep-backtrace:  valgrind   -q --num-callers=500 ./deep-backtrace 
+-sh: line 1:  9073 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
++sh: line 1: 24453 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
+ deep_templates:  valgrind   -q ./deep_templates 
+ describe-block:  valgrind   ./describe-block 
+ doublefree:      valgrind   -q ./doublefree 
+@@ -2110,7 +2110,7 @@ supp-dir:        valgrind   --suppressions=x86/ ./../../tests/true
+ supp1:           valgrind   --suppressions=supp.supp -q ./supp1 
+ supp2:           valgrind   --suppressions=supp.supp -q ./supp2 
+ supp_unknown:    valgrind   -q --suppressions=supp_unknown.supp ./badjump 
+-sh: line 1: 13806 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
++sh: line 1: 29142 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
+ *** supp_unknown failed (stderr) ***
+ suppfree:        valgrind   --suppressions=suppfree.supp -q ./suppfree 
+ test-plo-no:     valgrind   -q ./test-plo 
+@@ -2246,7 +2246,7 @@ gxx304:          valgrind   ./gxx304
+ ifunc:           (skipping, prereq failed: test -e ifunc)
+ -- Running  tests in none/tests/linux ----------------------------------
+ blockfault:      valgrind   ./blockfault 
+-sh: line 1: 18281 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
++sh: line 1:  1282 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
+ mremap:          valgrind   ./mremap 
+ mremap2:         valgrind   ./mremap2 
+ mremap3:         valgrind   ./mremap3 
+@@ -2412,7 +2412,7 @@ tc20_verifywrap: valgrind   --read-var-info=yes ./tc20_verifywrap
+ *** tc20_verifywrap failed (stderr) ***
+ tc21_pthonce:    valgrind   --read-var-info=yes ./tc21_pthonce 
+ tc22_exit_w_lock: valgrind   ./tc22_exit_w_lock 
+-sh: line 1:  3381 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1: 18772 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   ./tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --hg-sanity-flags=111111 ./tc24_nonzero_sem 
+ -- Finished tests in helgrind/tests ------------------------------------
+@@ -2531,7 +2531,7 @@ tc18_semabuse:   valgrind   ./../../helgrind/tests/tc18_semabuse
+ tc19_shadowmem:  valgrind   --error-limit=no --read-var-info=yes --show-confl-seg=no --num-callers=3 ./../../helgrind/tests/tc19_shadowmem 
+ tc21_pthonce:    valgrind   --num-callers=3 ./../../helgrind/tests/tc21_pthonce 
+ tc22_exit_w_lock: valgrind   --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock 
+-sh: line 1:  8734 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1: 24122 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   --num-callers=3 ./../../helgrind/tests/tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --read-var-info=yes ./../../helgrind/tests/tc24_nonzero_sem 
+ thread_name:     valgrind   --read-var-info=yes --check-stack-var=yes --num-callers=3 ./thread_name 
+-- 
+1.7.3.4
+

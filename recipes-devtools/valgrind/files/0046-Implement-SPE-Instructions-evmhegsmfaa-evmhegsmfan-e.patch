@@ -1,0 +1,2041 @@
+From c31e5fb96179807408f56bc32fac83428b142914 Mon Sep 17 00:00:00 2001
+From: Anmol P. Paralkar <anmol@freescale.com>
+Date: Thu, 4 Apr 2013 13:44:38 -0700
+Subject: [PATCH 46/65] Implement SPE Instructions: { evmhegsmfaa, evmhegsmfan, evmhogsmfaa, evmhogsmfan }.
+
+---
+ FSL-SPE-README.txt                       |    8 +-
+ VEX/priv/guest_ppc_defs.h                |   20 +
+ VEX/priv/guest_ppc_helpers.c             |  188 +++++
+ VEX/priv/guest_ppc_toIR.c                |  128 ++++
+ memcheck/tests/ppc32/test_spe.c          | 1216 ++++++++++++++++++++++++++++++
+ memcheck/tests/ppc32/test_spe.stderr.exp |   54 +-
+ memcheck/tests/ppc32/test_spe.stdout.exp |    4 +
+ regtest-power7-64.log                    |   26 +-
+ 8 files changed, 1602 insertions(+), 42 deletions(-)
+
+diff --git a/FSL-SPE-README.txt b/FSL-SPE-README.txt
+index 6760303..6e6c331 100644
+--- a/FSL-SPE-README.txt
++++ b/FSL-SPE-README.txt
+@@ -67,6 +67,10 @@
+  evmwhsmfa, evmhosmf, evmhosmfa, evmhosmfaaw, evmhosmfanw, evmhesmf, evmhesmfa,
+  evmhesmfaaw, evmhesmfanw
+ 
++ New instructions implemented since last drop:
++
++ evmhegsmfaa, evmhegsmfan, evmhogsmfaa, evmhogsmfan,
++
+  Note: Synthetic instructions appear prefixed with a leading underscore in the
+        above list. All synthetic instructions are tested as working under
+        Valgrind even though, strictly speaking, such an instruction is not
+@@ -87,9 +91,9 @@
+  evfscfsf, evfscfsi, evfscfuf, evfscfui, evfscmpeq, evfscmpgt, evfscmplt,
+  evfsctsf, evfsctsi, evfsctsiz, evfsctuf, evfsctui, evfsctuiz, evfsdiv,
+  evfsmul, evfsnabs, evfsneg, evfssub, evfststeq, evfststgt, evfststlt,
+- evmhegsmfaa, evmhegsmfan, evmhegsmiaa, evmhegsmian, evmhegumiaa, evmhegumian,
++ evmhegsmiaa, evmhegsmian, evmhegumiaa, evmhegumian,
+  evmhessf, evmhessfa, evmhessfaaw, evmhessfanw, evmhessiaaw, evmhessianw,
+- evmheusiaaw, evmheusianw, evmhogsmfaa, evmhogsmfan, evmhogsmiaa, evmhogsmian,
++ evmheusiaaw, evmheusianw, evmhogsmiaa, evmhogsmian,
+  evmhogumiaa, evmhogumian, evmhossf, evmhossfa, evmhossfaaw, evmhossfanw,
+  evmhossiaaw, evmhossianw, evmhousiaaw, evmhousianw, evmwhsmi, evmwhsmia,
+  evmwhssf, evmwhssfa, evmwhumi, evmwhumia, evmwlssiaaw, evmwlssianw,
+diff --git a/VEX/priv/guest_ppc_defs.h b/VEX/priv/guest_ppc_defs.h
+index 9581447..2aba8e9 100644
+--- a/VEX/priv/guest_ppc_defs.h
++++ b/VEX/priv/guest_ppc_defs.h
+@@ -223,6 +223,26 @@ extern void spe_dirtyhelper_evmhesmf ( VexGuestPPC32State* gst,
+                                        UInt rD_off,
+                                        UInt rA_off,
+                                        UInt rB_off);
++extern void spe_dirtyhelper_evmhogsmfan ( VexGuestPPC32State* gst,
++                                          UInt ACC_off,
++                                          UInt rD_off,
++                                          UInt rA_off,
++                                          UInt rB_off);
++extern void spe_dirtyhelper_evmhogsmfaa ( VexGuestPPC32State* gst,
++                                          UInt ACC_off,
++                                          UInt rD_off,
++                                          UInt rA_off,
++                                          UInt rB_off);
++extern void spe_dirtyhelper_evmhegsmfan ( VexGuestPPC32State* gst,
++                                          UInt ACC_off,
++                                          UInt rD_off,
++                                          UInt rA_off,
++                                          UInt rB_off);
++extern void spe_dirtyhelper_evmhegsmfaa ( VexGuestPPC32State* gst,
++                                          UInt ACC_off,
++                                          UInt rD_off,
++                                          UInt rA_off,
++                                          UInt rB_off);
+ 
+ #endif /* ndef __VEX_GUEST_PPC_DEFS_H */
+ 
+diff --git a/VEX/priv/guest_ppc_helpers.c b/VEX/priv/guest_ppc_helpers.c
+index a3ea92d..a3697d8 100644
+--- a/VEX/priv/guest_ppc_helpers.c
++++ b/VEX/priv/guest_ppc_helpers.c
+@@ -835,6 +835,194 @@ void spe_dirtyhelper_evmhesmf ( VexGuestPPC32State* gst,
+   return;
+ }
+ 
++/* CALLED FROM GENERATED CODE */
++/* DIRTY HELPER (reads guest state, writes guest state) */
++void spe_dirtyhelper_evmhogsmfan ( VexGuestPPC32State* gst,
++                                   UInt ACC_off,
++                                   UInt rD_off,
++                                   UInt rA_off,
++                                   UInt rB_off)
++{
++#ifdef __SPE__
++
++  // evmhogsmfan (Vector Multiply Half Words, Odd, Guarded, Signed, Modulo, Fractional
++  // and Accumulate Negative, SPEPEM p5-161)
++
++  register __ev64_opaque__ rA  asm ("29");
++  register __ev64_opaque__ rB  asm ("28");
++  register __ev64_opaque__ rD  asm ("27");
++  register __ev64_opaque__ ACC asm ("26");
++
++  vassert(ACC_off <= sizeof(VexGuestPPC32State) - sizeof(ULong));
++  vassert(rD_off  <= sizeof(VexGuestPPC32State) - 2 * sizeof(UInt));
++  vassert(rA_off  <= sizeof(VexGuestPPC32State) - 2 * sizeof(UInt));
++  vassert(rB_off  <= sizeof(VexGuestPPC32State) - 2 * sizeof(UInt));
++
++  // Read ACC, rA, rB from the Guest State:
++  ACC = __ev_create_s64 (*((Long *) ((UChar *) gst + ACC_off)));
++  rA  = __ev_create_s64 (*((Long *) ((UChar *) gst + rA_off)));
++  rB  = __ev_create_s64 (*((Long *) ((UChar *) gst + rB_off)));
++
++  // Since evmhogsmfan reads the ACC, get the guest state ACC value into
++  // the hard ACC:
++  asm volatile ("evmra %[d], %[acc]" : [d] "=r" (rD) : [acc] "r" (ACC));
++
++  // rD[0:63] <- ACC[0:63] - EXTS (rA[48:63] Xsf rB[48:63])
++  // (hard) ACC[0:63] <- rD[0:63]
++  asm volatile ("evmhogsmfan %[d], %[a], %[b]" : [d] "=r" (rD) : [a] "r" (rA), [b] "r" (rB));
++
++  // Write rD to the Guest State:
++  *((Long *) ((UChar *) gst + rD_off)) = __ev_convert_s64 (rD);
++
++  // ACC[00:63] <- rD[0:63]
++  ACC = rD;
++  // Write ACC to the Guest State:
++  *((Long *) ((UChar *) gst + ACC_off)) = __ev_convert_s64 (ACC);
++#endif // __SPE__
++  return;
++}
++
++/* CALLED FROM GENERATED CODE */
++/* DIRTY HELPER (reads guest state, writes guest state) */
++void spe_dirtyhelper_evmhogsmfaa ( VexGuestPPC32State* gst,
++                                   UInt ACC_off,
++                                   UInt rD_off,
++                                   UInt rA_off,
++                                   UInt rB_off)
++{
++#ifdef __SPE__
++
++  // evmhogsmfaa (Vector Multiply Half Words, Odd, Guarded, Signed, Modulo, Fractional
++  // and Accumulate, SPEPEM p5-160)
++
++  register __ev64_opaque__ rA  asm ("29");
++  register __ev64_opaque__ rB  asm ("28");
++  register __ev64_opaque__ rD  asm ("27");
++  register __ev64_opaque__ ACC asm ("26");
++
++  vassert(ACC_off <= sizeof(VexGuestPPC32State) - sizeof(ULong));
++  vassert(rD_off  <= sizeof(VexGuestPPC32State) - 2 * sizeof(UInt));
++  vassert(rA_off  <= sizeof(VexGuestPPC32State) - 2 * sizeof(UInt));
++  vassert(rB_off  <= sizeof(VexGuestPPC32State) - 2 * sizeof(UInt));
++
++  // Read ACC, rA, rB from the Guest State:
++  ACC = __ev_create_s64 (*((Long *) ((UChar *) gst + ACC_off)));
++  rA  = __ev_create_s64 (*((Long *) ((UChar *) gst + rA_off)));
++  rB  = __ev_create_s64 (*((Long *) ((UChar *) gst + rB_off)));
++
++  // Since evmhogsmfaa reads the ACC, get the guest state ACC value into
++  // the hard ACC:
++  asm volatile ("evmra %[d], %[acc]" : [d] "=r" (rD) : [acc] "r" (ACC));
++
++  // rD[0:63] <- ACC[0:63] + EXTS (rA[48:63] Xsf rB[48:63])
++  // (hard) ACC[0:63] <- rD[0:63]
++  asm volatile ("evmhogsmfaa %[d], %[a], %[b]" : [d] "=r" (rD) : [a] "r" (rA), [b] "r" (rB));
++
++  // Write rD to the Guest State:
++  *((Long *) ((UChar *) gst + rD_off)) = __ev_convert_s64 (rD);
++
++  // ACC[00:63] <- rD[0:63]
++  ACC = rD;
++  // Write ACC to the Guest State:
++  *((Long *) ((UChar *) gst + ACC_off)) = __ev_convert_s64 (ACC);
++#endif // __SPE__
++  return;
++}
++
++/* CALLED FROM GENERATED CODE */
++/* DIRTY HELPER (reads guest state, writes guest state) */
++void spe_dirtyhelper_evmhegsmfan ( VexGuestPPC32State* gst,
++                                   UInt ACC_off,
++                                   UInt rD_off,
++                                   UInt rA_off,
++                                   UInt rB_off)
++{
++#ifdef __SPE__
++
++  // evmhegsmfan (Vector Multiply Half Words, Even, Guarded, Signed, Modulo, Fractional
++  // and Accumulate Negative, SPEPEM p5-139)
++
++  register __ev64_opaque__ rA  asm ("29");
++  register __ev64_opaque__ rB  asm ("28");
++  register __ev64_opaque__ rD  asm ("27");
++  register __ev64_opaque__ ACC asm ("26");
++
++  vassert(ACC_off <= sizeof(VexGuestPPC32State) - sizeof(ULong));
++  vassert(rD_off  <= sizeof(VexGuestPPC32State) - 2 * sizeof(UInt));
++  vassert(rA_off  <= sizeof(VexGuestPPC32State) - 2 * sizeof(UInt));
++  vassert(rB_off  <= sizeof(VexGuestPPC32State) - 2 * sizeof(UInt));
++
++  // Read ACC, rA, rB from the Guest State:
++  ACC = __ev_create_s64 (*((Long *) ((UChar *) gst + ACC_off)));
++  rA  = __ev_create_s64 (*((Long *) ((UChar *) gst + rA_off)));
++  rB  = __ev_create_s64 (*((Long *) ((UChar *) gst + rB_off)));
++
++  // Since evmhegsmfan reads the ACC, get the guest state ACC value into
++  // the hard ACC:
++  asm volatile ("evmra %[d], %[acc]" : [d] "=r" (rD) : [acc] "r" (ACC));
++
++  // rD[0:63] <- ACC[0:63] - EXTS (rA[48:63] Xsf rB[48:63])
++  // (hard) ACC[0:63] <- rD[0:63]
++  asm volatile ("evmhegsmfan %[d], %[a], %[b]" : [d] "=r" (rD) : [a] "r" (rA), [b] "r" (rB));
++
++  // Write rD to the Guest State:
++  *((Long *) ((UChar *) gst + rD_off)) = __ev_convert_s64 (rD);
++
++  // ACC[00:63] <- rD[0:63]
++  ACC = rD;
++  // Write ACC to the Guest State:
++  *((Long *) ((UChar *) gst + ACC_off)) = __ev_convert_s64 (ACC);
++#endif // __SPE__
++  return;
++}
++
++/* CALLED FROM GENERATED CODE */
++/* DIRTY HELPER (reads guest state, writes guest state) */
++void spe_dirtyhelper_evmhegsmfaa ( VexGuestPPC32State* gst,
++                                   UInt ACC_off,
++                                   UInt rD_off,
++                                   UInt rA_off,
++                                   UInt rB_off)
++{
++#ifdef __SPE__
++
++  // evmhegsmfaa (Vector Multiply Half Words, Even, Guarded, Signed, Modulo, Fractional
++  // and Accumulate, SPEPEM p5-138)
++
++  register __ev64_opaque__ rA  asm ("29");
++  register __ev64_opaque__ rB  asm ("28");
++  register __ev64_opaque__ rD  asm ("27");
++  register __ev64_opaque__ ACC asm ("26");
++
++  vassert(ACC_off <= sizeof(VexGuestPPC32State) - sizeof(ULong));
++  vassert(rD_off  <= sizeof(VexGuestPPC32State) - 2 * sizeof(UInt));
++  vassert(rA_off  <= sizeof(VexGuestPPC32State) - 2 * sizeof(UInt));
++  vassert(rB_off  <= sizeof(VexGuestPPC32State) - 2 * sizeof(UInt));
++
++  // Read ACC, rA, rB from the Guest State:
++  ACC = __ev_create_s64 (*((Long *) ((UChar *) gst + ACC_off)));
++  rA  = __ev_create_s64 (*((Long *) ((UChar *) gst + rA_off)));
++  rB  = __ev_create_s64 (*((Long *) ((UChar *) gst + rB_off)));
++
++  // Since evmhegsmfaa reads the ACC, get the guest state ACC value into
++  // the hard ACC:
++  asm volatile ("evmra %[d], %[acc]" : [d] "=r" (rD) : [acc] "r" (ACC));
++
++  // rD[0:63] <- ACC[0:63] + EXTS (rA[48:63] Xsf rB[48:63])
++  // (hard) ACC[0:63] <- rD[0:63]
++  asm volatile ("evmhegsmfaa %[d], %[a], %[b]" : [d] "=r" (rD) : [a] "r" (rA), [b] "r" (rB));
++
++  // Write rD to the Guest State:
++  *((Long *) ((UChar *) gst + rD_off)) = __ev_convert_s64 (rD);
++
++  // ACC[00:63] <- rD[0:63]
++  ACC = rD;
++  // Write ACC to the Guest State:
++  *((Long *) ((UChar *) gst + ACC_off)) = __ev_convert_s64 (ACC);
++#endif // __SPE__
++  return;
++}
++
+ /*----------------------------------------------*/
+ /*--- The exported fns ..                    ---*/
+ /*----------------------------------------------*/
+diff --git a/VEX/priv/guest_ppc_toIR.c b/VEX/priv/guest_ppc_toIR.c
+index c1df7d7..9d29bef 100644
+--- a/VEX/priv/guest_ppc_toIR.c
++++ b/VEX/priv/guest_ppc_toIR.c
+@@ -14605,6 +14605,130 @@ static Bool dis_spe_ACC_based_fractional_multiply_insns ( UInt theInstr )
+      /* execute the dirty call, side-effecting guest state */
+      stmt( IRStmt_Dirty(d) );
+      break;
++  case 0x52b:
++     // evmhegsmfaa (Vector Multiply Half Words, Even, Guarded, Signed, Modulo, Fractional and Accumulate, SPEPEM p5-138)
++     args = mkIRExprVec_4 ( mkU32( ACC_off ),
++                            mkU32( rD_off ),
++                            mkU32( rA_off ),
++                            mkU32( rB_off ) );
++     d = unsafeIRDirty_0_N (0 /* regparms */,
++                            "spe_dirtyhelper_evmhegsmfaa",
++                            &spe_dirtyhelper_evmhegsmfaa,
++                            args);
++     DIP( "evmhegsmfaa r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     /* declare guest state effects */
++     d->needsBBP = True;
++     d->nFxState = 4;
++     vex_bzero(&d->fxState, sizeof(d->fxState));
++     d->fxState[0].fx     = Ifx_Modify;
++     d->fxState[0].offset = ACC_off;
++     d->fxState[0].size   = sizeof(ULong);
++     d->fxState[1].fx     = Ifx_Write;
++     d->fxState[1].offset = rD_off;
++     d->fxState[1].size   = 2 * sizeof(UInt);
++     d->fxState[2].fx     = Ifx_Read;
++     d->fxState[2].offset = rA_off;
++     d->fxState[2].size   = 2 * sizeof(UInt);
++     d->fxState[3].fx     = Ifx_Read;
++     d->fxState[3].offset = rB_off;
++     d->fxState[3].size   = 2 * sizeof(UInt);
++
++     /* execute the dirty call, side-effecting guest state */
++     stmt( IRStmt_Dirty(d) );
++     break;
++  case 0x5ab:
++     // evmhegsmfan (Vector Multiply Half Words, Even, Guarded, Signed, Modulo, Fractional and Accumulate Negative, SPEPEM p5-139)
++     args = mkIRExprVec_4 ( mkU32( ACC_off ),
++                            mkU32( rD_off ),
++                            mkU32( rA_off ),
++                            mkU32( rB_off ) );
++     d = unsafeIRDirty_0_N (0 /* regparms */,
++                            "spe_dirtyhelper_evmhegsmfan",
++                            &spe_dirtyhelper_evmhegsmfan,
++                            args);
++     DIP( "evmhegsmfan r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     /* declare guest state effects */
++     d->needsBBP = True;
++     d->nFxState = 4;
++     vex_bzero(&d->fxState, sizeof(d->fxState));
++     d->fxState[0].fx     = Ifx_Modify;
++     d->fxState[0].offset = ACC_off;
++     d->fxState[0].size   = sizeof(ULong);
++     d->fxState[1].fx     = Ifx_Write;
++     d->fxState[1].offset = rD_off;
++     d->fxState[1].size   = 2 * sizeof(UInt);
++     d->fxState[2].fx     = Ifx_Read;
++     d->fxState[2].offset = rA_off;
++     d->fxState[2].size   = 2 * sizeof(UInt);
++     d->fxState[3].fx     = Ifx_Read;
++     d->fxState[3].offset = rB_off;
++     d->fxState[3].size   = 2 * sizeof(UInt);
++
++     /* execute the dirty call, side-effecting guest state */
++     stmt( IRStmt_Dirty(d) );
++     break;
++  case 0x52f:
++     // evmhogsmfaa (Vector Multiply Half Words, Odd, Guarded, Signed, Modulo, Fractional and Accumulate, SPEPEM p5-160)
++     args = mkIRExprVec_4 ( mkU32( ACC_off ),
++                            mkU32( rD_off ),
++                            mkU32( rA_off ),
++                            mkU32( rB_off ) );
++     d = unsafeIRDirty_0_N (0 /* regparms */,
++                            "spe_dirtyhelper_evmhogsmfaa",
++                            &spe_dirtyhelper_evmhogsmfaa,
++                            args);
++     DIP( "evmhogsmfaa r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     /* declare guest state effects */
++     d->needsBBP = True;
++     d->nFxState = 4;
++     vex_bzero(&d->fxState, sizeof(d->fxState));
++     d->fxState[0].fx     = Ifx_Modify;
++     d->fxState[0].offset = ACC_off;
++     d->fxState[0].size   = sizeof(ULong);
++     d->fxState[1].fx     = Ifx_Write;
++     d->fxState[1].offset = rD_off;
++     d->fxState[1].size   = 2 * sizeof(UInt);
++     d->fxState[2].fx     = Ifx_Read;
++     d->fxState[2].offset = rA_off;
++     d->fxState[2].size   = 2 * sizeof(UInt);
++     d->fxState[3].fx     = Ifx_Read;
++     d->fxState[3].offset = rB_off;
++     d->fxState[3].size   = 2 * sizeof(UInt);
++
++     /* execute the dirty call, side-effecting guest state */
++     stmt( IRStmt_Dirty(d) );
++     break;
++  case 0x5af:
++     // evmhogsmfan (Vector Multiply Half Words, Odd, Guarded, Signed, Modulo, Fractional and Accumulate Negative, SPEPEM p5-161)
++     args = mkIRExprVec_4 ( mkU32( ACC_off ),
++                            mkU32( rD_off ),
++                            mkU32( rA_off ),
++                            mkU32( rB_off ) );
++     d = unsafeIRDirty_0_N (0 /* regparms */,
++                            "spe_dirtyhelper_evmhogsmfan",
++                            &spe_dirtyhelper_evmhogsmfan,
++                            args);
++     DIP( "evmhogsmfan r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     /* declare guest state effects */
++     d->needsBBP = True;
++     d->nFxState = 4;
++     vex_bzero(&d->fxState, sizeof(d->fxState));
++     d->fxState[0].fx     = Ifx_Modify;
++     d->fxState[0].offset = ACC_off;
++     d->fxState[0].size   = sizeof(ULong);
++     d->fxState[1].fx     = Ifx_Write;
++     d->fxState[1].offset = rD_off;
++     d->fxState[1].size   = 2 * sizeof(UInt);
++     d->fxState[2].fx     = Ifx_Read;
++     d->fxState[2].offset = rA_off;
++     d->fxState[2].size   = 2 * sizeof(UInt);
++     d->fxState[3].fx     = Ifx_Read;
++     d->fxState[3].offset = rB_off;
++     d->fxState[3].size   = 2 * sizeof(UInt);
++
++     /* execute the dirty call, side-effecting guest state */
++     stmt( IRStmt_Dirty(d) );
++     break;
+   default:
+      return False;
+   }
+@@ -20733,9 +20857,13 @@ DisResult disInstr_PPC_WRK (
+       case 0x47b: // evmwsmfa
+       case 0x50b: // evmhesmfaaw
+       case 0x50f: // evmhosmfaaw
++      case 0x52b: // evmhegsmfaa
++      case 0x52f: // evmhogsmfaa
+       case 0x58b: // evmhesmfanw
+       case 0x58f: // evmhosmfanw
+       case 0x55b: // evmwsmfaa
++      case 0x5ab: // evmhegsmfan
++      case 0x5af: // evmhogsmfan
+       case 0x5db: // evmwsmfan
+          if (!allow_SPE) goto decode_noSPE;
+          if (dis_spe_ACC_based_fractional_multiply_insns( theInstr )) goto decode_success;
+diff --git a/memcheck/tests/ppc32/test_spe.c b/memcheck/tests/ppc32/test_spe.c
+index cf7fa8c..0f4a5a3 100644
+--- a/memcheck/tests/ppc32/test_spe.c
++++ b/memcheck/tests/ppc32/test_spe.c
+@@ -12715,6 +12715,1218 @@ int evmhesmfa_asm(void)
+ }
+ TEST_SPE_DECL(evmhesmfa_asm, "evmhesmfa");
+ 
++#ifdef __SPE__
++__ev64_s64__ evmhogsmfan_baseline[] = {
++
++  (__ev64_s64__) { 0x57aa7ba },
++  (__ev64_s64__) { 0xffffffff9c1a9378 },
++  (__ev64_s64__) { 0x92b4058 },
++  (__ev64_s64__) { 0xffffffffe03e4a78 },
++  (__ev64_s64__) { 0x45255770 },
++  (__ev64_s64__) { 0x1058e8cc },
++  (__ev64_s64__) { 0xa9a8ee0 },
++  (__ev64_s64__) { 0x6af4640 },
++  (__ev64_s64__) { 0xffffffffd8c0fd5a },
++  (__ev64_s64__) { 0x2288687c },
++  (__ev64_s64__) { 0xffffffffe10bb75c },
++  (__ev64_s64__) { 0xf812cf4 },
++  (__ev64_s64__) { 0xfffffffffe9ba968 },
++  (__ev64_s64__) { 0xfffffffffa21757c },
++  (__ev64_s64__) { 0xfffffffff92f2d68 },
++  (__ev64_s64__) { 0xfffffffff1774c24 },
++  (__ev64_s64__) { 0xffffffffc0f2cae8 },
++  (__ev64_s64__) { 0xffffffffb276ce04 },
++  (__ev64_s64__) { 0xffffffffc64924cc },
++  (__ev64_s64__) { 0xfffffffff3e90818 },
++  (__ev64_s64__) { 0xffffffffec196944 },
++  (__ev64_s64__) { 0xa5b8480 },
++  (__ev64_s64__) { 0xfffffffffea1bf64 },
++  (__ev64_s64__) { 0x4be6547c },
++  (__ev64_s64__) { 0xffffffffec2dda10 },
++  (__ev64_s64__) { 0x41a58c14 },
++  (__ev64_s64__) { 0xffffffffa6070ce0 },
++  (__ev64_s64__) { 0x238a03fc },
++  (__ev64_s64__) { 0xffffffffd2e78b60 },
++  (__ev64_s64__) { 0xbadae02 },
++  (__ev64_s64__) { 0x5cb43700 },
++  (__ev64_s64__) { 0x23dda7b2 },
++  (__ev64_s64__) { 0x3403bcca },
++  (__ev64_s64__) { 0x335add4 },
++  (__ev64_s64__) { 0x2595ae70 },
++  (__ev64_s64__) { 0xffffffffa31ceb98 },
++  (__ev64_s64__) { 0xffffffffaf8e3074 },
++  (__ev64_s64__) { 0x2a8a85ac },
++  (__ev64_s64__) { 0xffffffffdb39a710 },
++  (__ev64_s64__) { 0x3f697a1c },
++  (__ev64_s64__) { 0x3b039d00 },
++  (__ev64_s64__) { 0xfffffffff747c9dc },
++  (__ev64_s64__) { 0x342b9a90 },
++  (__ev64_s64__) { 0x2201c4f0 },
++  (__ev64_s64__) { 0xfffffffffbd50340 },
++  (__ev64_s64__) { 0xffffffffffa81c10 },
++  (__ev64_s64__) { 0xffffffffdf66d2dc },
++  (__ev64_s64__) { 0xffffffffc85b512c },
++  (__ev64_s64__) { 0xffffffffdf3c5742 },
++  (__ev64_s64__) { 0xfffffffffbd00752 },
++  (__ev64_s64__) { 0xffffffffd1988e78 },
++  (__ev64_s64__) { 0xfffffffff946eb16 },
++  (__ev64_s64__) { 0x3037b194 },
++  (__ev64_s64__) { 0xd917ef2 },
++  (__ev64_s64__) { 0x8dbecf0 },
++  (__ev64_s64__) { 0xffffffffebae1d04 },
++  (__ev64_s64__) { 0x39c109b4 },
++  (__ev64_s64__) { 0x34104028 },
++  (__ev64_s64__) { 0x236f55d0 },
++  (__ev64_s64__) { 0x20cc2ae8 },
++  (__ev64_s64__) { 0xb8cd10 },
++  (__ev64_s64__) { 0x1f2b7958 },
++  (__ev64_s64__) { 0x1c3c6380 },
++  (__ev64_s64__) { 0x68be3f76 },
++  (__ev64_s64__) { 0xffffffffffdce4ea },
++  (__ev64_s64__) { 0x2259aaac },
++  (__ev64_s64__) { 0x1660980 },
++  (__ev64_s64__) { 0xfffffffffa04a1ec },
++  (__ev64_s64__) { 0xfffffffffecd6acc },
++  (__ev64_s64__) { 0xfffffffffdf8bf3c },
++  (__ev64_s64__) { 0xbde6190 },
++  (__ev64_s64__) { 0x24fe2a70 },
++  (__ev64_s64__) { 0x1b71dd8a },
++  (__ev64_s64__) { 0xffffffffff7e547c },
++  (__ev64_s64__) { 0xffffffffdc521180 },
++  (__ev64_s64__) { 0xffffffffcb288c80 },
++  (__ev64_s64__) { 0x16bdde40 },
++  (__ev64_s64__) { 0xffffffff93332080 },
++  (__ev64_s64__) { 0x8c050c8 },
++  (__ev64_s64__) { 0xffffffffe7f5a080 },
++  (__ev64_s64__) { 0x83547f6 },
++  (__ev64_s64__) { 0xffffffffebc84f60 },
++  (__ev64_s64__) { 0x961fee8 },
++  (__ev64_s64__) { 0xd56322e },
++  (__ev64_s64__) { 0x2229f6d0 },
++  (__ev64_s64__) { 0x65c0718 },
++  (__ev64_s64__) { 0xffffffffec8c9c48 },
++  (__ev64_s64__) { 0xffffffffea563670 },
++  (__ev64_s64__) { 0xffffffffcb61daf8 },
++  (__ev64_s64__) { 0xffffffffc7e56450 },
++  (__ev64_s64__) { 0xffffffffde64dec0 },
++  (__ev64_s64__) { 0x4a2a0f94 },
++  (__ev64_s64__) { 0xffffffffa27eb386 },
++  (__ev64_s64__) { 0xffffffffbfbd3b5c },
++  (__ev64_s64__) { 0x68ca228 },
++  (__ev64_s64__) { 0xffffffffe404ff18 },
++  (__ev64_s64__) { 0xffffffffd5226e70 },
++  (__ev64_s64__) { 0x932a00 },
++  (__ev64_s64__) { 0xffffffffd72ba870 },
++  (__ev64_s64__) { 0xffffffffec3eb098 },
++  (__ev64_s64__) { 0xffffffffbdc51238 },
++  (__ev64_s64__) { 0xffffffffc26186d8 },
++  (__ev64_s64__) { 0xffffffffdadecfe0 },
++  (__ev64_s64__) { 0xfffffffffd787dbe },
++  (__ev64_s64__) { 0xfffffffffa75c6f0 },
++  (__ev64_s64__) { 0x67385eda },
++  (__ev64_s64__) { 0xffffffffdfea4070 },
++  (__ev64_s64__) { 0xffffffffffe6e138 },
++  (__ev64_s64__) { 0xffffffffd4465dd8 },
++  (__ev64_s64__) { 0xfffffffff49ea5b8 },
++  (__ev64_s64__) { 0x702578c },
++  (__ev64_s64__) { 0x32cbdd94 },
++  (__ev64_s64__) { 0x100276b8 },
++  (__ev64_s64__) { 0xfffffffff1182340 },
++  (__ev64_s64__) { 0xfffffffff03da15c },
++  (__ev64_s64__) { 0x3f6a194 },
++  (__ev64_s64__) { 0x3faf70 },
++  (__ev64_s64__) { 0xffffffffdb525600 },
++  (__ev64_s64__) { 0x4d7b5548 },
++  (__ev64_s64__) { 0xef67f18 },
++  (__ev64_s64__) { 0xffffffffd92405a4 },
++  (__ev64_s64__) { 0x2968a118 },
++  (__ev64_s64__) { 0x4f6654e },
++  (__ev64_s64__) { 0x1a391ea0 },
++  (__ev64_s64__) { 0x92a0c },
++  (__ev64_s64__) { 0x44f3be30 },
++  (__ev64_s64__) { 0x16027e82 },
++  (__ev64_s64__) { 0x11f772c0 },
++  (__ev64_s64__) { 0xf160da2 },
++  (__ev64_s64__) { 0x3a05c47c },
++  (__ev64_s64__) { 0xffffffffe40a9e48 },
++  (__ev64_s64__) { 0xffffffffd9c6c27c },
++  (__ev64_s64__) { 0xfa5f260 },
++  (__ev64_s64__) { 0x2562cea6 },
++  (__ev64_s64__) { 0x2ac51a8 },
++  (__ev64_s64__) { 0xfffffffffa2319d0 },
++  (__ev64_s64__) { 0x29eda0a0 },
++  (__ev64_s64__) { 0x4a494964 },
++  (__ev64_s64__) { 0x206a802 },
++  (__ev64_s64__) { 0x6a98750 },
++  (__ev64_s64__) { 0x637aeb60 },
++  (__ev64_s64__) { 0x2fe89254 },
++  (__ev64_s64__) { 0xfffffffffdd59780 },
++  (__ev64_s64__) { 0x725694 },
++  (__ev64_s64__) { 0xffffffffde6da986 },
++  (__ev64_s64__) { 0x6887400 },
++  (__ev64_s64__) { 0x11eaa8dc },
++  (__ev64_s64__) { 0x20d079a0 },
++  (__ev64_s64__) { 0x1f1db90a },
++  (__ev64_s64__) { 0xffffffffffbd4210 },
++  (__ev64_s64__) { 0x5e677ec },
++  (__ev64_s64__) { 0x3fa8d20 },
++  (__ev64_s64__) { 0xfffffffff4e705a6 },
++  (__ev64_s64__) { 0x2f08fea8 },
++  (__ev64_s64__) { 0xfffffffff0cf80b0 },
++  (__ev64_s64__) { 0xffffffffca2114bc },
++  (__ev64_s64__) { 0xfffffffffa4d68f8 },
++  (__ev64_s64__) { 0xffffffffff5ba1e8 },
++  (__ev64_s64__) { 0x35242110 },
++  (__ev64_s64__) { 0xfffffffff285273a },
++  (__ev64_s64__) { 0x5048bf8 },
++  (__ev64_s64__) { 0x173d1c9c },
++  (__ev64_s64__) { 0xffffffffe3f56dec },
++  (__ev64_s64__) { 0xffffffffdcaa8108 },
++  (__ev64_s64__) { 0x14617b4c },
++  (__ev64_s64__) { 0x113136b4 },
++  (__ev64_s64__) { 0xfffffffffffa7770 },
++  (__ev64_s64__) { 0xffffffffa7c51ca0 },
++  (__ev64_s64__) { 0xffffffffe92bc3e0 },
++  (__ev64_s64__) { 0x7c4c970 },
++  (__ev64_s64__) { 0xffffffffff4c5254 },
++  (__ev64_s64__) { 0xfffffffff77481d6 },
++  (__ev64_s64__) { 0x53f9d940 },
++  (__ev64_s64__) { 0x2dbd92e8 },
++  (__ev64_s64__) { 0x3bbe5138 },
++  (__ev64_s64__) { 0x1375c580 },
++  (__ev64_s64__) { 0xffffffffcd8082c8 },
++  (__ev64_s64__) { 0xffffffffd8ba6828 },
++  (__ev64_s64__) { 0x55b2a6 },
++  (__ev64_s64__) { 0xfffffffff0349c20 },
++  (__ev64_s64__) { 0xfffffffffa75526a },
++  (__ev64_s64__) { 0x219dde60 },
++  (__ev64_s64__) { 0xfffffffff956ef7a },
++  (__ev64_s64__) { 0x1c94fc10 },
++  (__ev64_s64__) { 0xffffffffacafcd98 },
++  (__ev64_s64__) { 0x41926b38 },
++  (__ev64_s64__) { 0xffffffffe4a07134 },
++  (__ev64_s64__) { 0xb630b68 },
++  (__ev64_s64__) { 0xffffffffbadea3c8 },
++  (__ev64_s64__) { 0xffffffffe6969494 },
++  (__ev64_s64__) { 0xfffffffff08ea614 },
++  (__ev64_s64__) { 0x48749bc },
++  (__ev64_s64__) { 0xffffffffc9e7b9a6 },
++  (__ev64_s64__) { 0xfffffffffe15cbc0 },
++  (__ev64_s64__) { 0x70f6af8 },
++  (__ev64_s64__) { 0xffffffffff96a48a },
++  (__ev64_s64__) { 0x49f2f8 },
++  (__ev64_s64__) { 0x24ef5f50 },
++  (__ev64_s64__) { 0xffffffffaf8a1890 },
++  (__ev64_s64__) { 0xfffffffffe484502 },
++  (__ev64_s64__) { 0xffffffffd1add996 },
++  (__ev64_s64__) { 0x172a91b0 },
++  (__ev64_s64__) { 0x1ff1291c },
++  (__ev64_s64__) { 0xffffffffefb60ec6 },
++  (__ev64_s64__) { 0xd5000ac },
++  (__ev64_s64__) { 0x12146fe4 },
++  (__ev64_s64__) { 0x5b6b229e },
++  (__ev64_s64__) { 0xfffffffff40545f4 },
++  (__ev64_s64__) { 0x2cfd68a0 },
++  (__ev64_s64__) { 0xffffffffb26f1e48 },
++  (__ev64_s64__) { 0xffffffffe9ef41d6 },
++  (__ev64_s64__) { 0xfffffffffd81fe3a },
++  (__ev64_s64__) { 0x178e03fc },
++  (__ev64_s64__) { 0x184a4d50 },
++  (__ev64_s64__) { 0x394cf71c },
++  (__ev64_s64__) { 0xb65b270 },
++  (__ev64_s64__) { 0xdd8f86 },
++  (__ev64_s64__) { 0x5fac60 },
++  (__ev64_s64__) { 0x244e34d8 },
++  (__ev64_s64__) { 0xffffffffe4c54e64 },
++  (__ev64_s64__) { 0x16ae0926 },
++  (__ev64_s64__) { 0x4a2fe14a },
++  (__ev64_s64__) { 0x4e8aab0 },
++  (__ev64_s64__) { 0x509d7fa2 },
++  (__ev64_s64__) { 0xfffffffff41ad088 },
++  (__ev64_s64__) { 0x50f8fda },
++  (__ev64_s64__) { 0xfffffffffca82f4c },
++  (__ev64_s64__) { 0xf976f88 },
++  (__ev64_s64__) { 0x20823aec },
++  (__ev64_s64__) { 0x42d84838 },
++  (__ev64_s64__) { 0xfffffffff89f3488 },
++  (__ev64_s64__) { 0x41359da },
++  (__ev64_s64__) { 0xfffffffff3897a5e },
++  (__ev64_s64__) { 0xffffffffb33fa8c4 },
++  (__ev64_s64__) { 0x2ebc180 },
++  (__ev64_s64__) { 0xffffffffd05c2f9e },
++  (__ev64_s64__) { 0x2a6ab28 },
++  (__ev64_s64__) { 0x25473d56 },
++  (__ev64_s64__) { 0xffffffffde49d1a2 },
++  (__ev64_s64__) { 0xffffffffcc765c8e },
++  (__ev64_s64__) { 0xfffffffffb283186 },
++  (__ev64_s64__) { 0xfffffffffe3fb828 },
++  (__ev64_s64__) { 0xffffffffc5b43ad8 },
++  (__ev64_s64__) { 0xffffffffce49ff40 },
++  (__ev64_s64__) { 0xfffffffff685ff5a },
++  (__ev64_s64__) { 0xffffffffd66561c0 },
++  (__ev64_s64__) { 0x5aebff50 },
++  (__ev64_s64__) { 0xffffffffffa7297e },
++  (__ev64_s64__) { 0xffffffffff65aa9c },
++  (__ev64_s64__) { 0xffffffffe872df98 },
++  (__ev64_s64__) { 0x5e99450 },
++  (__ev64_s64__) { 0xfffffffffb450e0c },
++  (__ev64_s64__) { 0xffffffffd60bbc42 },
++  (__ev64_s64__) { 0xffffffffdd6d61ae },
++  (__ev64_s64__) { 0x10762f6 },
++  (__ev64_s64__) { 0x22f7a9fc },
++
++};
++#endif // __SPE__
++
++int evmhogsmfan_asm(void)
++{
++  int failures = 0;
++
++#ifdef __SPE__
++  register __ev64_s16__ regA asm ("30");
++  register __ev64_s16__ regB asm ("29");
++  register __ev64_s64__ regD asm ("28");
++
++  int32_t i;
++
++  for (i = 0; i < NELTS(rA4s16); i++) {
++
++    // Initialize the ACC.
++    regA = (__ev64_s16__) { 0x0, 0x0, 0x0, 0x0 };
++    asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++    VERIFY(regD[0] == 0x0);
++
++    regA = rA4s16[i];
++    regB = rB4s16[i];
++
++    asm volatile ("evmhogsmfan %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++#ifdef GEN_BASELINE
++    printf ("  (__ev64_s64__) { 0x%llx },\n", regD[0]);
++#else
++    VERIFY(regD[0] == evmhogsmfan_baseline[i][0]);
++#endif
++    // Verify that evmhogsmfan wrote into the ACC:
++    regD = (__ev64_s64__) { 0x0 };
++    asm volatile ("evaddumiaaw %[d], %[a]"   : [d] "=r" (regD) : [a] "r" (regD));
++#ifndef GEN_BASELINE
++    VERIFY(regD[0] == evmhogsmfan_baseline[i][0]);
++#endif
++  }
++
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmhogsmfan_asm, "evmhogsmfan");
++
++#ifdef __SPE__
++__ev64_s64__ evmhogsmfaa_baseline[] = {
++
++  (__ev64_s64__) { 0xfffffffffa855846 },
++  (__ev64_s64__) { 0x63e56c88 },
++  (__ev64_s64__) { 0xfffffffff6d4bfa8 },
++  (__ev64_s64__) { 0x1fc1b588 },
++  (__ev64_s64__) { 0xffffffffbadaa890 },
++  (__ev64_s64__) { 0xffffffffefa71734 },
++  (__ev64_s64__) { 0xfffffffff5657120 },
++  (__ev64_s64__) { 0xfffffffff950b9c0 },
++  (__ev64_s64__) { 0x273f02a6 },
++  (__ev64_s64__) { 0xffffffffdd779784 },
++  (__ev64_s64__) { 0x1ef448a4 },
++  (__ev64_s64__) { 0xfffffffff07ed30c },
++  (__ev64_s64__) { 0x1645698 },
++  (__ev64_s64__) { 0x5de8a84 },
++  (__ev64_s64__) { 0x6d0d298 },
++  (__ev64_s64__) { 0xe88b3dc },
++  (__ev64_s64__) { 0x3f0d3518 },
++  (__ev64_s64__) { 0x4d8931fc },
++  (__ev64_s64__) { 0x39b6db34 },
++  (__ev64_s64__) { 0xc16f7e8 },
++  (__ev64_s64__) { 0x13e696bc },
++  (__ev64_s64__) { 0xfffffffff5a47b80 },
++  (__ev64_s64__) { 0x15e409c },
++  (__ev64_s64__) { 0xffffffffb419ab84 },
++  (__ev64_s64__) { 0x13d225f0 },
++  (__ev64_s64__) { 0xffffffffbe5a73ec },
++  (__ev64_s64__) { 0x59f8f320 },
++  (__ev64_s64__) { 0xffffffffdc75fc04 },
++  (__ev64_s64__) { 0x2d1874a0 },
++  (__ev64_s64__) { 0xfffffffff45251fe },
++  (__ev64_s64__) { 0xffffffffa34bc900 },
++  (__ev64_s64__) { 0xffffffffdc22584e },
++  (__ev64_s64__) { 0xffffffffcbfc4336 },
++  (__ev64_s64__) { 0xfffffffffcca522c },
++  (__ev64_s64__) { 0xffffffffda6a5190 },
++  (__ev64_s64__) { 0x5ce31468 },
++  (__ev64_s64__) { 0x5071cf8c },
++  (__ev64_s64__) { 0xffffffffd5757a54 },
++  (__ev64_s64__) { 0x24c658f0 },
++  (__ev64_s64__) { 0xffffffffc09685e4 },
++  (__ev64_s64__) { 0xffffffffc4fc6300 },
++  (__ev64_s64__) { 0x8b83624 },
++  (__ev64_s64__) { 0xffffffffcbd46570 },
++  (__ev64_s64__) { 0xffffffffddfe3b10 },
++  (__ev64_s64__) { 0x42afcc0 },
++  (__ev64_s64__) { 0x57e3f0 },
++  (__ev64_s64__) { 0x20992d24 },
++  (__ev64_s64__) { 0x37a4aed4 },
++  (__ev64_s64__) { 0x20c3a8be },
++  (__ev64_s64__) { 0x42ff8ae },
++  (__ev64_s64__) { 0x2e677188 },
++  (__ev64_s64__) { 0x6b914ea },
++  (__ev64_s64__) { 0xffffffffcfc84e6c },
++  (__ev64_s64__) { 0xfffffffff26e810e },
++  (__ev64_s64__) { 0xfffffffff7241310 },
++  (__ev64_s64__) { 0x1451e2fc },
++  (__ev64_s64__) { 0xffffffffc63ef64c },
++  (__ev64_s64__) { 0xffffffffcbefbfd8 },
++  (__ev64_s64__) { 0xffffffffdc90aa30 },
++  (__ev64_s64__) { 0xffffffffdf33d518 },
++  (__ev64_s64__) { 0xffffffffff4732f0 },
++  (__ev64_s64__) { 0xffffffffe0d486a8 },
++  (__ev64_s64__) { 0xffffffffe3c39c80 },
++  (__ev64_s64__) { 0xffffffff9741c08a },
++  (__ev64_s64__) { 0x231b16 },
++  (__ev64_s64__) { 0xffffffffdda65554 },
++  (__ev64_s64__) { 0xfffffffffe99f680 },
++  (__ev64_s64__) { 0x5fb5e14 },
++  (__ev64_s64__) { 0x1329534 },
++  (__ev64_s64__) { 0x20740c4 },
++  (__ev64_s64__) { 0xfffffffff4219e70 },
++  (__ev64_s64__) { 0xffffffffdb01d590 },
++  (__ev64_s64__) { 0xffffffffe48e2276 },
++  (__ev64_s64__) { 0x81ab84 },
++  (__ev64_s64__) { 0x23adee80 },
++  (__ev64_s64__) { 0x34d77380 },
++  (__ev64_s64__) { 0xffffffffe94221c0 },
++  (__ev64_s64__) { 0x6cccdf80 },
++  (__ev64_s64__) { 0xfffffffff73faf38 },
++  (__ev64_s64__) { 0x180a5f80 },
++  (__ev64_s64__) { 0xfffffffff7cab80a },
++  (__ev64_s64__) { 0x1437b0a0 },
++  (__ev64_s64__) { 0xfffffffff69e0118 },
++  (__ev64_s64__) { 0xfffffffff2a9cdd2 },
++  (__ev64_s64__) { 0xffffffffddd60930 },
++  (__ev64_s64__) { 0xfffffffff9a3f8e8 },
++  (__ev64_s64__) { 0x137363b8 },
++  (__ev64_s64__) { 0x15a9c990 },
++  (__ev64_s64__) { 0x349e2508 },
++  (__ev64_s64__) { 0x381a9bb0 },
++  (__ev64_s64__) { 0x219b2140 },
++  (__ev64_s64__) { 0xffffffffb5d5f06c },
++  (__ev64_s64__) { 0x5d814c7a },
++  (__ev64_s64__) { 0x4042c4a4 },
++  (__ev64_s64__) { 0xfffffffff9735dd8 },
++  (__ev64_s64__) { 0x1bfb00e8 },
++  (__ev64_s64__) { 0x2add9190 },
++  (__ev64_s64__) { 0xffffffffff6cd600 },
++  (__ev64_s64__) { 0x28d45790 },
++  (__ev64_s64__) { 0x13c14f68 },
++  (__ev64_s64__) { 0x423aedc8 },
++  (__ev64_s64__) { 0x3d9e7928 },
++  (__ev64_s64__) { 0x25213020 },
++  (__ev64_s64__) { 0x2878242 },
++  (__ev64_s64__) { 0x58a3910 },
++  (__ev64_s64__) { 0xffffffff98c7a126 },
++  (__ev64_s64__) { 0x2015bf90 },
++  (__ev64_s64__) { 0x191ec8 },
++  (__ev64_s64__) { 0x2bb9a228 },
++  (__ev64_s64__) { 0xb615a48 },
++  (__ev64_s64__) { 0xfffffffff8fda874 },
++  (__ev64_s64__) { 0xffffffffcd34226c },
++  (__ev64_s64__) { 0xffffffffeffd8948 },
++  (__ev64_s64__) { 0xee7dcc0 },
++  (__ev64_s64__) { 0xfc25ea4 },
++  (__ev64_s64__) { 0xfffffffffc095e6c },
++  (__ev64_s64__) { 0xffffffffffc05090 },
++  (__ev64_s64__) { 0x24adaa00 },
++  (__ev64_s64__) { 0xffffffffb284aab8 },
++  (__ev64_s64__) { 0xfffffffff10980e8 },
++  (__ev64_s64__) { 0x26dbfa5c },
++  (__ev64_s64__) { 0xffffffffd6975ee8 },
++  (__ev64_s64__) { 0xfffffffffb099ab2 },
++  (__ev64_s64__) { 0xffffffffe5c6e160 },
++  (__ev64_s64__) { 0xfffffffffff6d5f4 },
++  (__ev64_s64__) { 0xffffffffbb0c41d0 },
++  (__ev64_s64__) { 0xffffffffe9fd817e },
++  (__ev64_s64__) { 0xffffffffee088d40 },
++  (__ev64_s64__) { 0xfffffffff0e9f25e },
++  (__ev64_s64__) { 0xffffffffc5fa3b84 },
++  (__ev64_s64__) { 0x1bf561b8 },
++  (__ev64_s64__) { 0x26393d84 },
++  (__ev64_s64__) { 0xfffffffff05a0da0 },
++  (__ev64_s64__) { 0xffffffffda9d315a },
++  (__ev64_s64__) { 0xfffffffffd53ae58 },
++  (__ev64_s64__) { 0x5dce630 },
++  (__ev64_s64__) { 0xffffffffd6125f60 },
++  (__ev64_s64__) { 0xffffffffb5b6b69c },
++  (__ev64_s64__) { 0xfffffffffdf957fe },
++  (__ev64_s64__) { 0xfffffffff95678b0 },
++  (__ev64_s64__) { 0xffffffff9c8514a0 },
++  (__ev64_s64__) { 0xffffffffd0176dac },
++  (__ev64_s64__) { 0x22a6880 },
++  (__ev64_s64__) { 0xffffffffff8da96c },
++  (__ev64_s64__) { 0x2192567a },
++  (__ev64_s64__) { 0xfffffffff9778c00 },
++  (__ev64_s64__) { 0xffffffffee155724 },
++  (__ev64_s64__) { 0xffffffffdf2f8660 },
++  (__ev64_s64__) { 0xffffffffe0e246f6 },
++  (__ev64_s64__) { 0x42bdf0 },
++  (__ev64_s64__) { 0xfffffffffa198814 },
++  (__ev64_s64__) { 0xfffffffffc0572e0 },
++  (__ev64_s64__) { 0xb18fa5a },
++  (__ev64_s64__) { 0xffffffffd0f70158 },
++  (__ev64_s64__) { 0xf307f50 },
++  (__ev64_s64__) { 0x35deeb44 },
++  (__ev64_s64__) { 0x5b29708 },
++  (__ev64_s64__) { 0xa45e18 },
++  (__ev64_s64__) { 0xffffffffcadbdef0 },
++  (__ev64_s64__) { 0xd7ad8c6 },
++  (__ev64_s64__) { 0xfffffffffafb7408 },
++  (__ev64_s64__) { 0xffffffffe8c2e364 },
++  (__ev64_s64__) { 0x1c0a9214 },
++  (__ev64_s64__) { 0x23557ef8 },
++  (__ev64_s64__) { 0xffffffffeb9e84b4 },
++  (__ev64_s64__) { 0xffffffffeecec94c },
++  (__ev64_s64__) { 0x58890 },
++  (__ev64_s64__) { 0x583ae360 },
++  (__ev64_s64__) { 0x16d43c20 },
++  (__ev64_s64__) { 0xfffffffff83b3690 },
++  (__ev64_s64__) { 0xb3adac },
++  (__ev64_s64__) { 0x88b7e2a },
++  (__ev64_s64__) { 0xffffffffac0626c0 },
++  (__ev64_s64__) { 0xffffffffd2426d18 },
++  (__ev64_s64__) { 0xffffffffc441aec8 },
++  (__ev64_s64__) { 0xffffffffec8a3a80 },
++  (__ev64_s64__) { 0x327f7d38 },
++  (__ev64_s64__) { 0x274597d8 },
++  (__ev64_s64__) { 0xffffffffffaa4d5a },
++  (__ev64_s64__) { 0xfcb63e0 },
++  (__ev64_s64__) { 0x58aad96 },
++  (__ev64_s64__) { 0xffffffffde6221a0 },
++  (__ev64_s64__) { 0x6a91086 },
++  (__ev64_s64__) { 0xffffffffe36b03f0 },
++  (__ev64_s64__) { 0x53503268 },
++  (__ev64_s64__) { 0xffffffffbe6d94c8 },
++  (__ev64_s64__) { 0x1b5f8ecc },
++  (__ev64_s64__) { 0xfffffffff49cf498 },
++  (__ev64_s64__) { 0x45215c38 },
++  (__ev64_s64__) { 0x19696b6c },
++  (__ev64_s64__) { 0xf7159ec },
++  (__ev64_s64__) { 0xfffffffffb78b644 },
++  (__ev64_s64__) { 0x3618465a },
++  (__ev64_s64__) { 0x1ea3440 },
++  (__ev64_s64__) { 0xfffffffff8f09508 },
++  (__ev64_s64__) { 0x695b76 },
++  (__ev64_s64__) { 0xffffffffffb60d08 },
++  (__ev64_s64__) { 0xffffffffdb10a0b0 },
++  (__ev64_s64__) { 0x5075e770 },
++  (__ev64_s64__) { 0x1b7bafe },
++  (__ev64_s64__) { 0x2e52266a },
++  (__ev64_s64__) { 0xffffffffe8d56e50 },
++  (__ev64_s64__) { 0xffffffffe00ed6e4 },
++  (__ev64_s64__) { 0x1049f13a },
++  (__ev64_s64__) { 0xfffffffff2afff54 },
++  (__ev64_s64__) { 0xffffffffedeb901c },
++  (__ev64_s64__) { 0xffffffffa494dd62 },
++  (__ev64_s64__) { 0xbfaba0c },
++  (__ev64_s64__) { 0xffffffffd3029760 },
++  (__ev64_s64__) { 0x4d90e1b8 },
++  (__ev64_s64__) { 0x1610be2a },
++  (__ev64_s64__) { 0x27e01c6 },
++  (__ev64_s64__) { 0xffffffffe871fc04 },
++  (__ev64_s64__) { 0xffffffffe7b5b2b0 },
++  (__ev64_s64__) { 0xffffffffc6b308e4 },
++  (__ev64_s64__) { 0xfffffffff49a4d90 },
++  (__ev64_s64__) { 0xffffffffff22707a },
++  (__ev64_s64__) { 0xffffffffffa053a0 },
++  (__ev64_s64__) { 0xffffffffdbb1cb28 },
++  (__ev64_s64__) { 0x1b3ab19c },
++  (__ev64_s64__) { 0xffffffffe951f6da },
++  (__ev64_s64__) { 0xffffffffb5d01eb6 },
++  (__ev64_s64__) { 0xfffffffffb175550 },
++  (__ev64_s64__) { 0xffffffffaf62805e },
++  (__ev64_s64__) { 0xbe52f78 },
++  (__ev64_s64__) { 0xfffffffffaf07026 },
++  (__ev64_s64__) { 0x357d0b4 },
++  (__ev64_s64__) { 0xfffffffff0689078 },
++  (__ev64_s64__) { 0xffffffffdf7dc514 },
++  (__ev64_s64__) { 0xffffffffbd27b7c8 },
++  (__ev64_s64__) { 0x760cb78 },
++  (__ev64_s64__) { 0xfffffffffbeca626 },
++  (__ev64_s64__) { 0xc7685a2 },
++  (__ev64_s64__) { 0x4cc0573c },
++  (__ev64_s64__) { 0xfffffffffd143e80 },
++  (__ev64_s64__) { 0x2fa3d062 },
++  (__ev64_s64__) { 0xfffffffffd5954d8 },
++  (__ev64_s64__) { 0xffffffffdab8c2aa },
++  (__ev64_s64__) { 0x21b62e5e },
++  (__ev64_s64__) { 0x3389a372 },
++  (__ev64_s64__) { 0x4d7ce7a },
++  (__ev64_s64__) { 0x1c047d8 },
++  (__ev64_s64__) { 0x3a4bc528 },
++  (__ev64_s64__) { 0x31b600c0 },
++  (__ev64_s64__) { 0x97a00a6 },
++  (__ev64_s64__) { 0x299a9e40 },
++  (__ev64_s64__) { 0xffffffffa51400b0 },
++  (__ev64_s64__) { 0x58d682 },
++  (__ev64_s64__) { 0x9a5564 },
++  (__ev64_s64__) { 0x178d2068 },
++  (__ev64_s64__) { 0xfffffffffa166bb0 },
++  (__ev64_s64__) { 0x4baf1f4 },
++  (__ev64_s64__) { 0x29f443be },
++  (__ev64_s64__) { 0x22929e52 },
++  (__ev64_s64__) { 0xfffffffffef89d0a },
++  (__ev64_s64__) { 0xffffffffdd085604 },
++
++};
++#endif // __SPE__
++
++int evmhogsmfaa_asm(void)
++{
++  int failures = 0;
++
++#ifdef __SPE__
++  register __ev64_s16__ regA asm ("30");
++  register __ev64_s16__ regB asm ("29");
++  register __ev64_s64__ regD asm ("28");
++
++  int32_t i;
++
++  for (i = 0; i < NELTS(rA4s16); i++) {
++
++    // Initialize the ACC.
++    regA = (__ev64_s16__) { 0x0, 0x0, 0x0, 0x0 };
++    asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++    VERIFY(regD[0] == 0x0);
++
++    regA = rA4s16[i];
++    regB = rB4s16[i];
++
++    asm volatile ("evmhogsmfaa %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++#ifdef GEN_BASELINE
++    printf ("  (__ev64_s64__) { 0x%llx },\n", regD[0]);
++#else
++    VERIFY(regD[0] == evmhogsmfaa_baseline[i][0]);
++#endif
++    // Verify that evmhogsmfaa wrote into the ACC:
++    regD = (__ev64_s64__) { 0x0 };
++    asm volatile ("evaddumiaaw %[d], %[a]"   : [d] "=r" (regD) : [a] "r" (regD));
++#ifndef GEN_BASELINE
++    VERIFY(regD[0] == evmhogsmfaa_baseline[i][0]);
++#endif
++  }
++
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmhogsmfaa_asm, "evmhogsmfaa");
++
++#ifdef __SPE__
++__ev64_s64__ evmhegsmfan_baseline[] = {
++
++  (__ev64_s64__) { 0x5baab9ae },
++  (__ev64_s64__) { 0x138c9ff4 },
++  (__ev64_s64__) { 0xffffffffd3352d8e },
++  (__ev64_s64__) { 0xffffffffe5405c60 },
++  (__ev64_s64__) { 0xffffffffd08a9bc8 },
++  (__ev64_s64__) { 0x12fc102c },
++  (__ev64_s64__) { 0xfffffffffe890a80 },
++  (__ev64_s64__) { 0xd73afe },
++  (__ev64_s64__) { 0x123d81d4 },
++  (__ev64_s64__) { 0x30aff80c },
++  (__ev64_s64__) { 0xffffffffb35ba798 },
++  (__ev64_s64__) { 0x55f22256 },
++  (__ev64_s64__) { 0xfffffffffb79e7b8 },
++  (__ev64_s64__) { 0x47195ee0 },
++  (__ev64_s64__) { 0x9baedd4 },
++  (__ev64_s64__) { 0xfffffffff549d826 },
++  (__ev64_s64__) { 0x11352d00 },
++  (__ev64_s64__) { 0x7085c800 },
++  (__ev64_s64__) { 0x56511458 },
++  (__ev64_s64__) { 0x1c4e4370 },
++  (__ev64_s64__) { 0xffffffffffe648fe },
++  (__ev64_s64__) { 0x7f1e74c },
++  (__ev64_s64__) { 0x3c687c90 },
++  (__ev64_s64__) { 0xfffffffff1a4162c },
++  (__ev64_s64__) { 0xffffffffd46bdd98 },
++  (__ev64_s64__) { 0x9c7b700 },
++  (__ev64_s64__) { 0xfffffffffa71f210 },
++  (__ev64_s64__) { 0xfffffffffeebd3e8 },
++  (__ev64_s64__) { 0x3057816 },
++  (__ev64_s64__) { 0xffffffffca1cc516 },
++  (__ev64_s64__) { 0xffffffffaa43b278 },
++  (__ev64_s64__) { 0xeda7a16 },
++  (__ev64_s64__) { 0xffffffffb2216950 },
++  (__ev64_s64__) { 0x318817b0 },
++  (__ev64_s64__) { 0x56b1c0 },
++  (__ev64_s64__) { 0xffffffffff6f78f0 },
++  (__ev64_s64__) { 0x5c62d8 },
++  (__ev64_s64__) { 0xffffffffdef3dee8 },
++  (__ev64_s64__) { 0xfffffffff51de854 },
++  (__ev64_s64__) { 0xffffffffedb6c06a },
++  (__ev64_s64__) { 0x76459b4 },
++  (__ev64_s64__) { 0x57f7d838 },
++  (__ev64_s64__) { 0xfffffffffaeb34cc },
++  (__ev64_s64__) { 0x5c5f026 },
++  (__ev64_s64__) { 0xdf60460 },
++  (__ev64_s64__) { 0x92c4522 },
++  (__ev64_s64__) { 0xfffffffffebdc464 },
++  (__ev64_s64__) { 0x104a6028 },
++  (__ev64_s64__) { 0x6d1d4c5e },
++  (__ev64_s64__) { 0x589fe72 },
++  (__ev64_s64__) { 0x30a04570 },
++  (__ev64_s64__) { 0x17b9985a },
++  (__ev64_s64__) { 0x11256914 },
++  (__ev64_s64__) { 0xd5c0a9a },
++  (__ev64_s64__) { 0xfffffffff2b06760 },
++  (__ev64_s64__) { 0x1c1b794 },
++  (__ev64_s64__) { 0x1ed7be1e },
++  (__ev64_s64__) { 0xffffffffd8bacfe0 },
++  (__ev64_s64__) { 0xffffffffbd3623bc },
++  (__ev64_s64__) { 0xfffffffffdc3e592 },
++  (__ev64_s64__) { 0x3452e0e0 },
++  (__ev64_s64__) { 0xffffffffffe76e50 },
++  (__ev64_s64__) { 0xffffffffea48d240 },
++  (__ev64_s64__) { 0xdae8de6 },
++  (__ev64_s64__) { 0xffffffffffde3da8 },
++  (__ev64_s64__) { 0x46ab5ce4 },
++  (__ev64_s64__) { 0xffffffffd55f7700 },
++  (__ev64_s64__) { 0xffffffffefb46706 },
++  (__ev64_s64__) { 0x38bdcd0 },
++  (__ev64_s64__) { 0x2396d91c },
++  (__ev64_s64__) { 0x1efa7670 },
++  (__ev64_s64__) { 0xffffffffd2617800 },
++  (__ev64_s64__) { 0xffffffffef031284 },
++  (__ev64_s64__) { 0x4720d40 },
++  (__ev64_s64__) { 0xffffffffd8c4cfc0 },
++  (__ev64_s64__) { 0x4981fc0 },
++  (__ev64_s64__) { 0x23d86ec },
++  (__ev64_s64__) { 0x27bcc00 },
++  (__ev64_s64__) { 0x2659e402 },
++  (__ev64_s64__) { 0xffffffffc6dd116c },
++  (__ev64_s64__) { 0xffffffffef507c80 },
++  (__ev64_s64__) { 0x1916a88 },
++  (__ev64_s64__) { 0xffffffffe1135880 },
++  (__ev64_s64__) { 0x6da350ec },
++  (__ev64_s64__) { 0xf7ed74 },
++  (__ev64_s64__) { 0x394eea00 },
++  (__ev64_s64__) { 0x2c62e6 },
++  (__ev64_s64__) { 0xfffffffffebccc3c },
++  (__ev64_s64__) { 0xfffffffff4c759e0 },
++  (__ev64_s64__) { 0x699e40 },
++  (__ev64_s64__) { 0xffffffff931bda44 },
++  (__ev64_s64__) { 0xffffffff8ffc7e00 },
++  (__ev64_s64__) { 0xffffffffe64428f2 },
++  (__ev64_s64__) { 0xffffffffec343f46 },
++  (__ev64_s64__) { 0xa91fdbc },
++  (__ev64_s64__) { 0x15c2ddec },
++  (__ev64_s64__) { 0xe73ef5c },
++  (__ev64_s64__) { 0x1b5e410c },
++  (__ev64_s64__) { 0x1f379d48 },
++  (__ev64_s64__) { 0xffffffffc58b49e0 },
++  (__ev64_s64__) { 0xffffffffc8985670 },
++  (__ev64_s64__) { 0xffffffffee1ceb9c },
++  (__ev64_s64__) { 0xffffffffa98ffd10 },
++  (__ev64_s64__) { 0x8ecc6d0 },
++  (__ev64_s64__) { 0xfffffffffaec53c0 },
++  (__ev64_s64__) { 0xb080732 },
++  (__ev64_s64__) { 0x83adcc2 },
++  (__ev64_s64__) { 0xffffffffdc8f4090 },
++  (__ev64_s64__) { 0x1d7780c4 },
++  (__ev64_s64__) { 0x97bea08 },
++  (__ev64_s64__) { 0x48e8240 },
++  (__ev64_s64__) { 0x30ec9b8c },
++  (__ev64_s64__) { 0x1aaddb72 },
++  (__ev64_s64__) { 0x85edaf6 },
++  (__ev64_s64__) { 0xfffffffffcb9842c },
++  (__ev64_s64__) { 0xffffffffe8292100 },
++  (__ev64_s64__) { 0x5759251c },
++  (__ev64_s64__) { 0x452e1bde },
++  (__ev64_s64__) { 0x49a7ee20 },
++  (__ev64_s64__) { 0x108626fa },
++  (__ev64_s64__) { 0x30674620 },
++  (__ev64_s64__) { 0xc7c1890 },
++  (__ev64_s64__) { 0xffffffffb2ae6314 },
++  (__ev64_s64__) { 0xffffffffc7e77bd8 },
++  (__ev64_s64__) { 0x6776bc0 },
++  (__ev64_s64__) { 0xfffffffffe641400 },
++  (__ev64_s64__) { 0xffffffffd84f59d0 },
++  (__ev64_s64__) { 0xffffffffec945fd4 },
++  (__ev64_s64__) { 0x36749838 },
++  (__ev64_s64__) { 0xfffffffffb384e60 },
++  (__ev64_s64__) { 0x29e3712 },
++  (__ev64_s64__) { 0xffffffffd2268ab0 },
++  (__ev64_s64__) { 0xffffffffe6e50284 },
++  (__ev64_s64__) { 0x6f665c },
++  (__ev64_s64__) { 0xffffffffccf7ff54 },
++  (__ev64_s64__) { 0xffffffffe59ddd40 },
++  (__ev64_s64__) { 0x312ff410 },
++  (__ev64_s64__) { 0x15c6ba14 },
++  (__ev64_s64__) { 0xffffffffbddca28e },
++  (__ev64_s64__) { 0xffffffffe55bce46 },
++  (__ev64_s64__) { 0xfffffffff4334800 },
++  (__ev64_s64__) { 0xfffffffff67c1f2c },
++  (__ev64_s64__) { 0xffffffff97bda704 },
++  (__ev64_s64__) { 0xf180b6a },
++  (__ev64_s64__) { 0xfffffffff563c8a8 },
++  (__ev64_s64__) { 0xffffffffe683338a },
++  (__ev64_s64__) { 0xffffffffeab1e8fa },
++  (__ev64_s64__) { 0xfffffffff7a9ba08 },
++  (__ev64_s64__) { 0xffffffffe91545a0 },
++  (__ev64_s64__) { 0xffffffffd828d980 },
++  (__ev64_s64__) { 0xffffffffb0fd5d22 },
++  (__ev64_s64__) { 0x1244d97c },
++  (__ev64_s64__) { 0xffffffff9e7ad390 },
++  (__ev64_s64__) { 0x8b6f71e },
++  (__ev64_s64__) { 0x18ed60 },
++  (__ev64_s64__) { 0xffffffffd8a86300 },
++  (__ev64_s64__) { 0x2436cf00 },
++  (__ev64_s64__) { 0x56f327c },
++  (__ev64_s64__) { 0xffffffffb5622072 },
++  (__ev64_s64__) { 0x10817f0 },
++  (__ev64_s64__) { 0xffffffffdad8fdc0 },
++  (__ev64_s64__) { 0xfffffffffcc70b68 },
++  (__ev64_s64__) { 0xfffffffffec3a7e4 },
++  (__ev64_s64__) { 0xffffffffc3ba77b0 },
++  (__ev64_s64__) { 0x2b2bf5e0 },
++  (__ev64_s64__) { 0xffffffffe0935808 },
++  (__ev64_s64__) { 0x12bcb27a },
++  (__ev64_s64__) { 0x7acfc3e },
++  (__ev64_s64__) { 0xffffffffe693372c },
++  (__ev64_s64__) { 0xfffffffffbd91fcc },
++  (__ev64_s64__) { 0xffffffff96c3ffbe },
++  (__ev64_s64__) { 0xffffffffebc6e360 },
++  (__ev64_s64__) { 0x20647350 },
++  (__ev64_s64__) { 0xfffffffff1b9c6e8 },
++  (__ev64_s64__) { 0xfffffffffec776f0 },
++  (__ev64_s64__) { 0x23dae04 },
++  (__ev64_s64__) { 0xea31368 },
++  (__ev64_s64__) { 0xfffffffff6529456 },
++  (__ev64_s64__) { 0x8450628 },
++  (__ev64_s64__) { 0xfffffffffeec7280 },
++  (__ev64_s64__) { 0x193a4060 },
++  (__ev64_s64__) { 0xfffffffffa28e8b8 },
++  (__ev64_s64__) { 0xffffffffb1975b6e },
++  (__ev64_s64__) { 0x298b94a0 },
++  (__ev64_s64__) { 0xffffffff9ddde608 },
++  (__ev64_s64__) { 0xfdae398 },
++  (__ev64_s64__) { 0xffffffffbd04bfc2 },
++  (__ev64_s64__) { 0xffffffffbe433228 },
++  (__ev64_s64__) { 0xec0b5de },
++  (__ev64_s64__) { 0xfffffffff7410338 },
++  (__ev64_s64__) { 0xfffffffff8decba0 },
++  (__ev64_s64__) { 0x5ced7732 },
++  (__ev64_s64__) { 0x25464be0 },
++  (__ev64_s64__) { 0xb9a83a8 },
++  (__ev64_s64__) { 0xffffffffec5ed690 },
++  (__ev64_s64__) { 0xd6dbf22 },
++  (__ev64_s64__) { 0xffffffffc66d3400 },
++  (__ev64_s64__) { 0x45bebb62 },
++  (__ev64_s64__) { 0xfffffffff069e84e },
++  (__ev64_s64__) { 0x15ec7a50 },
++  (__ev64_s64__) { 0xfffffffff8a73210 },
++  (__ev64_s64__) { 0x7f73544 },
++  (__ev64_s64__) { 0x25f752e },
++  (__ev64_s64__) { 0xffffffffa0957af8 },
++  (__ev64_s64__) { 0x511f96d8 },
++  (__ev64_s64__) { 0xffffffffc0a30858 },
++  (__ev64_s64__) { 0xfffffffffed947ea },
++  (__ev64_s64__) { 0xfffffffff251e73e },
++  (__ev64_s64__) { 0x41bfad6 },
++  (__ev64_s64__) { 0x197c4506 },
++  (__ev64_s64__) { 0x3ac345d4 },
++  (__ev64_s64__) { 0xffffffffae454e2c },
++  (__ev64_s64__) { 0x1125fba8 },
++  (__ev64_s64__) { 0x24a5dec },
++  (__ev64_s64__) { 0x2e1a4ce2 },
++  (__ev64_s64__) { 0xfffffffff4955668 },
++  (__ev64_s64__) { 0x18b0370 },
++  (__ev64_s64__) { 0x4ddd5070 },
++  (__ev64_s64__) { 0xfffffffff4f76588 },
++  (__ev64_s64__) { 0x366aaf08 },
++  (__ev64_s64__) { 0xffffffffd0b6e72c },
++  (__ev64_s64__) { 0x4f0bc68 },
++  (__ev64_s64__) { 0x33061c0e },
++  (__ev64_s64__) { 0xffffffffc20ff564 },
++  (__ev64_s64__) { 0xfffffffffdb75292 },
++  (__ev64_s64__) { 0xfffffffff56058c0 },
++  (__ev64_s64__) { 0x130d6b98 },
++  (__ev64_s64__) { 0x1fef7a82 },
++  (__ev64_s64__) { 0x430dee90 },
++  (__ev64_s64__) { 0xfffffffff7d21e0c },
++  (__ev64_s64__) { 0x857e9c },
++  (__ev64_s64__) { 0x3bc87ed0 },
++  (__ev64_s64__) { 0x251aed96 },
++  (__ev64_s64__) { 0xffffffffe1247850 },
++  (__ev64_s64__) { 0xffffffffda2b38c6 },
++  (__ev64_s64__) { 0x163416f8 },
++  (__ev64_s64__) { 0x19f60c1a },
++  (__ev64_s64__) { 0x996115c },
++  (__ev64_s64__) { 0xfffffffffabcc9c8 },
++  (__ev64_s64__) { 0xe24d854 },
++  (__ev64_s64__) { 0x331a6a6a },
++  (__ev64_s64__) { 0x11e1147a },
++  (__ev64_s64__) { 0xfffffffffbde6418 },
++  (__ev64_s64__) { 0xffffffffefdb11f2 },
++  (__ev64_s64__) { 0x75621fc },
++  (__ev64_s64__) { 0xffffffffc3f4c74a },
++  (__ev64_s64__) { 0x22638a58 },
++  (__ev64_s64__) { 0x125c8540 },
++  (__ev64_s64__) { 0xfffffffffd9062e8 },
++  (__ev64_s64__) { 0x8579f38 },
++  (__ev64_s64__) { 0xffffffffc757e904 },
++  (__ev64_s64__) { 0xffffffffd18c4062 },
++  (__ev64_s64__) { 0x2873be12 },
++  (__ev64_s64__) { 0x1ed94cd4 },
++  (__ev64_s64__) { 0x1c183558 },
++  (__ev64_s64__) { 0xffffffffca5c1b14 },
++
++};
++#endif // __SPE__
++
++int evmhegsmfan_asm(void)
++{
++  int failures = 0;
++
++#ifdef __SPE__
++  register __ev64_s16__ regA asm ("30");
++  register __ev64_s16__ regB asm ("29");
++  register __ev64_s64__ regD asm ("28");
++
++  int32_t i;
++
++  for (i = 0; i < NELTS(rA4s16); i++) {
++
++    // Initialize the ACC.
++    regA = (__ev64_s16__) { 0x0, 0x0, 0x0, 0x0 };
++    asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++    VERIFY(regD[0] == 0x0);
++
++    regA = rA4s16[i];
++    regB = rB4s16[i];
++
++    asm volatile ("evmhegsmfan %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++#ifdef GEN_BASELINE
++    printf ("  (__ev64_s64__) { 0x%llx },\n", regD[0]);
++#else
++    VERIFY(regD[0] == evmhegsmfan_baseline[i][0]);
++#endif
++    // Verify that evmhegsmfan wrote into the ACC:
++    regD = (__ev64_s64__) { 0x0 };
++    asm volatile ("evaddumiaaw %[d], %[a]"   : [d] "=r" (regD) : [a] "r" (regD));
++#ifndef GEN_BASELINE
++    VERIFY(regD[0] == evmhegsmfan_baseline[i][0]);
++#endif
++  }
++
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmhegsmfan_asm, "evmhegsmfan");
++
++#ifdef __SPE__
++__ev64_s64__ evmhegsmfaa_baseline[] = {
++
++  (__ev64_s64__) { 0xffffffffa4554652 },
++  (__ev64_s64__) { 0xffffffffec73600c },
++  (__ev64_s64__) { 0x2ccad272 },
++  (__ev64_s64__) { 0x1abfa3a0 },
++  (__ev64_s64__) { 0x2f756438 },
++  (__ev64_s64__) { 0xffffffffed03efd4 },
++  (__ev64_s64__) { 0x176f580 },
++  (__ev64_s64__) { 0xffffffffff28c502 },
++  (__ev64_s64__) { 0xffffffffedc27e2c },
++  (__ev64_s64__) { 0xffffffffcf5007f4 },
++  (__ev64_s64__) { 0x4ca45868 },
++  (__ev64_s64__) { 0xffffffffaa0dddaa },
++  (__ev64_s64__) { 0x4861848 },
++  (__ev64_s64__) { 0xffffffffb8e6a120 },
++  (__ev64_s64__) { 0xfffffffff645122c },
++  (__ev64_s64__) { 0xab627da },
++  (__ev64_s64__) { 0xffffffffeecad300 },
++  (__ev64_s64__) { 0xffffffff8f7a3800 },
++  (__ev64_s64__) { 0xffffffffa9aeeba8 },
++  (__ev64_s64__) { 0xffffffffe3b1bc90 },
++  (__ev64_s64__) { 0x19b702 },
++  (__ev64_s64__) { 0xfffffffff80e18b4 },
++  (__ev64_s64__) { 0xffffffffc3978370 },
++  (__ev64_s64__) { 0xe5be9d4 },
++  (__ev64_s64__) { 0x2b942268 },
++  (__ev64_s64__) { 0xfffffffff6384900 },
++  (__ev64_s64__) { 0x58e0df0 },
++  (__ev64_s64__) { 0x1142c18 },
++  (__ev64_s64__) { 0xfffffffffcfa87ea },
++  (__ev64_s64__) { 0x35e33aea },
++  (__ev64_s64__) { 0x55bc4d88 },
++  (__ev64_s64__) { 0xfffffffff12585ea },
++  (__ev64_s64__) { 0x4dde96b0 },
++  (__ev64_s64__) { 0xffffffffce77e850 },
++  (__ev64_s64__) { 0xffffffffffa94e40 },
++  (__ev64_s64__) { 0x908710 },
++  (__ev64_s64__) { 0xffffffffffa39d28 },
++  (__ev64_s64__) { 0x210c2118 },
++  (__ev64_s64__) { 0xae217ac },
++  (__ev64_s64__) { 0x12493f96 },
++  (__ev64_s64__) { 0xfffffffff89ba64c },
++  (__ev64_s64__) { 0xffffffffa80827c8 },
++  (__ev64_s64__) { 0x514cb34 },
++  (__ev64_s64__) { 0xfffffffffa3a0fda },
++  (__ev64_s64__) { 0xfffffffff209fba0 },
++  (__ev64_s64__) { 0xfffffffff6d3bade },
++  (__ev64_s64__) { 0x1423b9c },
++  (__ev64_s64__) { 0xffffffffefb59fd8 },
++  (__ev64_s64__) { 0xffffffff92e2b3a2 },
++  (__ev64_s64__) { 0xfffffffffa76018e },
++  (__ev64_s64__) { 0xffffffffcf5fba90 },
++  (__ev64_s64__) { 0xffffffffe84667a6 },
++  (__ev64_s64__) { 0xffffffffeeda96ec },
++  (__ev64_s64__) { 0xfffffffff2a3f566 },
++  (__ev64_s64__) { 0xd4f98a0 },
++  (__ev64_s64__) { 0xfffffffffe3e486c },
++  (__ev64_s64__) { 0xffffffffe12841e2 },
++  (__ev64_s64__) { 0x27453020 },
++  (__ev64_s64__) { 0x42c9dc44 },
++  (__ev64_s64__) { 0x23c1a6e },
++  (__ev64_s64__) { 0xffffffffcbad1f20 },
++  (__ev64_s64__) { 0x1891b0 },
++  (__ev64_s64__) { 0x15b72dc0 },
++  (__ev64_s64__) { 0xfffffffff251721a },
++  (__ev64_s64__) { 0x21c258 },
++  (__ev64_s64__) { 0xffffffffb954a31c },
++  (__ev64_s64__) { 0x2aa08900 },
++  (__ev64_s64__) { 0x104b98fa },
++  (__ev64_s64__) { 0xfffffffffc742330 },
++  (__ev64_s64__) { 0xffffffffdc6926e4 },
++  (__ev64_s64__) { 0xffffffffe1058990 },
++  (__ev64_s64__) { 0x2d9e8800 },
++  (__ev64_s64__) { 0x10fced7c },
++  (__ev64_s64__) { 0xfffffffffb8df2c0 },
++  (__ev64_s64__) { 0x273b3040 },
++  (__ev64_s64__) { 0xfffffffffb67e040 },
++  (__ev64_s64__) { 0xfffffffffdc27914 },
++  (__ev64_s64__) { 0xfffffffffd843400 },
++  (__ev64_s64__) { 0xffffffffd9a61bfe },
++  (__ev64_s64__) { 0x3922ee94 },
++  (__ev64_s64__) { 0x10af8380 },
++  (__ev64_s64__) { 0xfffffffffe6e9578 },
++  (__ev64_s64__) { 0x1eeca780 },
++  (__ev64_s64__) { 0xffffffff925caf14 },
++  (__ev64_s64__) { 0xffffffffff08128c },
++  (__ev64_s64__) { 0xffffffffc6b11600 },
++  (__ev64_s64__) { 0xffffffffffd39d1a },
++  (__ev64_s64__) { 0x14333c4 },
++  (__ev64_s64__) { 0xb38a620 },
++  (__ev64_s64__) { 0xffffffffff9661c0 },
++  (__ev64_s64__) { 0x6ce425bc },
++  (__ev64_s64__) { 0x70038200 },
++  (__ev64_s64__) { 0x19bbd70e },
++  (__ev64_s64__) { 0x13cbc0ba },
++  (__ev64_s64__) { 0xfffffffff56e0244 },
++  (__ev64_s64__) { 0xffffffffea3d2214 },
++  (__ev64_s64__) { 0xfffffffff18c10a4 },
++  (__ev64_s64__) { 0xffffffffe4a1bef4 },
++  (__ev64_s64__) { 0xffffffffe0c862b8 },
++  (__ev64_s64__) { 0x3a74b620 },
++  (__ev64_s64__) { 0x3767a990 },
++  (__ev64_s64__) { 0x11e31464 },
++  (__ev64_s64__) { 0x567002f0 },
++  (__ev64_s64__) { 0xfffffffff7133930 },
++  (__ev64_s64__) { 0x513ac40 },
++  (__ev64_s64__) { 0xfffffffff4f7f8ce },
++  (__ev64_s64__) { 0xfffffffff7c5233e },
++  (__ev64_s64__) { 0x2370bf70 },
++  (__ev64_s64__) { 0xffffffffe2887f3c },
++  (__ev64_s64__) { 0xfffffffff68415f8 },
++  (__ev64_s64__) { 0xfffffffffb717dc0 },
++  (__ev64_s64__) { 0xffffffffcf136474 },
++  (__ev64_s64__) { 0xffffffffe552248e },
++  (__ev64_s64__) { 0xfffffffff7a1250a },
++  (__ev64_s64__) { 0x3467bd4 },
++  (__ev64_s64__) { 0x17d6df00 },
++  (__ev64_s64__) { 0xffffffffa8a6dae4 },
++  (__ev64_s64__) { 0xffffffffbad1e422 },
++  (__ev64_s64__) { 0xffffffffb65811e0 },
++  (__ev64_s64__) { 0xffffffffef79d906 },
++  (__ev64_s64__) { 0xffffffffcf98b9e0 },
++  (__ev64_s64__) { 0xfffffffff383e770 },
++  (__ev64_s64__) { 0x4d519cec },
++  (__ev64_s64__) { 0x38188428 },
++  (__ev64_s64__) { 0xfffffffff9889440 },
++  (__ev64_s64__) { 0x19bec00 },
++  (__ev64_s64__) { 0x27b0a630 },
++  (__ev64_s64__) { 0x136ba02c },
++  (__ev64_s64__) { 0xffffffffc98b67c8 },
++  (__ev64_s64__) { 0x4c7b1a0 },
++  (__ev64_s64__) { 0xfffffffffd61c8ee },
++  (__ev64_s64__) { 0x2dd97550 },
++  (__ev64_s64__) { 0x191afd7c },
++  (__ev64_s64__) { 0xffffffffff9099a4 },
++  (__ev64_s64__) { 0x330800ac },
++  (__ev64_s64__) { 0x1a6222c0 },
++  (__ev64_s64__) { 0xffffffffced00bf0 },
++  (__ev64_s64__) { 0xffffffffea3945ec },
++  (__ev64_s64__) { 0x42235d72 },
++  (__ev64_s64__) { 0x1aa431ba },
++  (__ev64_s64__) { 0xbccb800 },
++  (__ev64_s64__) { 0x983e0d4 },
++  (__ev64_s64__) { 0x684258fc },
++  (__ev64_s64__) { 0xfffffffff0e7f496 },
++  (__ev64_s64__) { 0xa9c3758 },
++  (__ev64_s64__) { 0x197ccc76 },
++  (__ev64_s64__) { 0x154e1706 },
++  (__ev64_s64__) { 0x85645f8 },
++  (__ev64_s64__) { 0x16eaba60 },
++  (__ev64_s64__) { 0x27d72680 },
++  (__ev64_s64__) { 0x4f02a2de },
++  (__ev64_s64__) { 0xffffffffedbb2684 },
++  (__ev64_s64__) { 0x61852c70 },
++  (__ev64_s64__) { 0xfffffffff74908e2 },
++  (__ev64_s64__) { 0xffffffffffe712a0 },
++  (__ev64_s64__) { 0x27579d00 },
++  (__ev64_s64__) { 0xffffffffdbc93100 },
++  (__ev64_s64__) { 0xfffffffffa90cd84 },
++  (__ev64_s64__) { 0x4a9ddf8e },
++  (__ev64_s64__) { 0xfffffffffef7e810 },
++  (__ev64_s64__) { 0x25270240 },
++  (__ev64_s64__) { 0x338f498 },
++  (__ev64_s64__) { 0x13c581c },
++  (__ev64_s64__) { 0x3c458850 },
++  (__ev64_s64__) { 0xffffffffd4d40a20 },
++  (__ev64_s64__) { 0x1f6ca7f8 },
++  (__ev64_s64__) { 0xffffffffed434d86 },
++  (__ev64_s64__) { 0xfffffffff85303c2 },
++  (__ev64_s64__) { 0x196cc8d4 },
++  (__ev64_s64__) { 0x426e034 },
++  (__ev64_s64__) { 0x693c0042 },
++  (__ev64_s64__) { 0x14391ca0 },
++  (__ev64_s64__) { 0xffffffffdf9b8cb0 },
++  (__ev64_s64__) { 0xe463918 },
++  (__ev64_s64__) { 0x1388910 },
++  (__ev64_s64__) { 0xfffffffffdc251fc },
++  (__ev64_s64__) { 0xfffffffff15cec98 },
++  (__ev64_s64__) { 0x9ad6baa },
++  (__ev64_s64__) { 0xfffffffff7baf9d8 },
++  (__ev64_s64__) { 0x1138d80 },
++  (__ev64_s64__) { 0xffffffffe6c5bfa0 },
++  (__ev64_s64__) { 0x5d71748 },
++  (__ev64_s64__) { 0x4e68a492 },
++  (__ev64_s64__) { 0xffffffffd6746b60 },
++  (__ev64_s64__) { 0x622219f8 },
++  (__ev64_s64__) { 0xfffffffff0251c68 },
++  (__ev64_s64__) { 0x42fb403e },
++  (__ev64_s64__) { 0x41bccdd8 },
++  (__ev64_s64__) { 0xfffffffff13f4a22 },
++  (__ev64_s64__) { 0x8befcc8 },
++  (__ev64_s64__) { 0x7213460 },
++  (__ev64_s64__) { 0xffffffffa31288ce },
++  (__ev64_s64__) { 0xffffffffdab9b420 },
++  (__ev64_s64__) { 0xfffffffff4657c58 },
++  (__ev64_s64__) { 0x13a12970 },
++  (__ev64_s64__) { 0xfffffffff29240de },
++  (__ev64_s64__) { 0x3992cc00 },
++  (__ev64_s64__) { 0xffffffffba41449e },
++  (__ev64_s64__) { 0xf9617b2 },
++  (__ev64_s64__) { 0xffffffffea1385b0 },
++  (__ev64_s64__) { 0x758cdf0 },
++  (__ev64_s64__) { 0xfffffffff808cabc },
++  (__ev64_s64__) { 0xfffffffffda08ad2 },
++  (__ev64_s64__) { 0x5f6a8508 },
++  (__ev64_s64__) { 0xffffffffaee06928 },
++  (__ev64_s64__) { 0x3f5cf7a8 },
++  (__ev64_s64__) { 0x126b816 },
++  (__ev64_s64__) { 0xdae18c2 },
++  (__ev64_s64__) { 0xfffffffffbe4052a },
++  (__ev64_s64__) { 0xffffffffe683bafa },
++  (__ev64_s64__) { 0xffffffffc53cba2c },
++  (__ev64_s64__) { 0x51bab1d4 },
++  (__ev64_s64__) { 0xffffffffeeda0458 },
++  (__ev64_s64__) { 0xfffffffffdb5a214 },
++  (__ev64_s64__) { 0xffffffffd1e5b31e },
++  (__ev64_s64__) { 0xb6aa998 },
++  (__ev64_s64__) { 0xfffffffffe74fc90 },
++  (__ev64_s64__) { 0xffffffffb222af90 },
++  (__ev64_s64__) { 0xb089a78 },
++  (__ev64_s64__) { 0xffffffffc99550f8 },
++  (__ev64_s64__) { 0x2f4918d4 },
++  (__ev64_s64__) { 0xfffffffffb0f4398 },
++  (__ev64_s64__) { 0xffffffffccf9e3f2 },
++  (__ev64_s64__) { 0x3df00a9c },
++  (__ev64_s64__) { 0x248ad6e },
++  (__ev64_s64__) { 0xa9fa740 },
++  (__ev64_s64__) { 0xffffffffecf29468 },
++  (__ev64_s64__) { 0xffffffffe010857e },
++  (__ev64_s64__) { 0xffffffffbcf21170 },
++  (__ev64_s64__) { 0x82de1f4 },
++  (__ev64_s64__) { 0xffffffffff7a8164 },
++  (__ev64_s64__) { 0xffffffffc4378130 },
++  (__ev64_s64__) { 0xffffffffdae5126a },
++  (__ev64_s64__) { 0x1edb87b0 },
++  (__ev64_s64__) { 0x25d4c73a },
++  (__ev64_s64__) { 0xffffffffe9cbe908 },
++  (__ev64_s64__) { 0xffffffffe609f3e6 },
++  (__ev64_s64__) { 0xfffffffff669eea4 },
++  (__ev64_s64__) { 0x5433638 },
++  (__ev64_s64__) { 0xfffffffff1db27ac },
++  (__ev64_s64__) { 0xffffffffcce59596 },
++  (__ev64_s64__) { 0xffffffffee1eeb86 },
++  (__ev64_s64__) { 0x4219be8 },
++  (__ev64_s64__) { 0x1024ee0e },
++  (__ev64_s64__) { 0xfffffffff8a9de04 },
++  (__ev64_s64__) { 0x3c0b38b6 },
++  (__ev64_s64__) { 0xffffffffdd9c75a8 },
++  (__ev64_s64__) { 0xffffffffeda37ac0 },
++  (__ev64_s64__) { 0x26f9d18 },
++  (__ev64_s64__) { 0xfffffffff7a860c8 },
++  (__ev64_s64__) { 0x38a816fc },
++  (__ev64_s64__) { 0x2e73bf9e },
++  (__ev64_s64__) { 0xffffffffd78c41ee },
++  (__ev64_s64__) { 0xffffffffe126b32c },
++  (__ev64_s64__) { 0xffffffffe3e7caa8 },
++  (__ev64_s64__) { 0x35a3e4ec },
++
++};
++#endif // __SPE__
++
++int evmhegsmfaa_asm(void)
++{
++  int failures = 0;
++
++#ifdef __SPE__
++  register __ev64_s16__ regA asm ("30");
++  register __ev64_s16__ regB asm ("29");
++  register __ev64_s64__ regD asm ("28");
++
++  int32_t i;
++
++  for (i = 0; i < NELTS(rA4s16); i++) {
++
++    // Initialize the ACC.
++    regA = (__ev64_s16__) { 0x0, 0x0, 0x0, 0x0 };
++    asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++    VERIFY(regD[0] == 0x0);
++
++    regA = rA4s16[i];
++    regB = rB4s16[i];
++
++    asm volatile ("evmhegsmfaa %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++#ifdef GEN_BASELINE
++    printf ("  (__ev64_s64__) { 0x%llx },\n", regD[0]);
++#else
++    VERIFY(regD[0] == evmhegsmfaa_baseline[i][0]);
++#endif
++    // Verify that evmhegsmfaa wrote into the ACC:
++    regD = (__ev64_s64__) { 0x0 };
++    asm volatile ("evaddumiaaw %[d], %[a]"   : [d] "=r" (regD) : [a] "r" (regD));
++#ifndef GEN_BASELINE
++    VERIFY(regD[0] == evmhegsmfaa_baseline[i][0]);
++#endif
++  }
++
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmhegsmfaa_asm, "evmhegsmfaa");
++
+ /* NOTE: To avoid having to remaster the .exp files entirely, add
+  *       new test functions /just above/ this comment.
+  *       That way, you only need to worry about the test that you
+@@ -12969,6 +14181,10 @@ test_t spe_isa_ACC_based_fractional_multiply_insns_test_table = {
+     F(evmhesmfaaw_asm),
+     F(evmhesmf_asm),
+     F(evmhesmfa_asm),
++    F(evmhogsmfan_asm),
++    F(evmhogsmfaa_asm),
++    F(evmhegsmfan_asm),
++    F(evmhegsmfaa_asm),
+     NULL
+   }
+ };
+diff --git a/memcheck/tests/ppc32/test_spe.stderr.exp b/memcheck/tests/ppc32/test_spe.stderr.exp
+index f7acf19..e33bfd4 100644
+--- a/memcheck/tests/ppc32/test_spe.stderr.exp
++++ b/memcheck/tests/ppc32/test_spe.stderr.exp
+@@ -5,7 +5,7 @@ Invalid write of size 4
+    by 0x........: run (test_spe.h:43)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:13181)
++   by 0x........: main (test_spe.c:14397)
+  Address 0x........ is 0 bytes after a block of size 40 alloc'd
+    at 0x........: malloc (vg_replace_malloc.c:...)
+    by 0x........: vg_quick_start_guide_aux (test_spe.c:26)
+@@ -13,7 +13,7 @@ Invalid write of size 4
+    by 0x........: run (test_spe.h:43)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:13181)
++   by 0x........: main (test_spe.c:14397)
+ 
+ Invalid write of size 8
+    at 0x........: evmwsmfan_asm (test_spe.c:9376)
+@@ -22,7 +22,7 @@ Invalid write of size 8
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:13181)
++   by 0x........: main (test_spe.c:14397)
+  Address 0x........ is not stack'd, malloc'd or (recently) free'd
+ 
+ Invalid read of size 8
+@@ -32,14 +32,14 @@ Invalid read of size 8
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:13181)
++   by 0x........: main (test_spe.c:14397)
+  Address 0x........ is 184 bytes inside a block of size 256 free'd
+    at 0x........: free (vg_replace_malloc.c:...)
+    by 0x........: simple_loop (test_spe.c:333)
+    by 0x........: run (test_spe.h:43)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:13181)
++   by 0x........: main (test_spe.c:14397)
+ 
+ Invalid write of size 8
+    at 0x........: evmwsmfaa_asm (test_spe.c:9750)
+@@ -48,7 +48,7 @@ Invalid write of size 8
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:13181)
++   by 0x........: main (test_spe.c:14397)
+  Address 0x........ is not stack'd, malloc'd or (recently) free'd
+ 
+ Invalid read of size 8
+@@ -58,7 +58,7 @@ Invalid read of size 8
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:13181)
++   by 0x........: main (test_spe.c:14397)
+  Address 0x........ is 8 bytes before a block of size 64 alloc'd
+    at 0x........: calloc (vg_replace_malloc.c:...)
+    by 0x........: evmwsmfan_asm (test_spe.c:9349)
+@@ -67,7 +67,7 @@ Invalid read of size 8
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:13181)
++   by 0x........: main (test_spe.c:14397)
+ 
+ Invalid write of size 8
+    at 0x........: evmwsmf_asm (test_spe.c:10136)
+@@ -76,7 +76,7 @@ Invalid write of size 8
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:13181)
++   by 0x........: main (test_spe.c:14397)
+  Address 0x........ is not stack'd, malloc'd or (recently) free'd
+ 
+ Invalid read of size 8
+@@ -86,7 +86,7 @@ Invalid read of size 8
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:13181)
++   by 0x........: main (test_spe.c:14397)
+  Address 0x........ is 8 bytes before a block of size 64 alloc'd
+    at 0x........: calloc (vg_replace_malloc.c:...)
+    by 0x........: evmwsmfaa_asm (test_spe.c:9723)
+@@ -95,7 +95,7 @@ Invalid read of size 8
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:13181)
++   by 0x........: main (test_spe.c:14397)
+ 
+ Invalid write of size 8
+    at 0x........: evmwsmfa_asm (test_spe.c:10267)
+@@ -104,7 +104,7 @@ Invalid write of size 8
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:13181)
++   by 0x........: main (test_spe.c:14397)
+  Address 0x........ is not stack'd, malloc'd or (recently) free'd
+ 
+ Invalid read of size 8
+@@ -114,7 +114,7 @@ Invalid read of size 8
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:13181)
++   by 0x........: main (test_spe.c:14397)
+  Address 0x........ is 8 bytes before a block of size 64 alloc'd
+    at 0x........: calloc (vg_replace_malloc.c:...)
+    by 0x........: evmwsmf_asm (test_spe.c:10109)
+@@ -123,7 +123,7 @@ Invalid read of size 8
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:13181)
++   by 0x........: main (test_spe.c:14397)
+ 
+ Invalid write of size 8
+    at 0x........: evmwhsmf_asm (test_spe.c:10656)
+@@ -132,7 +132,7 @@ Invalid write of size 8
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:13181)
++   by 0x........: main (test_spe.c:14397)
+  Address 0x........ is not stack'd, malloc'd or (recently) free'd
+ 
+ Invalid read of size 8
+@@ -142,7 +142,7 @@ Invalid read of size 8
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:13181)
++   by 0x........: main (test_spe.c:14397)
+  Address 0x........ is 8 bytes before a block of size 64 alloc'd
+    at 0x........: calloc (vg_replace_malloc.c:...)
+    by 0x........: evmwsmfa_asm (test_spe.c:10229)
+@@ -151,7 +151,7 @@ Invalid read of size 8
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:13181)
++   by 0x........: main (test_spe.c:14397)
+ 
+ Invalid write of size 8
+    at 0x........: evmwhsmfa_asm (test_spe.c:10784)
+@@ -160,7 +160,7 @@ Invalid write of size 8
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:13181)
++   by 0x........: main (test_spe.c:14397)
+  Address 0x........ is not stack'd, malloc'd or (recently) free'd
+ 
+ Invalid read of size 8
+@@ -170,7 +170,7 @@ Invalid read of size 8
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:13181)
++   by 0x........: main (test_spe.c:14397)
+  Address 0x........ is 8 bytes before a block of size 64 alloc'd
+    at 0x........: calloc (vg_replace_malloc.c:...)
+    by 0x........: evmwhsmf_asm (test_spe.c:10628)
+@@ -179,7 +179,7 @@ Invalid read of size 8
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:13181)
++   by 0x........: main (test_spe.c:14397)
+ 
+ 
+ HEAP SUMMARY:
+@@ -193,7 +193,7 @@ HEAP SUMMARY:
+    by 0x........: run (test_spe.h:43)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:13181)
++   by 0x........: main (test_spe.c:14397)
+ 
+ 16,384 bytes in 256 blocks are definitely lost in loss record ... of ...
+    at 0x........: calloc (vg_replace_malloc.c:...)
+@@ -203,7 +203,7 @@ HEAP SUMMARY:
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:13181)
++   by 0x........: main (test_spe.c:14397)
+ 
+ 16,384 bytes in 256 blocks are definitely lost in loss record ... of ...
+    at 0x........: calloc (vg_replace_malloc.c:...)
+@@ -213,7 +213,7 @@ HEAP SUMMARY:
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:13181)
++   by 0x........: main (test_spe.c:14397)
+ 
+ 16,384 bytes in 256 blocks are definitely lost in loss record ... of ...
+    at 0x........: calloc (vg_replace_malloc.c:...)
+@@ -223,7 +223,7 @@ HEAP SUMMARY:
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:13181)
++   by 0x........: main (test_spe.c:14397)
+ 
+ 16,384 bytes in 256 blocks are definitely lost in loss record ... of ...
+    at 0x........: calloc (vg_replace_malloc.c:...)
+@@ -233,7 +233,7 @@ HEAP SUMMARY:
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:13181)
++   by 0x........: main (test_spe.c:14397)
+ 
+ 16,384 bytes in 256 blocks are definitely lost in loss record ... of ...
+    at 0x........: calloc (vg_replace_malloc.c:...)
+@@ -243,7 +243,7 @@ HEAP SUMMARY:
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:13181)
++   by 0x........: main (test_spe.c:14397)
+ 
+ 16,384 bytes in 256 blocks are definitely lost in loss record ... of ...
+    at 0x........: calloc (vg_replace_malloc.c:...)
+@@ -253,7 +253,7 @@ HEAP SUMMARY:
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:13181)
++   by 0x........: main (test_spe.c:14397)
+ 
+ LEAK SUMMARY:
+    definitely lost: 98,344 bytes in 1,537 blocks
+diff --git a/memcheck/tests/ppc32/test_spe.stdout.exp b/memcheck/tests/ppc32/test_spe.stdout.exp
+index 11ff10e..4b33ab5 100644
+--- a/memcheck/tests/ppc32/test_spe.stdout.exp
++++ b/memcheck/tests/ppc32/test_spe.stdout.exp
+@@ -153,6 +153,10 @@ SPE Regression Tests: PASS
+ ....evmhesmfaaw: PASS
+ ....evmhesmf: PASS
+ ....evmhesmfa: PASS
++....evmhogsmfan: PASS
++....evmhogsmfaa: PASS
++....evmhegsmfan: PASS
++....evmhegsmfaa: PASS
+ ..SPE2PIM Tests: PASS
+ ...Chapter 2: High-Level Language Interface: PASS
+ ...Chapter 5: Programming Interface Examples: PASS
+diff --git a/regtest-power7-64.log b/regtest-power7-64.log
+index 3036799..2afb7f9 100644
+--- a/regtest-power7-64.log
++++ b/regtest-power7-64.log
+@@ -461,7 +461,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -gdwarf-4 -fdebug-types-section -Wno-long-lo
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests'
+-make[5]: Warning: File `.deps/xml1.Po' has modification time 71 s in the future
++make[5]: Warning: File `.deps/xml1.Po' has modification time 76 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -764,7 +764,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/massif/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/massif/tests'
+-make[4]: Warning: File `.deps/zero.Po' has modification time 80 s in the future
++make[4]: Warning: File `.deps/zero.Po' has modification time 81 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1066,7 +1066,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests'
+-make[5]: Warning: File `.deps/vgprintf.Po' has modification time 79 s in the future
++make[5]: Warning: File `.deps/vgprintf.Po' has modification time 80 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1158,7 +1158,7 @@ gcc -Winline -Wall -Wshadow -g -m32 -Winline -Wall -O -lm -g -mregnames -DHAS_DF
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc32'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc32'
+-make[5]: Warning: File `.deps/xlc_dbl_u32.Po' has modification time 76 s in the future
++make[5]: Warning: File `.deps/xlc_dbl_u32.Po' has modification time 78 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1226,7 +1226,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Winline -Wall -O -lm -g -mregnames -DHAS_DF
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc64'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc64'
+-make[5]: Warning: File `.deps/twi_tdi.Po' has modification time 75 s in the future
++make[5]: Warning: File `.deps/twi_tdi.Po' has modification time 78 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1628,7 +1628,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wextra -Wno-inline -Wno-unused-parameter -W
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/drd/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/drd/tests'
+-make[4]: Warning: File `.deps/unit_vc-unit_vc.Po' has modification time 71 s in the future
++make[4]: Warning: File `.deps/unit_vc-unit_vc.Po' has modification time 75 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1863,7 +1863,7 @@ gcc -Winline -Wall -Wshadow -g -O -m64 -Wno-shadow -Wno-inline -Wno-long-long  -
+ make[3]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/perf'
+ make  check-local
+ make[3]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/perf'
+-make[3]: Warning: File `.deps/tinycc-tinycc.Po' has modification time 80 s in the future
++make[3]: Warning: File `.deps/tinycc-tinycc.Po' has modification time 81 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1980,7 +1980,7 @@ badfree-2trace:  valgrind   --num-callers=2 -q ./badfree
+ badfree:         valgrind   -q ./badfree 
+ badfree3:        valgrind   -q --fullpath-after=/proj/ppc/DT/labhome/anmol/valgrind-3.8.1/ ./badfree 
+ badjump:         valgrind   ./badjump 
+-sh: line 1: 19173 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
++sh: line 1: 11642 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
+ badjump2:        valgrind   -q ./badjump2 
+ badloop:         valgrind   -q ./badloop 
+ badpoll:         valgrind   -q ./badpoll 
+@@ -1997,7 +1997,7 @@ clo_redzone_default: valgrind   --leak-check=no -q ./clo_redzone
+ custom-overlap:  valgrind   --leak-check=summary -q ./custom-overlap 
+ custom_alloc:    valgrind   -q ./custom_alloc 
+ deep-backtrace:  valgrind   -q --num-callers=500 ./deep-backtrace 
+-sh: line 1: 28118 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
++sh: line 1: 12325 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
+ deep_templates:  valgrind   -q ./deep_templates 
+ describe-block:  valgrind   ./describe-block 
+ doublefree:      valgrind   -q ./doublefree 
+@@ -2110,7 +2110,7 @@ supp-dir:        valgrind   --suppressions=x86/ ./../../tests/true
+ supp1:           valgrind   --suppressions=supp.supp -q ./supp1 
+ supp2:           valgrind   --suppressions=supp.supp -q ./supp2 
+ supp_unknown:    valgrind   -q --suppressions=supp_unknown.supp ./badjump 
+-sh: line 1: 28842 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
++sh: line 1: 17173 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
+ *** supp_unknown failed (stderr) ***
+ suppfree:        valgrind   --suppressions=suppfree.supp -q ./suppfree 
+ test-plo-no:     valgrind   -q ./test-plo 
+@@ -2246,7 +2246,7 @@ gxx304:          valgrind   ./gxx304
+ ifunc:           (skipping, prereq failed: test -e ifunc)
+ -- Running  tests in none/tests/linux ----------------------------------
+ blockfault:      valgrind   ./blockfault 
+-sh: line 1: 13161 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
++sh: line 1: 21924 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
+ mremap:          valgrind   ./mremap 
+ mremap2:         valgrind   ./mremap2 
+ mremap3:         valgrind   ./mremap3 
+@@ -2412,7 +2412,7 @@ tc20_verifywrap: valgrind   --read-var-info=yes ./tc20_verifywrap
+ *** tc20_verifywrap failed (stderr) ***
+ tc21_pthonce:    valgrind   --read-var-info=yes ./tc21_pthonce 
+ tc22_exit_w_lock: valgrind   ./tc22_exit_w_lock 
+-sh: line 1: 19037 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1:  7109 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   ./tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --hg-sanity-flags=111111 ./tc24_nonzero_sem 
+ -- Finished tests in helgrind/tests ------------------------------------
+@@ -2531,7 +2531,7 @@ tc18_semabuse:   valgrind   ./../../helgrind/tests/tc18_semabuse
+ tc19_shadowmem:  valgrind   --error-limit=no --read-var-info=yes --show-confl-seg=no --num-callers=3 ./../../helgrind/tests/tc19_shadowmem 
+ tc21_pthonce:    valgrind   --num-callers=3 ./../../helgrind/tests/tc21_pthonce 
+ tc22_exit_w_lock: valgrind   --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock 
+-sh: line 1:  8328 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1: 12451 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   --num-callers=3 ./../../helgrind/tests/tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --read-var-info=yes ./../../helgrind/tests/tc24_nonzero_sem 
+ thread_name:     valgrind   --read-var-info=yes --check-stack-var=yes --num-callers=3 ./thread_name 
+-- 
+1.7.3.4
+

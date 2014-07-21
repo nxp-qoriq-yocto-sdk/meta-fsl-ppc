@@ -1,0 +1,420 @@
+From 59c75c5dda7fce837a682b991282365ec8b905c8 Mon Sep 17 00:00:00 2001
+From: Anmol P. Paralkar <anmol@freescale.com>
+Date: Wed, 2 Jan 2013 10:48:36 -0800
+Subject: [PATCH 02/65]  Configure for SPE on an SPE machine.
+
+---
+ VEX/priv/guest_ppc_toIR.c |   36 +++++++++++++-----
+ VEX/priv/main_main.c      |   20 ++++++++---
+ VEX/pub/libvex.h          |    1 +
+ configure.in              |   29 +++++++++++++++
+ coregrind/m_machine.c     |   89 +++++++++++++++++++++++++++++++++++++++++----
+ regtest-power7-64.log     |   24 ++++++------
+ 6 files changed, 164 insertions(+), 35 deletions(-)
+
+diff --git a/VEX/priv/guest_ppc_toIR.c b/VEX/priv/guest_ppc_toIR.c
+index 0ca00d8..57f7248 100644
+--- a/VEX/priv/guest_ppc_toIR.c
++++ b/VEX/priv/guest_ppc_toIR.c
+@@ -16483,11 +16483,14 @@ DisResult disInstr_PPC_WRK (
+    DisResult dres;
+    UInt      theInstr;
+    IRType    ty = mode64 ? Ity_I64 : Ity_I32;
+-   Bool      allow_F  = False;
+-   Bool      allow_V  = False;
+-   Bool      allow_FX = False;
+-   Bool      allow_GX = False;
+-   Bool      allow_VX = False;  // Equates to "supports Power ISA 2.06
++   Bool      allow_F   = False;
++   Bool      allow_V   = False;
++#ifdef __SPE__
++   Bool      allow_SPE = False;
++#endif
++   Bool      allow_FX  = False;
++   Bool      allow_GX  = False;
++   Bool      allow_VX  = False;  // Equates to "supports Power ISA 2.06
+    Bool      allow_DFP = False;
+    UInt      hwcaps = archinfo->hwcaps;
+    Long      delta;
+@@ -16501,11 +16504,14 @@ DisResult disInstr_PPC_WRK (
+       allow_VX = (0 != (hwcaps & VEX_HWCAPS_PPC64_VX));
+       allow_DFP = (0 != (hwcaps & VEX_HWCAPS_PPC64_DFP));
+    } else {
+-      allow_F  = (0 != (hwcaps & VEX_HWCAPS_PPC32_F));
+-      allow_V  = (0 != (hwcaps & VEX_HWCAPS_PPC32_V));
+-      allow_FX = (0 != (hwcaps & VEX_HWCAPS_PPC32_FX));
+-      allow_GX = (0 != (hwcaps & VEX_HWCAPS_PPC32_GX));
+-      allow_VX = (0 != (hwcaps & VEX_HWCAPS_PPC32_VX));
++      allow_F   = (0 != (hwcaps & VEX_HWCAPS_PPC32_F));
++      allow_V   = (0 != (hwcaps & VEX_HWCAPS_PPC32_V));
++#ifdef __SPE__
++      allow_SPE = (0 != (hwcaps & VEX_HWCAPS_PPC32_SPE));
++#endif
++      allow_FX  = (0 != (hwcaps & VEX_HWCAPS_PPC32_FX));
++      allow_GX  = (0 != (hwcaps & VEX_HWCAPS_PPC32_GX));
++      allow_VX  = (0 != (hwcaps & VEX_HWCAPS_PPC32_VX));
+       allow_DFP = (0 != (hwcaps & VEX_HWCAPS_PPC32_DFP));
+    }
+ 
+@@ -17485,6 +17491,9 @@ DisResult disInstr_PPC_WRK (
+ 
+ 
+    case 0x04:
++#ifdef __SPE__
++      if (allow_SPE) goto decode_noSPE;
++#else
+       /* AltiVec instructions */
+ 
+       opc2 = IFIELD(theInstr, 0, 6);
+@@ -17630,6 +17639,7 @@ DisResult disInstr_PPC_WRK (
+       default:
+          goto decode_failure;
+       }
++#endif
+       break;
+ 
+    default:
+@@ -17643,6 +17653,12 @@ DisResult disInstr_PPC_WRK (
+       vassert(!allow_V);
+       vex_printf("disInstr(ppc): declined to decode an AltiVec insn.\n");
+       goto decode_failure;
++#ifdef __SPE__
++   decode_noSPE: /* yet! :) */
++      vassert(allow_SPE);
++      vex_printf("disInstr(ppc): not ready to decode an SPE insn yet!\n");
++      goto decode_failure;
++#endif
+    decode_noVX:
+       vassert(!allow_VX);
+       vex_printf("disInstr(ppc): declined to decode a Power ISA 2.06 insn.\n");
+diff --git a/VEX/priv/main_main.c b/VEX/priv/main_main.c
+index b093292..3a3690c 100644
+--- a/VEX/priv/main_main.c
++++ b/VEX/priv/main_main.c
+@@ -1149,11 +1149,14 @@ static HChar* show_hwcaps_ppc32 ( UInt hwcaps )
+ {
+    /* Monotonic with complications.  Basically V > F > baseline,
+       but once you have F then you can have FX or GX too. */
+-   const UInt F  = VEX_HWCAPS_PPC32_F;
+-   const UInt V  = VEX_HWCAPS_PPC32_V;
+-   const UInt FX = VEX_HWCAPS_PPC32_FX;
+-   const UInt GX = VEX_HWCAPS_PPC32_GX;
+-   const UInt VX = VEX_HWCAPS_PPC32_VX;
++   const UInt F   = VEX_HWCAPS_PPC32_F;
++   const UInt V   = VEX_HWCAPS_PPC32_V;
++#ifdef __SPE__
++   const UInt SPE = VEX_HWCAPS_PPC32_SPE;
++#endif
++   const UInt FX  = VEX_HWCAPS_PPC32_FX;
++   const UInt GX  = VEX_HWCAPS_PPC32_GX;
++   const UInt VX  = VEX_HWCAPS_PPC32_VX;
+    const UInt DFP = VEX_HWCAPS_PPC32_DFP;
+          UInt c  = hwcaps;
+    if (c == 0)           return "ppc32-int";
+@@ -1161,11 +1164,18 @@ static HChar* show_hwcaps_ppc32 ( UInt hwcaps )
+    if (c == (F|FX))      return "ppc32-int-flt-FX";
+    if (c == (F|GX))      return "ppc32-int-flt-GX";
+    if (c == (F|FX|GX))   return "ppc32-int-flt-FX-GX";
++#ifdef __SPE__
++   if (c == (F|SPE))       return "ppc32-int-flt-SPE";
++   if (c == (F|SPE|FX))    return "ppc32-int-flt-SPE-FX";
++   if (c == (F|SPE|GX))    return "ppc32-int-flt-SPE-GX";
++   if (c == (F|SPE|FX|GX)) return "ppc32-int-flt-SPE-FX-GX";
++#else
+    if (c == (F|V))       return "ppc32-int-flt-vmx";
+    if (c == (F|V|FX))    return "ppc32-int-flt-vmx-FX";
+    if (c == (F|V|GX))    return "ppc32-int-flt-vmx-GX";
+    if (c == (F|V|FX|GX)) return "ppc32-int-flt-vmx-FX-GX";
+    if (c == (F|V|FX|GX|DFP))    return "ppc32-int-flt-vmx-FX-GX-DFP";
++#endif
+    if (c == (F|V|FX|GX|VX|DFP)) return "ppc32-int-flt-vmx-FX-GX-VX-DFP";
+    return NULL;
+ }
+diff --git a/VEX/pub/libvex.h b/VEX/pub/libvex.h
+index 9d7fcb0..c94e16d 100644
+--- a/VEX/pub/libvex.h
++++ b/VEX/pub/libvex.h
+@@ -86,6 +86,7 @@ typedef
+ /* ppc32: baseline capability is integer only */
+ #define VEX_HWCAPS_PPC32_F     (1<<8)  /* basic (non-optional) FP */
+ #define VEX_HWCAPS_PPC32_V     (1<<9)  /* Altivec (VMX) */
++#define VEX_HWCAPS_PPC32_SPE   (1<<19) /* SPE */
+ #define VEX_HWCAPS_PPC32_FX    (1<<10) /* FP extns (fsqrt, fsqrts) */
+ #define VEX_HWCAPS_PPC32_GX    (1<<11) /* Graphics extns
+                                           (fres,frsqrte,fsel,stfiwx) */
+diff --git a/configure.in b/configure.in
+index 1da3a2c..3445879 100644
+--- a/configure.in
++++ b/configure.in
+@@ -1184,6 +1184,35 @@ CFLAGS=$safe_CFLAGS
+ 
+ AM_CONDITIONAL(HAS_VSX, test x$ac_have_vsx = xyes)
+ 
++# Check for SPE:
++# Does this compiler support -mspe?
++# Can we include the header <spe.h>?
++# Can we compile SPE instructions?
++
++AC_MSG_CHECKING([for SPE])
++
++safe_CFLAGS=$CFLAGS
++CFLAGS="-mspe"
++
++AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
++#include <spe.h>
++]], [[
++  __ev64_u16__ s = (__ev64_u16__) { 0xdead, 0xbeef, 0xdead, 0xbeef };
++  __ev64_u16__ t = (__ev64_u16__) { 0xffff, 0xffff, 0xffff, 0xffff };
++
++  t = __ev_ldd (&s, 0);
++]])], [
++ac_have_spe=yes
++AC_MSG_RESULT([yes])
++AC_DEFINE([HAS_SPE], 1,
++          [Define to 1 if gcc/as can do SPE.])
++], [
++ac_have_spe=no
++AC_MSG_RESULT([no])
++])
++CFLAGS=$safe_CFLAGS
++
++AM_CONDITIONAL(HAS_SPE, test x$ac_have_spe = xyes)
+ 
+ AC_MSG_CHECKING([that assembler knows DFP])
+ 
+diff --git a/coregrind/m_machine.c b/coregrind/m_machine.c
+index 82c5751..6a77057 100644
+--- a/coregrind/m_machine.c
++++ b/coregrind/m_machine.c
+@@ -850,7 +850,7 @@ Bool VG_(machine_get_hwcaps)( void )
+      vki_sigaction_fromK_t saved_sigill_act, saved_sigfpe_act;
+      vki_sigaction_toK_t     tmp_sigill_act,   tmp_sigfpe_act;
+ 
+-     volatile Bool have_F, have_V, have_FX, have_GX, have_VX, have_DFP;
++     volatile Bool have_F, have_V, have_SPE, have_FX, have_GX, have_VX, have_DFP;
+      Int r;
+ 
+      /* This is a kludge.  Really we ought to back-convert saved_act
+@@ -913,6 +913,78 @@ Bool VG_(machine_get_hwcaps)( void )
+         __asm__ __volatile__(".long 0x10000484"); /*vor 0,0,0*/
+      }
+ 
++#ifdef __SPE__
++
++     /* SPE insns */
++
++     /* Altivec and SPE have overlapping opcode space, and thus are
++      * mutually exclusive (ref. Power ISA Version 2.06 Revision B,
++      * Section 1.3.5: 'Categories', Figure 1, Footnote 1).
++      *
++      * TODO: Add test for mutual exclusivity of Altivec and SPE
++      *       If we are on a PPC, the test should test that exactly
++      *       one of Altivec and SPE is true (by dumping the HW
++      *       capability).
++      *       If we are not on a PPC, obviously the test should not
++      *       be run.
++      *       Based on this code below:
++      *       VG_(debugLog)(1, "machine", "F %d V %d SPE %d FX %d GX %d VX %d DFP %d\n",
++      *             (Int)have_F, (Int)have_V, (Int)have_SPE, (Int)have_FX,
++      *             (Int)have_GX, (Int)have_VX, (Int)have_DFP);
++      *
++      * How do we detect in here, without including config.h (Ref.
++      * http://thread.gmane.org/gmane.comp.debugging.valgrind.devel/\
++      * 10487) that we are on a system with SPE capability?
++      *
++      * - Per the SPE2PIM, Section 2.2.5: 'Programming Interface', an
++      * implementation that provides the macro __SPE__ should define
++      * it to a non-zero value and that definition should not occur in
++      * the <spe.h> header file.
++      *
++      * Per configure.in, Valgrind requires GCC to be compiled, and a
++      * GCC configured for gnuspe, will define the macro __SPE__ (see:
++      * gcc/config/rs6000/rs6000-c.c), thus we can assume that if the
++      * macro __SPE__ is defined, then we are on a system with SPE
++      * capability.
++      *
++      * Note: SPE support only implemented for VGA_ppc32
++      *
++      * References:
++      *
++      * 0. SPE2PIM
++      *
++      *    Enhanced Signal Processing Extension and
++      *    Embedded Floating-Point Version 2
++      *    Auxiliary Processing Units
++      *    Programming Interface Manual
++      *
++      *    Document Number: SPE2PIM
++      *    Rev. 1.0-1 : Based on Specifications SPE2rev1.0
++      *    and EFP2rev1.3
++      *    10/2011
++      *
++      *    Freescale Semiconductor, Inc.
++      *    http://www.freescale.com
++      */
++
++     /* Turn off Altivec. */
++     have_V = False;
++
++     have_SPE = True;
++     /* TODO: In include/pub_tool_libcsetjmp.h:
++      * #define VG_MINIMAL_JMP_BUF(_name)        UInt _name [32+1+1]
++      * 32+1+1 UInt's may be inadequate size for _name on SPE?
++      */
++     if (VG_MINIMAL_SETJMP(env_unsup_insn)) {
++        VG_(dmsg)("warning: __SPE__ defined, but SPE insns illegal. Assuming no SPE.\n");
++        have_SPE = False;
++     } else {
++        __asm__ __volatile__(".long 0x10000217"); /* evor 0,0,0 */
++     }
++#else
++     have_SPE = False;
++#endif
++
+      /* General-Purpose optional (fsqrt, fsqrts) */
+      have_FX = True;
+      if (VG_MINIMAL_SETJMP(env_unsup_insn)) {
+@@ -955,8 +1027,8 @@ Bool VG_(machine_get_hwcaps)( void )
+      vg_assert(r == 0);
+      r = VG_(sigprocmask)(VKI_SIG_SETMASK, &saved_set, NULL);
+      vg_assert(r == 0);
+-     VG_(debugLog)(1, "machine", "F %d V %d FX %d GX %d VX %d DFP %d\n",
+-                    (Int)have_F, (Int)have_V, (Int)have_FX,
++     VG_(debugLog)(1, "machine", "F %d V %d SPE %d FX %d GX %d VX %d DFP %d\n",
++                    (Int)have_F, (Int)have_V, (Int)have_SPE, (Int)have_FX,
+                     (Int)have_GX, (Int)have_VX, (Int)have_DFP);
+      /* Make FP a prerequisite for VMX (bogusly so), and for FX and GX. */
+      if (have_V && !have_F)
+@@ -972,11 +1044,12 @@ Bool VG_(machine_get_hwcaps)( void )
+      va = VexArchPPC32;
+ 
+      vai.hwcaps = 0;
+-     if (have_F)  vai.hwcaps |= VEX_HWCAPS_PPC32_F;
+-     if (have_V)  vai.hwcaps |= VEX_HWCAPS_PPC32_V;
+-     if (have_FX) vai.hwcaps |= VEX_HWCAPS_PPC32_FX;
+-     if (have_GX) vai.hwcaps |= VEX_HWCAPS_PPC32_GX;
+-     if (have_VX) vai.hwcaps |= VEX_HWCAPS_PPC32_VX;
++     if (have_F)   vai.hwcaps |= VEX_HWCAPS_PPC32_F;
++     if (have_V)   vai.hwcaps |= VEX_HWCAPS_PPC32_V;
++     if (have_SPE) vai.hwcaps |= VEX_HWCAPS_PPC32_SPE;
++     if (have_FX)  vai.hwcaps |= VEX_HWCAPS_PPC32_FX;
++     if (have_GX)  vai.hwcaps |= VEX_HWCAPS_PPC32_GX;
++     if (have_VX)  vai.hwcaps |= VEX_HWCAPS_PPC32_VX;
+      if (have_DFP) vai.hwcaps |= VEX_HWCAPS_PPC32_DFP;
+ 
+ 
+diff --git a/regtest-power7-64.log b/regtest-power7-64.log
+index ebd4ebe..c3a03f9 100644
+--- a/regtest-power7-64.log
++++ b/regtest-power7-64.log
+@@ -461,7 +461,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -gdwarf-4 -fdebug-types-section -Wno-long-lo
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests'
+-make[5]: Warning: File `.deps/xml1.Po' has modification time 59 s in the future
++make[5]: Warning: File `.deps/xml1.Po' has modification time 56 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1063,7 +1063,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests'
+-make[5]: Warning: File `.deps/vgprintf.Po' has modification time 62 s in the future
++make[5]: Warning: File `.deps/vgprintf.Po' has modification time 61 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1155,7 +1155,7 @@ gcc -Winline -Wall -Wshadow -g -m32 -Winline -Wall -O -lm -g -mregnames -DHAS_DF
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc32'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc32'
+-make[5]: Warning: File `.deps/xlc_dbl_u32.Po' has modification time 60 s in the future
++make[5]: Warning: File `.deps/xlc_dbl_u32.Po' has modification time 59 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1223,7 +1223,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Winline -Wall -O -lm -g -mregnames -DHAS_DF
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc64'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc64'
+-make[5]: Warning: File `.deps/twi_tdi.Po' has modification time 60 s in the future
++make[5]: Warning: File `.deps/twi_tdi.Po' has modification time 59 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1625,7 +1625,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wextra -Wno-inline -Wno-unused-parameter -W
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/drd/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/drd/tests'
+-make[4]: Warning: File `.deps/unit_vc-unit_vc.Po' has modification time 54 s in the future
++make[4]: Warning: File `.deps/unit_vc-unit_vc.Po' has modification time 53 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1860,7 +1860,7 @@ gcc -Winline -Wall -Wshadow -g -O -m64 -Wno-shadow -Wno-inline -Wno-long-long  -
+ make[3]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/perf'
+ make  check-local
+ make[3]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/perf'
+-make[3]: Warning: File `.deps/tinycc-tinycc.Po' has modification time 62 s in the future
++make[3]: Warning: File `.deps/tinycc-tinycc.Po' has modification time 63 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1977,7 +1977,7 @@ badfree-2trace:  valgrind   --num-callers=2 -q ./badfree
+ badfree:         valgrind   -q ./badfree 
+ badfree3:        valgrind   -q --fullpath-after=/proj/ppc/DT/labhome/anmol/valgrind-3.8.1/ ./badfree 
+ badjump:         valgrind   ./badjump 
+-sh: line 1:  8985 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
++sh: line 1: 23950 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
+ badjump2:        valgrind   -q ./badjump2 
+ badloop:         valgrind   -q ./badloop 
+ badpoll:         valgrind   -q ./badpoll 
+@@ -1994,7 +1994,7 @@ clo_redzone_default: valgrind   --leak-check=no -q ./clo_redzone
+ custom-overlap:  valgrind   --leak-check=summary -q ./custom-overlap 
+ custom_alloc:    valgrind   -q ./custom_alloc 
+ deep-backtrace:  valgrind   -q --num-callers=500 ./deep-backtrace 
+-sh: line 1:  9544 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
++sh: line 1: 31147 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
+ deep_templates:  valgrind   -q ./deep_templates 
+ describe-block:  valgrind   ./describe-block 
+ doublefree:      valgrind   -q ./doublefree 
+@@ -2106,7 +2106,7 @@ supp-dir:        valgrind   --suppressions=x86/ ./../../tests/true
+ supp1:           valgrind   --suppressions=supp.supp -q ./supp1 
+ supp2:           valgrind   --suppressions=supp.supp -q ./supp2 
+ supp_unknown:    valgrind   -q --suppressions=supp_unknown.supp ./badjump 
+-sh: line 1: 14245 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
++sh: line 1: 29122 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
+ *** supp_unknown failed (stderr) ***
+ suppfree:        valgrind   --suppressions=suppfree.supp -q ./suppfree 
+ test-plo-no:     valgrind   -q ./test-plo 
+@@ -2242,7 +2242,7 @@ gxx304:          valgrind   ./gxx304
+ ifunc:           (skipping, prereq failed: test -e ifunc)
+ -- Running  tests in none/tests/linux ----------------------------------
+ blockfault:      valgrind   ./blockfault 
+-sh: line 1: 18718 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
++sh: line 1:   451 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
+ mremap:          valgrind   ./mremap 
+ mremap2:         valgrind   ./mremap2 
+ mremap3:         valgrind   ./mremap3 
+@@ -2408,7 +2408,7 @@ tc20_verifywrap: valgrind   --read-var-info=yes ./tc20_verifywrap
+ *** tc20_verifywrap failed (stderr) ***
+ tc21_pthonce:    valgrind   --read-var-info=yes ./tc21_pthonce 
+ tc22_exit_w_lock: valgrind   ./tc22_exit_w_lock 
+-sh: line 1:  3926 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1: 25497 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   ./tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --hg-sanity-flags=111111 ./tc24_nonzero_sem 
+ -- Finished tests in helgrind/tests ------------------------------------
+@@ -2527,7 +2527,7 @@ tc18_semabuse:   valgrind   ./../../helgrind/tests/tc18_semabuse
+ tc19_shadowmem:  valgrind   --error-limit=no --read-var-info=yes --show-confl-seg=no --num-callers=3 ./../../helgrind/tests/tc19_shadowmem 
+ tc21_pthonce:    valgrind   --num-callers=3 ./../../helgrind/tests/tc21_pthonce 
+ tc22_exit_w_lock: valgrind   --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock 
+-sh: line 1:  9338 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1: 28309 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   --num-callers=3 ./../../helgrind/tests/tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --read-var-info=yes ./../../helgrind/tests/tc24_nonzero_sem 
+ thread_name:     valgrind   --read-var-info=yes --check-stack-var=yes --num-callers=3 ./thread_name 
+-- 
+1.7.3.4
+

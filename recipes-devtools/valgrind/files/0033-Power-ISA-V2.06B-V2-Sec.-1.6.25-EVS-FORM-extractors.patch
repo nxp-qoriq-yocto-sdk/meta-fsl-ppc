@@ -1,0 +1,49 @@
+From 380db738bfbc41bc5df518daf7b76d6e37d20d98 Mon Sep 17 00:00:00 2001
+From: Anmol P. Paralkar <anmol@freescale.com>
+Date: Thu, 28 Feb 2013 08:43:15 -0800
+Subject: [PATCH 33/65] Power ISA V2.06B V2 Sec. 1.6.25 EVS-FORM extractors.
+
+---
+ VEX/priv/guest_ppc_toIR.c |   26 ++++++++++++++++++++++++++
+ 1 files changed, 26 insertions(+), 0 deletions(-)
+
+diff --git a/VEX/priv/guest_ppc_toIR.c b/VEX/priv/guest_ppc_toIR.c
+index 7b1dce4..2c9351f 100644
+--- a/VEX/priv/guest_ppc_toIR.c
++++ b/VEX/priv/guest_ppc_toIR.c
+@@ -388,6 +388,32 @@ static inline UInt evxXO ( UInt instr) {
+    return IFIELD( instr, 0, 11 );
+ }
+ 
++/* Power ISA V2.06B V2 Sec. 1.6.25 EVS-FORM extractors. */
++
++static inline UInt evsBFA( UInt instr) {
++   return IFIELD( instr, 0, 3 );
++}
++
++static inline UInt evsXO( UInt instr) {
++   return IFIELD( instr, 3, 8 );
++}
++
++static inline UChar evsRB( UInt instr ) {
++   return toUChar( IFIELD( instr, 11, 5 ) );
++}
++
++static inline UChar evsRA( UInt instr ) {
++   return toUChar( IFIELD( instr, 16, 5 ) );
++}
++
++static inline UChar evsRT( UInt instr ) {
++   return toUChar( IFIELD( instr, 21, 5 ) );
++}
++
++static inline UChar evsOpcode( UInt instr ) {
++   return ifieldOPC( instr );
++}
++
+ /*------------------------------------------------------------*/
+ /*--- Guest-state identifiers                              ---*/
+ /*------------------------------------------------------------*/
+-- 
+1.7.3.4
+

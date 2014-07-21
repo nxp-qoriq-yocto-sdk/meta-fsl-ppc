@@ -1,0 +1,502 @@
+From 4eb71e09bc80b04749b0b21874e5c260dab212d7 Mon Sep 17 00:00:00 2001
+From: Anmol P. Paralkar <anmol@freescale.com>
+Date: Tue, 29 Jan 2013 18:24:40 -0800
+Subject: [PATCH 10/65] Implement SPE Instructions: { evor, evmr }.
+
+---
+ VEX/priv/guest_ppc_toIR.c                |   25 ++++-
+ memcheck/tests/ppc32/test_spe.c          |  142 ++++++++++++++++++++++++++++++
+ memcheck/tests/ppc32/test_spe.stderr.exp |    6 +-
+ memcheck/tests/ppc32/test_spe.stdout.exp |    3 +
+ regtest-power7-64.log                    |   46 +++++-----
+ 5 files changed, 191 insertions(+), 31 deletions(-)
+
+diff --git a/VEX/priv/guest_ppc_toIR.c b/VEX/priv/guest_ppc_toIR.c
+index 1170363..622c022 100644
+--- a/VEX/priv/guest_ppc_toIR.c
++++ b/VEX/priv/guest_ppc_toIR.c
+@@ -11840,20 +11840,34 @@ static Bool dis_spe_bitwise ( UInt theInstr )
+       return False;
+    }
+    switch (opc2) {
+-   case 0x216:
+-      // evxor (Vector XOR, SPEPEM p5-248)
+-      DIP( "evxor r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
+ 
++   case 0x216:
++   case 0x217:
++      if (opc2 == 0x216) {
++        // evxor (Vector XOR, SPEPEM p5-248)
++        DIP( "evxor r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++      }
++      if (opc2 == 0x217) {
++        // evor (Vector OR, SPEPEM p5-214)
++        DIP( "evor r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++      }
+       assign ( rA, getSPEReg( rA_addr ) );
+       assign ( rB, getSPEReg( rB_addr ) );
+       assign ( rAL, unop( Iop_64to32, mkexpr ( rA ) ) );
+       assign ( rAU, unop( Iop_64HIto32, mkexpr ( rA ) ) );
+       assign ( rBL, unop( Iop_64to32, mkexpr ( rB ) ) );
+       assign ( rBU, unop( Iop_64HIto32, mkexpr ( rB ) ) );
+-      assign ( rDL, binop( Iop_Xor32, mkexpr ( rAL ), mkexpr ( rBL ) ) );
+-      assign ( rDU, binop( Iop_Xor32, mkexpr ( rAU ), mkexpr ( rBU ) ) );
++      if (opc2 == 0x216) { // evxor
++        assign ( rDL, binop( Iop_Xor32, mkexpr ( rAL ), mkexpr ( rBL ) ) );
++        assign ( rDU, binop( Iop_Xor32, mkexpr ( rAU ), mkexpr ( rBU ) ) );
++      }
++      if (opc2 == 0x217) { // evor
++        assign ( rDL, binop( Iop_Or32, mkexpr ( rAL ), mkexpr ( rBL ) ) );
++        assign ( rDU, binop( Iop_Or32, mkexpr ( rAU ), mkexpr ( rBU ) ) );
++      }
+       assign ( rD,  binop( Iop_32HLto64, mkexpr ( rDU ), mkexpr ( rDL ) ) );
+       putSPEReg( rD_addr, mkexpr ( rD ) );
++      break;
+    }
+    return True;
+ }
+@@ -17852,6 +17866,7 @@ DisResult disInstr_PPC_WRK (
+          if (dis_spe_store( theInstr )) goto decode_success;
+          goto decode_failure;
+       case 0x216: // evxor
++      case 0x217: // evor
+          if (!allow_SPE) goto decode_noSPE;
+          if (dis_spe_bitwise( theInstr )) goto decode_success;
+          goto decode_failure;
+diff --git a/memcheck/tests/ppc32/test_spe.c b/memcheck/tests/ppc32/test_spe.c
+index ffc1a7c..d76f1b9 100644
+--- a/memcheck/tests/ppc32/test_spe.c
++++ b/memcheck/tests/ppc32/test_spe.c
+@@ -1553,6 +1553,143 @@ int pool_demo_1s64 (void)
+   return failures;
+ }
+ TEST_SPE_DECL(pool_demo_1s64, "Using __ev64_s64__ pool");
++
++int sample (void)
++{
++  int failures = 0;
++#ifdef __SPE__
++
++  register __ev64_opaque__ regA asm ("30");
++  register __ev64_opaque__ regB asm ("29");
++  register __ev64_opaque__ regD asm ("28");
++
++  int i;
++
++  for (i = 0; i < 64; i++) {
++
++    regA = rA4u16 [i]; // evor gnerated (actually evmr)
++    regB = rB4u16 [i]; // evor gnerated (actually evmr)
++    asm volatile ("evxor   %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA),    [b] "r" (regB));
++    rD4u16 [i] = regD;
++#ifdef GEN_BASELINE
++    u16_dump(&rD4u16[i], 1);
++#else
++    VERIFY (rD4u16[i][0] == (rA4u16[i][0] ^ rB4u16[i][0]));
++    VERIFY (rD4u16[i][1] == (rA4u16[i][1] ^ rB4u16[i][1]));
++    VERIFY (rD4u16[i][2] == (rA4u16[i][2] ^ rB4u16[i][2]));
++    VERIFY (rD4u16[i][3] == (rA4u16[i][3] ^ rB4u16[i][3]));
++#endif
++  }
++  memset (rD4u16, 0x0, 64 * sizeof (__ev64_u16__));
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(sample, "A sample test that actually needs evor");
++
++#ifdef __SPE__
++__ev64_s64__ evor_asm_mst[4] = {
++
++  (__ev64_s64__) { 0xef336e4fffffab7f },
++  (__ev64_s64__) { 0xfffffdfbdffd1fff },
++  (__ev64_s64__) { 0xe53cefbfeecfabbe },
++  (__ev64_s64__) { 0xe5ff79ffdff5bfbf },
++
++};
++#endif // __SPE__
++
++int evor_asm (void)
++{
++  int failures = 0;
++#ifdef __SPE__
++
++  register __ev64_opaque__ regA asm ("30");
++  register __ev64_opaque__ regB asm ("29");
++  register __ev64_opaque__ regD asm ("28");
++
++  register void *rA_base asm ("27");
++  register void *rB_base asm ("26");
++  register void *rD_base asm ("25");
++
++  register int idx asm ("24");
++  register int i   asm ("23");
++
++  asm volatile ("lis %[b], rA1s64@ha" : [b] "=r" (rA_base));
++  asm volatile ("addic %[bd], %[bs], rA1s64@l" : [bd] "=r" (rA_base) : [bs] "r" (rA_base));
++  VERIFY (rA_base == rA1s64);
++
++  asm volatile ("lis %[b], rB1s64@ha" : [b] "=r" (rB_base));
++  asm volatile ("addic %[bd], %[bs], rB1s64@l" : [bd] "=r" (rB_base) : [bs] "r" (rB_base));
++  VERIFY (rB_base == rB1s64);
++
++  asm volatile ("lis %[b], rD1s64@ha" : [b] "=r" (rD_base));
++  asm volatile ("addic %[bd], %[bs], rD1s64@l" : [bd] "=r" (rD_base) : [bs] "r" (rD_base));
++  VERIFY (rD_base == rD1s64);
++
++  for (i = 0; i < 4; i++) {
++
++    idx = i * sizeof (__ev64_s64__);
++    asm volatile ("evlddx  %[v], %[b], %[i]" : [v] "=r" (regA) : [b] "r" (rA_base), [i] "r" (idx));
++    asm volatile ("evlddx  %[v], %[b], %[i]" : [v] "=r" (regB) : [b] "r" (rB_base), [i] "r" (idx));
++    asm volatile ("evor    %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA),    [b] "r" (regB));
++    asm volatile ("evstddx %[v], %[b], %[i]" : [v] "=r" (regD) : [b] "r" (rD_base), [i] "r" (idx));
++
++#ifdef GEN_BASELINE
++    s64_dump(&rD1s64[i], 1);
++#else
++    VERIFY(rD1s64[i][0] == evor_asm_mst[i][0]);
++#endif
++  }
++  memset (rD1s64, 0x0, 4 * sizeof (__ev64_s64__));
++  for (i = 0; i < 4; i++) {
++    VERIFY(rD1s64[i][0] == 0x0);
++  }
++
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evor_asm, "Unit test for evor using asm");
++
++int evmr_asm (void)
++{
++  int failures = 0;
++#ifdef __SPE__
++
++  register __ev64_opaque__ regA asm ("30");
++  register __ev64_opaque__ regD asm ("28");
++
++  register void *rA_base asm ("27");
++  register void *rD_base asm ("25");
++
++  register int idx asm ("24");
++  register int i   asm ("23");
++
++  asm volatile ("lis %[b], rA1s64@ha" : [b] "=r" (rA_base));
++  asm volatile ("addic %[bd], %[bs], rA1s64@l" : [bd] "=r" (rA_base) : [bs] "r" (rA_base));
++  VERIFY (rA_base == rA1s64);
++
++  asm volatile ("lis %[b], rD1s64@ha" : [b] "=r" (rD_base));
++  asm volatile ("addic %[bd], %[bs], rD1s64@l" : [bd] "=r" (rD_base) : [bs] "r" (rD_base));
++  VERIFY (rD_base == rD1s64);
++
++  for (i = 0; i < 64; i++) {
++
++    idx = i * sizeof (__ev64_s64__);
++    asm volatile ("evlddx  %[v], %[b], %[i]" : [v] "=r" (regA) : [b] "r" (rA_base), [i] "r" (idx));
++    asm volatile ("evmr    %[d], %[a]"       : [d] "=r" (regD) : [a] "r" (regA));
++    asm volatile ("evstddx %[v], %[b], %[i]" : [v] "=r" (regD) : [b] "r" (rD_base), [i] "r" (idx));
++    VERIFY(regD[0] == regA[0]);
++    VERIFY(rD1s64[i][0] == rA1s64[i][0]);
++  }
++  memset (rD1s64, 0x0, 64 * sizeof (__ev64_s64__));
++  for (i = 0; i < 64; i++) {
++    VERIFY(rD1s64[i][0] == 0x0);
++  }
++
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmr_asm, "Unit test for evmr using asm");
++
+ /* NOTE: To avoid having to remaster the .exp files entirely, add
+  *       new test functions /just above/ this comment.
+  *       That way, you only need to worry about the test that you
+@@ -1586,6 +1723,7 @@ test_t misc_test_table = {
+     F(simple_array),
+     F(ptr_to_function),
+     F(evxor_generic),
++    F(sample),
+     NULL
+   }
+ };
+@@ -1610,6 +1748,8 @@ test_t spe_isa_bitwise_operators_test_table = {
+   .type = table,
+   .description = "SPE ISA Bitwise Operators Tests",
+   .table = {
++    F(evmr_asm),
++    F(evor_asm),
+     F(evxor_asm),
+     NULL
+   }
+@@ -1691,3 +1831,5 @@ int main(void)
+ // 1. Make VERIFY() a variadic function, parametrized with the local paramters in addition to __LINE__.
+ // 2. Make a data header file per test and include those throughout the code where you have those blobs of 0x's.
+ // 3. Cleanup evstdd_asm (); like macroise like evstdh_asm ()
++// 4. Add support to measure time (add clock per test) - standalone and under valgrind.
++// 5. The memset(a) and VERIFY(a == {0x0}) pattern ought to be abstracted into it's own function.
+diff --git a/memcheck/tests/ppc32/test_spe.stderr.exp b/memcheck/tests/ppc32/test_spe.stderr.exp
+index e6029ca..d1e4c8b 100644
+--- a/memcheck/tests/ppc32/test_spe.stderr.exp
++++ b/memcheck/tests/ppc32/test_spe.stderr.exp
+@@ -5,7 +5,7 @@ Invalid write of size 4
+    by 0x........: run (test_spe.h:42)
+    by 0x........: run (test_spe.h:48)
+    by 0x........: run (test_spe.h:48)
+-   by 0x........: main (test_spe.c:1684)
++   by 0x........: main (test_spe.c:1824)
+  Address 0x........ is 0 bytes after a block of size 40 alloc'd
+    at 0x........: malloc (vg_replace_malloc.c:...)
+    by 0x........: vg_quick_start_guide_aux (test_spe.c:26)
+@@ -13,7 +13,7 @@ Invalid write of size 4
+    by 0x........: run (test_spe.h:42)
+    by 0x........: run (test_spe.h:48)
+    by 0x........: run (test_spe.h:48)
+-   by 0x........: main (test_spe.c:1684)
++   by 0x........: main (test_spe.c:1824)
+ 
+ 
+ HEAP SUMMARY:
+@@ -27,7 +27,7 @@ HEAP SUMMARY:
+    by 0x........: run (test_spe.h:42)
+    by 0x........: run (test_spe.h:48)
+    by 0x........: run (test_spe.h:48)
+-   by 0x........: main (test_spe.c:1684)
++   by 0x........: main (test_spe.c:1824)
+ 
+ LEAK SUMMARY:
+    definitely lost: 40 bytes in 1 blocks
+diff --git a/memcheck/tests/ppc32/test_spe.stdout.exp b/memcheck/tests/ppc32/test_spe.stdout.exp
+index d7f4f5f..bd2fe4d 100644
+--- a/memcheck/tests/ppc32/test_spe.stdout.exp
++++ b/memcheck/tests/ppc32/test_spe.stdout.exp
+@@ -10,6 +10,7 @@ SPE Regression Tests: PASS
+ ..Simple array: PASS
+ ..Pointer to function: PASS
+ ..Algorithm in C for evxor: PASS
++..A sample test that actually needs evor: PASS
+ .SPE ISA Tests: PASS
+ ..SPE ISA Standalone Instruction Tests: PASS
+ ...SPE ISA Load Store Tests: PASS
+@@ -20,6 +21,8 @@ SPE Regression Tests: PASS
+ ....Unit test for evldh using asm: PASS
+ ....Unit test for evstdh using asm: PASS
+ ...SPE ISA Bitwise Operators Tests: PASS
++....Unit test for evmr using asm: PASS
++....Unit test for evor using asm: PASS
+ ....Unit test for evxor using asm: PASS
+ ..SPE ISA Miscellaneous Tests: PASS
+ ...Memory transfer using evldd-evstdd: PASS
+diff --git a/regtest-power7-64.log b/regtest-power7-64.log
+index 80959da..2ba2345 100644
+--- a/regtest-power7-64.log
++++ b/regtest-power7-64.log
+@@ -461,7 +461,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -gdwarf-4 -fdebug-types-section -Wno-long-lo
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests'
+-make[5]: Warning: File `.deps/xml1.Po' has modification time 66 s in the future
++make[5]: Warning: File `.deps/xml1.Po' has modification time 67 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -484,7 +484,7 @@ gcc -Winline -Wall -Wshadow -g -Wno-long-long  -Wno-pointer-sign -fno-stack-prot
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/ppc32'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/ppc32'
+-make[5]: Warning: File `.deps/test_spe.Po' has modification time 70 s in the future
++make[5]: Warning: File `.deps/test_spe.Po' has modification time 71 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -504,7 +504,7 @@ gcc -Winline -Wall -Wshadow -g  -Winline -Wall -Wshadow -g -I../../../include -m
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/ppc64'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/ppc64'
+-make[5]: Warning: File `.deps/power_ISA2_05-power_ISA2_05.Po' has modification time 70 s in the future
++make[5]: Warning: File `.deps/power_ISA2_05-power_ISA2_05.Po' has modification time 71 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -551,7 +551,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/linux'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/linux'
+-make[5]: Warning: File `.deps/timerfd-syscall.Po' has modification time 70 s in the future
++make[5]: Warning: File `.deps/timerfd-syscall.Po' has modification time 71 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -605,7 +605,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -fPIC -Wno-long-long  -Wno-pointer-sign -fno
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/cachegrind/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/cachegrind/tests'
+-make[5]: Warning: File `.deps/myprint_so-myprint.Po' has modification time 70 s in the future
++make[5]: Warning: File `.deps/myprint_so-myprint.Po' has modification time 71 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -656,7 +656,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/callgrind/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/callgrind/tests'
+-make[5]: Warning: File `.deps/threads.Po' has modification time 70 s in the future
++make[5]: Warning: File `.deps/threads.Po' has modification time 71 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -764,7 +764,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/massif/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/massif/tests'
+-make[4]: Warning: File `.deps/zero.Po' has modification time 70 s in the future
++make[4]: Warning: File `.deps/zero.Po' has modification time 71 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1066,7 +1066,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests'
+-make[5]: Warning: File `.deps/vgprintf.Po' has modification time 69 s in the future
++make[5]: Warning: File `.deps/vgprintf.Po' has modification time 70 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1158,7 +1158,7 @@ gcc -Winline -Wall -Wshadow -g -m32 -Winline -Wall -O -lm -g -mregnames -DHAS_DF
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc32'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc32'
+-make[5]: Warning: File `.deps/xlc_dbl_u32.Po' has modification time 68 s in the future
++make[5]: Warning: File `.deps/xlc_dbl_u32.Po' has modification time 69 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1226,7 +1226,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Winline -Wall -O -lm -g -mregnames -DHAS_DF
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc64'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc64'
+-make[5]: Warning: File `.deps/twi_tdi.Po' has modification time 67 s in the future
++make[5]: Warning: File `.deps/twi_tdi.Po' has modification time 68 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1255,7 +1255,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/linux'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/linux'
+-make[5]: Warning: File `.deps/mremap3.Po' has modification time 70 s in the future
++make[5]: Warning: File `.deps/mremap3.Po' has modification time 71 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1628,7 +1628,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wextra -Wno-inline -Wno-unused-parameter -W
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/drd/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/drd/tests'
+-make[4]: Warning: File `.deps/unit_vc-unit_vc.Po' has modification time 64 s in the future
++make[4]: Warning: File `.deps/unit_vc-unit_vc.Po' has modification time 65 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1689,7 +1689,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-sgcheck/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-sgcheck/tests'
+-make[4]: Warning: File `.deps/stackerr.Po' has modification time 70 s in the future
++make[4]: Warning: File `.deps/stackerr.Po' has modification time 71 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1759,7 +1759,7 @@ gcc -Winline -Wall -Wshadow -g -Wno-long-long  -Wno-pointer-sign -fno-stack-prot
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-bbv/tests/ppc32-linux'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-bbv/tests/ppc32-linux'
+-make[5]: Warning: File `.deps/million.Po' has modification time 70 s in the future
++make[5]: Warning: File `.deps/million.Po' has modification time 71 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1819,7 +1819,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[3]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/tests'
+ make  check-local
+ make[3]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/tests'
+-make[3]: Warning: File `.deps/x86_amd64_features-x86_amd64_features.Po' has modification time 70 s in the future
++make[3]: Warning: File `.deps/x86_amd64_features-x86_amd64_features.Po' has modification time 71 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1863,7 +1863,7 @@ gcc -Winline -Wall -Wshadow -g -O -m64 -Wno-shadow -Wno-inline -Wno-long-long  -
+ make[3]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/perf'
+ make  check-local
+ make[3]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/perf'
+-make[3]: Warning: File `.deps/tinycc-tinycc.Po' has modification time 70 s in the future
++make[3]: Warning: File `.deps/tinycc-tinycc.Po' has modification time 71 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1901,7 +1901,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[3]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/gdbserver_tests'
+ make  check-local
+ make[3]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/gdbserver_tests'
+-make[3]: Warning: File `.deps/watchpoints.Po' has modification time 70 s in the future
++make[3]: Warning: File `.deps/watchpoints.Po' has modification time 71 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1980,7 +1980,7 @@ badfree-2trace:  valgrind   --num-callers=2 -q ./badfree
+ badfree:         valgrind   -q ./badfree 
+ badfree3:        valgrind   -q --fullpath-after=/proj/ppc/DT/labhome/anmol/valgrind-3.8.1/ ./badfree 
+ badjump:         valgrind   ./badjump 
+-sh: line 1: 16421 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
++sh: line 1:  4600 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
+ badjump2:        valgrind   -q ./badjump2 
+ badloop:         valgrind   -q ./badloop 
+ badpoll:         valgrind   -q ./badpoll 
+@@ -1997,7 +1997,7 @@ clo_redzone_default: valgrind   --leak-check=no -q ./clo_redzone
+ custom-overlap:  valgrind   --leak-check=summary -q ./custom-overlap 
+ custom_alloc:    valgrind   -q ./custom_alloc 
+ deep-backtrace:  valgrind   -q --num-callers=500 ./deep-backtrace 
+-sh: line 1: 16980 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
++sh: line 1:  5168 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
+ deep_templates:  valgrind   -q ./deep_templates 
+ describe-block:  valgrind   ./describe-block 
+ doublefree:      valgrind   -q ./doublefree 
+@@ -2110,7 +2110,7 @@ supp-dir:        valgrind   --suppressions=x86/ ./../../tests/true
+ supp1:           valgrind   --suppressions=supp.supp -q ./supp1 
+ supp2:           valgrind   --suppressions=supp.supp -q ./supp2 
+ supp_unknown:    valgrind   -q --suppressions=supp_unknown.supp ./badjump 
+-sh: line 1: 21683 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
++sh: line 1:  9877 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
+ *** supp_unknown failed (stderr) ***
+ suppfree:        valgrind   --suppressions=suppfree.supp -q ./suppfree 
+ test-plo-no:     valgrind   -q ./test-plo 
+@@ -2246,7 +2246,7 @@ gxx304:          valgrind   ./gxx304
+ ifunc:           (skipping, prereq failed: test -e ifunc)
+ -- Running  tests in none/tests/linux ----------------------------------
+ blockfault:      valgrind   ./blockfault 
+-sh: line 1: 26156 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
++sh: line 1: 14394 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
+ mremap:          valgrind   ./mremap 
+ mremap2:         valgrind   ./mremap2 
+ mremap3:         valgrind   ./mremap3 
+@@ -2412,7 +2412,7 @@ tc20_verifywrap: valgrind   --read-var-info=yes ./tc20_verifywrap
+ *** tc20_verifywrap failed (stderr) ***
+ tc21_pthonce:    valgrind   --read-var-info=yes ./tc21_pthonce 
+ tc22_exit_w_lock: valgrind   ./tc22_exit_w_lock 
+-sh: line 1: 11310 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1: 31837 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   ./tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --hg-sanity-flags=111111 ./tc24_nonzero_sem 
+ -- Finished tests in helgrind/tests ------------------------------------
+@@ -2531,7 +2531,7 @@ tc18_semabuse:   valgrind   ./../../helgrind/tests/tc18_semabuse
+ tc19_shadowmem:  valgrind   --error-limit=no --read-var-info=yes --show-confl-seg=no --num-callers=3 ./../../helgrind/tests/tc19_shadowmem 
+ tc21_pthonce:    valgrind   --num-callers=3 ./../../helgrind/tests/tc21_pthonce 
+ tc22_exit_w_lock: valgrind   --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock 
+-sh: line 1: 16648 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1:  4848 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   --num-callers=3 ./../../helgrind/tests/tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --read-var-info=yes ./../../helgrind/tests/tc24_nonzero_sem 
+ thread_name:     valgrind   --read-var-info=yes --check-stack-var=yes --num-callers=3 ./thread_name 
+-- 
+1.7.3.4
+

@@ -1,0 +1,764 @@
+From 0e67d16f6dae2505f9c957a65e8af33537ac31eb Mon Sep 17 00:00:00 2001
+From: Anmol P. Paralkar <anmol@freescale.com>
+Date: Fri, 15 Feb 2013 10:32:16 -0800
+Subject: [PATCH 24/65] Tests based on SPE Programming Interface Manual, Chapter 2: High-Level Language Interface.
+
+---
+ memcheck/tests/ppc32/test_spe.c          |  573 ++++++++++++++++++++++++++++++
+ memcheck/tests/ppc32/test_spe.stderr.exp |    6 +-
+ memcheck/tests/ppc32/test_spe.stdout.exp |    2 +
+ regtest-power7-64.log                    |   22 +-
+ 4 files changed, 589 insertions(+), 14 deletions(-)
+
+diff --git a/memcheck/tests/ppc32/test_spe.c b/memcheck/tests/ppc32/test_spe.c
+index c8669d4..b1bfec7 100644
+--- a/memcheck/tests/ppc32/test_spe.c
++++ b/memcheck/tests/ppc32/test_spe.c
+@@ -3463,6 +3463,559 @@ int evsrwis_asm(void)
+ }
+ TEST_SPE_DECL(evsrwis_asm, "evsrwis");
+ 
++int chapter2_spe2pim(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++
++  /* Ref. SPE2PIM:
++   * Chapter 2 High-Level Language Interface,
++   * Sec. 5.1 Data Type Initialization
++   */
++
++  // For each of the __ev64_*__ types in Table 2-1, (verify that we can)
++  // initialize a variable for type __ev64_*__.
++
++  // 5.1.1 __ev64_opaque__ Initialization, (Implicit Cast)
++#if __EV64_US8__AVAILABLE
++  __ev64_opaque__ va0 = (__ev64_u8__)  { 0x7a, 0xff, 0x12, 0xb2, 0xcc, 0x7d, 0xe4, 0x30, };
++  __ev64_opaque__ va1 = (__ev64_s8__)  { 0xba, 0xd1, 0x4c, 0xea, 0x1a, 0x29, 0xb1, 0x85, };
++#endif
++  __ev64_opaque__ va2 = (__ev64_u16__) { 0x1ab4, 0x2110, 0x5aef, 0x10a0 };
++  __ev64_opaque__ va3 = (__ev64_s16__) { 0xf216, 0x1a32, 0xeeda, 0x2199 };
++  __ev64_opaque__ va4 = (__ev64_u32__) { 0x327462fa, 0xabbed01 };
++  __ev64_opaque__ va5 = (__ev64_s32__) { 0xa21434fb, 0x213abff };
++  __ev64_opaque__ va6 = (__ev64_u64__) { 0x78ffff012321abbf };
++  __ev64_opaque__ va7 = (__ev64_s64__) { 0x92abdf12abbc3190 };
++
++  // 5.1.1 __ev64_opaque__ Initialization, (Explicit Cast)
++#if __EV64_US8__AVAILABLE
++  __ev64_opaque__ vb0 = (__ev64_opaque__) (__ev64_u8__)  { 0x7a, 0xff, 0x12, 0xb2, 0xcc, 0x7d, 0xe4, 0x30, };
++  __ev64_opaque__ vb1 = (__ev64_opaque__) (__ev64_s8__)  { 0xba, 0xd1, 0x4c, 0xea, 0x1a, 0x29, 0xb1, 0x85, };
++#endif
++  __ev64_opaque__ vb2 = (__ev64_opaque__) (__ev64_u16__) { 0x1ab4, 0x2110, 0x5aef, 0x10a0 };
++  __ev64_opaque__ vb3 = (__ev64_opaque__) (__ev64_s16__) { 0xf216, 0x1a32, 0xeeda, 0x2199 };
++  __ev64_opaque__ vb4 = (__ev64_opaque__) (__ev64_u32__) { 0x327462fa, 0xabbed01 };
++  __ev64_opaque__ vb5 = (__ev64_opaque__) (__ev64_s32__) { 0xa21434fb, 0x213abff };
++  __ev64_opaque__ vb6 = (__ev64_opaque__) (__ev64_u64__) { 0x78ffff012321abbf };
++  __ev64_opaque__ vb7 = (__ev64_opaque__) (__ev64_s64__) { 0x92abdf12abbc3190 };
++
++  // 2.2.2.1 Alignment of __ev64_*__ Types
++#if __EV64_US8__AVAILABLE
++  VERIFY(__alignof__ (__ev64_u8__) == 8);
++  VERIFY(__alignof__ (__ev64_s8__) == 8);
++#endif
++  VERIFY(__alignof__ (__ev64_u16__) == 8);
++  VERIFY(__alignof__ (__ev64_s16__) == 8);
++  VERIFY(__alignof__ (__ev64_u32__) == 8);
++  VERIFY(__alignof__ (__ev64_s32__) == 8);
++  VERIFY(__alignof__ (__ev64_u64__) == 8);
++  VERIFY(__alignof__ (__ev64_s64__) == 8);
++
++#if __EV64_US8__AVAILABLE
++  VERIFY(__alignof__ (va0) == 8);
++  VERIFY(__alignof__ (va1) == 8);
++#endif
++  VERIFY(__alignof__ (va2) == 8);
++  VERIFY(__alignof__ (va3) == 8);
++  VERIFY(__alignof__ (va4) == 8);
++  VERIFY(__alignof__ (va5) == 8);
++  VERIFY(__alignof__ (va6) == 8);
++  VERIFY(__alignof__ (va7) == 8);
++
++  // (Per 2.2.3.3, Address Operator valid)
++#if __EV64_US8__AVAILABLE
++  VERIFY(((unsigned int) &vb0) % 8 == 0);
++  VERIFY(((unsigned int) &vb1) % 8 == 0);
++#endif
++  VERIFY(((unsigned int) &vb2) % 8 == 0);
++  VERIFY(((unsigned int) &vb3) % 8 == 0);
++  VERIFY(((unsigned int) &vb4) % 8 == 0);
++  VERIFY(((unsigned int) &vb5) % 8 == 0);
++  VERIFY(((unsigned int) &vb6) % 8 == 0);
++  VERIFY(((unsigned int) &vb7) % 8 == 0);
++
++  // 2.2.2.2 Alignment of Aggregates and Unions Containing __ev64_*__ Types
++  struct sprinke_primes {
++    char c0[2];
++    __ev64_opaque__ v0;
++    char c1[3];
++    __ev64_opaque__ v1;
++    char c2[5];
++    __ev64_opaque__ v2;
++    char c3[7];
++    __ev64_opaque__ v3;
++    char c4[11];
++    __ev64_opaque__ v4;
++    char c5[13];
++    __ev64_opaque__ v5;
++    char c6[17];
++    __ev64_opaque__ v6;
++    char c7[19];
++    __ev64_opaque__ v7;
++  } sp;
++
++  VERIFY(__alignof__ (sp.c0) == 1);
++  VERIFY(__alignof__ (sp.v0) == 8);
++  VERIFY(__alignof__ (sp.c1) == 1);
++  VERIFY(__alignof__ (sp.v1) == 8);
++  VERIFY(__alignof__ (sp.c2) == 1);
++  VERIFY(__alignof__ (sp.v2) == 8);
++  VERIFY(__alignof__ (sp.c3) == 1);
++  VERIFY(__alignof__ (sp.v3) == 8);
++  VERIFY(__alignof__ (sp.c4) == 1);
++  VERIFY(__alignof__ (sp.v4) == 8);
++  VERIFY(__alignof__ (sp.c5) == 1);
++  VERIFY(__alignof__ (sp.v5) == 8);
++  VERIFY(__alignof__ (sp.c6) == 1);
++  VERIFY(__alignof__ (sp.v6) == 8);
++  VERIFY(__alignof__ (sp.c7) == 1);
++  VERIFY(__alignof__ (sp.v7) == 8);
++
++  // (Per 2.2.3.3, Address Operator valid)
++#if __EV64_US8__AVAILABLE
++  VERIFY(memcmp (&va0, &vb0, sizeof (__ev64_opaque__)) == 0);
++  VERIFY(memcmp (&va1, &vb1, sizeof (__ev64_opaque__)) == 0);
++#endif
++  VERIFY(memcmp (&va2, &vb2, sizeof (__ev64_opaque__)) == 0);
++  VERIFY(memcmp (&va3, &vb3, sizeof (__ev64_opaque__)) == 0);
++  VERIFY(memcmp (&va4, &vb4, sizeof (__ev64_opaque__)) == 0);
++  VERIFY(memcmp (&va5, &vb5, sizeof (__ev64_opaque__)) == 0);
++  VERIFY(memcmp (&va6, &vb6, sizeof (__ev64_opaque__)) == 0);
++  VERIFY(memcmp (&va7, &vb7, sizeof (__ev64_opaque__)) == 0);
++
++  // 2.2.3.1 sizeof ()
++  // (Per 2.2.3.3, Address Operator valid)
++#if __EV64_US8__AVAILABLE
++  __ev64_opaque__ *pva0 = &va0;
++  __ev64_opaque__ *pva1 = &va1;
++#endif
++  __ev64_opaque__ *pva2 = &va2;
++  __ev64_opaque__ *pva3 = &va3;
++  __ev64_opaque__ *pva4 = &va4;
++  __ev64_opaque__ *pva5 = &va5;
++  __ev64_opaque__ *pva6 = &va6;
++  __ev64_opaque__ *pva7 = &va7;
++
++#if __EV64_US8__AVAILABLE
++  VERIFY(sizeof (va0) == 8);
++  VERIFY(sizeof (va1) == 8);
++#endif
++  VERIFY(sizeof (va2) == 8);
++  VERIFY(sizeof (va3) == 8);
++  VERIFY(sizeof (va4) == 8);
++  VERIFY(sizeof (va5) == 8);
++  VERIFY(sizeof (va6) == 8);
++  VERIFY(sizeof (va7) == 8);
++
++#if __EV64_US8__AVAILABLE
++  VERIFY(sizeof (*pva0) == 8);
++  VERIFY(sizeof (*pva1) == 8);
++#endif
++  VERIFY(sizeof (*pva2) == 8);
++  VERIFY(sizeof (*pva3) == 8);
++  VERIFY(sizeof (*pva4) == 8);
++  VERIFY(sizeof (*pva5) == 8);
++  VERIFY(sizeof (*pva6) == 8);
++  VERIFY(sizeof (*pva7) == 8);
++
++  // 2.2.3.2 Assignment (a = o)
++#if __EV64_US8__AVAILABLE
++  __ev64_u8__ xa0 = va0;
++  __ev64_s8__ xa1 = va1;
++#endif
++  __ev64_u16__ xa2 = va2;
++  __ev64_s16__ xa3 = va3;
++  __ev64_u32__ xa4 = va4;
++  __ev64_s32__ xa5 = va5;
++  __ev64_u64__ xa6 = va6;
++  __ev64_s64__ xa7 = va7;
++
++#if __EV64_US8__AVAILABLE
++  VERIFY(memcmp (&va0, &xa0, sizeof (__ev64_u8__)) == 0);
++  VERIFY(memcmp (&va1, &xa1, sizeof (__ev64_s8__)) == 0);
++#endif
++  VERIFY(memcmp (&va2, &xa2, sizeof (__ev64_u16__)) == 0);
++  VERIFY(memcmp (&va3, &xa3, sizeof (__ev64_s16__)) == 0);
++  VERIFY(memcmp (&va4, &xa4, sizeof (__ev64_u32__)) == 0);
++  VERIFY(memcmp (&va5, &xa5, sizeof (__ev64_s32__)) == 0);
++  VERIFY(memcmp (&va6, &xa6, sizeof (__ev64_u64__)) == 0);
++  VERIFY(memcmp (&va7, &xa7, sizeof (__ev64_s64__)) == 0);
++
++  // 2.2.3.2 Assignment (o = a)
++#if __EV64_US8__AVAILABLE
++  vb0 = xa0;
++  vb1 = xa1;
++#endif
++  vb2 = xa2;
++  vb3 = xa3;
++  vb4 = xa4;
++  vb5 = xa5;
++  vb6 = xa6;
++  vb7 = xa7;
++
++#if __EV64_US8__AVAILABLE
++  VERIFY(memcmp (&vb0, &xa0, sizeof (__ev64_u8__)) == 0);
++  VERIFY(memcmp (&vb1, &xa1, sizeof (__ev64_s8__)) == 0);
++#endif
++  VERIFY(memcmp (&vb2, &xa2, sizeof (__ev64_u16__)) == 0);
++  VERIFY(memcmp (&vb3, &xa3, sizeof (__ev64_s16__)) == 0);
++  VERIFY(memcmp (&vb4, &xa4, sizeof (__ev64_u32__)) == 0);
++  VERIFY(memcmp (&vb5, &xa5, sizeof (__ev64_s32__)) == 0);
++  VERIFY(memcmp (&vb6, &xa6, sizeof (__ev64_u64__)) == 0);
++  VERIFY(memcmp (&vb7, &xa7, sizeof (__ev64_s64__)) == 0);
++
++  // 2.2.3.4 Pointer Arithmetic
++  __ev64_u32__ a[4] = {
++    (__ev64_u32__) {  1,   2 },
++    (__ev64_u32__) {  4,   8 },
++    (__ev64_u32__) { 16,  32 },
++    (__ev64_u32__) { 64, 128 },
++  };
++  __ev64_opaque__ *p = &a[0];
++
++  VERIFY(memcmp ((p++), &a[0], sizeof (__ev64_opaque__)) == 0);
++  VERIFY(memcmp ((p++), &a[1], sizeof (__ev64_opaque__)) == 0);
++  VERIFY(memcmp ((p++), &a[2], sizeof (__ev64_opaque__)) == 0);
++  VERIFY(memcmp ((p++), &a[3], sizeof (__ev64_opaque__)) == 0);
++
++  // 2.2.3.5 Pointer Dereferencing
++  __ev64_u32__ dw0, dw1, dw2, dw3;
++
++  p = &a[0];
++  dw0 = *p;
++  VERIFY(memcmp (&dw0, &a[0], sizeof (__ev64_u32__)) == 0);
++  p = p + 1;
++  dw1 = *p;
++  VERIFY(memcmp (&dw1, &a[1], sizeof (__ev64_u32__)) == 0);
++  p = p + 1;
++  dw2 = *p;
++  VERIFY(memcmp (&dw2, &a[2], sizeof (__ev64_u32__)) == 0);
++  p = p + 1;
++  dw3 = *p;
++  VERIFY(memcmp (&dw3, &a[3], sizeof (__ev64_u32__)) == 0);
++
++  dw0 = (__ev64_u32__) { 0x0, 0x0 };
++  dw1 = (__ev64_u32__) { 0x0, 0x0 };
++  dw2 = (__ev64_u32__) { 0x0, 0x0 };
++  dw3 = (__ev64_u32__) { 0x0, 0x0 };
++
++   p = &a[0];
++  *p = dw0; p++;
++  *p = dw1; p++;
++  *p = dw2; p++;
++  *p = dw3;
++
++  char *q;
++  for (q = (char *) &a[0]; (q - ((char *) &a[0])) < ((sizeof (a)/sizeof (a[0])) * sizeof (typeof (a[0]))); q++)
++    VERIFY (*q == 0x0);
++
++  // 2.2.3.6 Type Casting
++  __ev64_u64__ vec_u64 = (__ev64_u64__) { 0xfedcba0123456789 };
++
++#if __EV64_US8__AVAILABLE
++  __ev64_u8__ ya0 = (__ev64_u8__) vec_u64;
++  __ev64_s8__ ya1 = (__ev64_s8__) vec_u64;
++#endif
++  __ev64_u16__ ya2 = (__ev64_u16__) vec_u64;
++  __ev64_s16__ ya3 = (__ev64_s16__) vec_u64;
++  __ev64_u32__ ya4 = (__ev64_u32__) vec_u64;
++  __ev64_s32__ ya5 = (__ev64_s32__) vec_u64;
++  __ev64_u64__ ya6 = (__ev64_u64__) vec_u64;
++  __ev64_s64__ ya7 = (__ev64_s64__) vec_u64;
++
++#if __EV64_US8__AVAILABLE
++  VERIFY(memcmp (&ya0, &vec_u64, sizeof (__ev64_u64__)) == 0);
++  VERIFY(memcmp (&ya1, &vec_u64, sizeof (__ev64_u64__)) == 0);
++#endif
++  VERIFY(memcmp (&ya2, &vec_u64, sizeof (__ev64_u64__)) == 0);
++  VERIFY(memcmp (&ya3, &vec_u64, sizeof (__ev64_u64__)) == 0);
++  VERIFY(memcmp (&ya4, &vec_u64, sizeof (__ev64_u64__)) == 0);
++  VERIFY(memcmp (&ya5, &vec_u64, sizeof (__ev64_u64__)) == 0);
++  VERIFY(memcmp (&ya6, &vec_u64, sizeof (__ev64_u64__)) == 0);
++  VERIFY(memcmp (&ya7, &vec_u64, sizeof (__ev64_u64__)) == 0);
++
++#if __EV64_US8__AVAILABLE
++  // Cast from each __ev64_*__ type to __ev64_u8__
++  ya0 = (typeof (ya0)) ya0;
++  ya0 = (typeof (ya0)) ya1;
++  ya0 = (typeof (ya0)) ya2;
++  ya0 = (typeof (ya0)) ya3;
++  ya0 = (typeof (ya0)) ya4;
++  ya0 = (typeof (ya0)) ya5;
++  ya0 = (typeof (ya0)) ya6;
++  ya0 = (typeof (ya0)) ya7;
++
++  VERIFY(memcmp (&ya0, &ya0, sizeof (typeof (ya0))) == 0);
++  VERIFY(memcmp (&ya0, &ya1, sizeof (typeof (ya0))) == 0);
++  VERIFY(memcmp (&ya0, &ya2, sizeof (typeof (ya0))) == 0);
++  VERIFY(memcmp (&ya0, &ya3, sizeof (typeof (ya0))) == 0);
++  VERIFY(memcmp (&ya0, &ya4, sizeof (typeof (ya0))) == 0);
++  VERIFY(memcmp (&ya0, &ya5, sizeof (typeof (ya0))) == 0);
++  VERIFY(memcmp (&ya0, &ya6, sizeof (typeof (ya0))) == 0);
++  VERIFY(memcmp (&ya0, &ya7, sizeof (typeof (ya0))) == 0);
++
++  // Cast from each __ev64_*__ type to __ev64_s8__
++  ya1 = (typeof (ya1)) ya0;
++  ya1 = (typeof (ya1)) ya1;
++  ya1 = (typeof (ya1)) ya2;
++  ya1 = (typeof (ya1)) ya3;
++  ya1 = (typeof (ya1)) ya4;
++  ya1 = (typeof (ya1)) ya5;
++  ya1 = (typeof (ya1)) ya6;
++  ya1 = (typeof (ya1)) ya7;
++
++  VERIFY(memcmp (&ya1, &ya0, sizeof (typeof (ya1))) == 0);
++  VERIFY(memcmp (&ya1, &ya1, sizeof (typeof (ya1))) == 0);
++  VERIFY(memcmp (&ya1, &ya2, sizeof (typeof (ya1))) == 0);
++  VERIFY(memcmp (&ya1, &ya3, sizeof (typeof (ya1))) == 0);
++  VERIFY(memcmp (&ya1, &ya4, sizeof (typeof (ya1))) == 0);
++  VERIFY(memcmp (&ya1, &ya5, sizeof (typeof (ya1))) == 0);
++  VERIFY(memcmp (&ya1, &ya6, sizeof (typeof (ya1))) == 0);
++  VERIFY(memcmp (&ya1, &ya7, sizeof (typeof (ya1))) == 0);
++#endif
++
++  // Cast from each __ev64_*__ type to __ev64_u16__
++#if __EV64_US8__AVAILABLE
++  ya2 = (typeof (ya2)) ya0;
++  ya2 = (typeof (ya2)) ya1;
++#endif
++  ya2 = (typeof (ya2)) ya2;
++  ya2 = (typeof (ya2)) ya3;
++  ya2 = (typeof (ya2)) ya4;
++  ya2 = (typeof (ya2)) ya5;
++  ya2 = (typeof (ya2)) ya6;
++  ya2 = (typeof (ya2)) ya7;
++
++#if __EV64_US8__AVAILABLE
++  VERIFY(memcmp (&ya2, &ya0, sizeof (typeof (ya2))) == 0);
++  VERIFY(memcmp (&ya2, &ya1, sizeof (typeof (ya2))) == 0);
++#endif
++  VERIFY(memcmp (&ya2, &ya2, sizeof (typeof (ya2))) == 0);
++  VERIFY(memcmp (&ya2, &ya3, sizeof (typeof (ya2))) == 0);
++  VERIFY(memcmp (&ya2, &ya4, sizeof (typeof (ya2))) == 0);
++  VERIFY(memcmp (&ya2, &ya5, sizeof (typeof (ya2))) == 0);
++  VERIFY(memcmp (&ya2, &ya6, sizeof (typeof (ya2))) == 0);
++  VERIFY(memcmp (&ya2, &ya7, sizeof (typeof (ya2))) == 0);
++
++  // Cast from each __ev64_*__ type to __ev64_s16__
++#if __EV64_US8__AVAILABLE
++  ya3 = (typeof (ya3)) ya0;
++  ya3 = (typeof (ya3)) ya1;
++#endif
++  ya3 = (typeof (ya3)) ya2;
++  ya3 = (typeof (ya3)) ya3;
++  ya3 = (typeof (ya3)) ya4;
++  ya3 = (typeof (ya3)) ya5;
++  ya3 = (typeof (ya3)) ya6;
++  ya3 = (typeof (ya3)) ya7;
++
++#if __EV64_US8__AVAILABLE
++  VERIFY(memcmp (&ya3, &ya0, sizeof (typeof (ya3))) == 0);
++  VERIFY(memcmp (&ya3, &ya1, sizeof (typeof (ya3))) == 0);
++#endif
++  VERIFY(memcmp (&ya3, &ya2, sizeof (typeof (ya3))) == 0);
++  VERIFY(memcmp (&ya3, &ya3, sizeof (typeof (ya3))) == 0);
++  VERIFY(memcmp (&ya3, &ya4, sizeof (typeof (ya3))) == 0);
++  VERIFY(memcmp (&ya3, &ya5, sizeof (typeof (ya3))) == 0);
++  VERIFY(memcmp (&ya3, &ya6, sizeof (typeof (ya3))) == 0);
++  VERIFY(memcmp (&ya3, &ya7, sizeof (typeof (ya3))) == 0);
++
++  // Cast from each __ev64_*__ type to __ev64_u32__
++#if __EV64_US8__AVAILABLE
++  ya4 = (typeof (ya4)) ya0;
++  ya4 = (typeof (ya4)) ya1;
++#endif
++  ya4 = (typeof (ya4)) ya2;
++  ya4 = (typeof (ya4)) ya3;
++  ya4 = (typeof (ya4)) ya4;
++  ya4 = (typeof (ya4)) ya5;
++  ya4 = (typeof (ya4)) ya6;
++  ya4 = (typeof (ya4)) ya7;
++
++#if __EV64_US8__AVAILABLE
++  VERIFY(memcmp (&ya4, &ya0, sizeof (typeof (ya4))) == 0);
++  VERIFY(memcmp (&ya4, &ya1, sizeof (typeof (ya4))) == 0);
++#endif
++  VERIFY(memcmp (&ya4, &ya2, sizeof (typeof (ya4))) == 0);
++  VERIFY(memcmp (&ya4, &ya3, sizeof (typeof (ya4))) == 0);
++  VERIFY(memcmp (&ya4, &ya4, sizeof (typeof (ya4))) == 0);
++  VERIFY(memcmp (&ya4, &ya5, sizeof (typeof (ya4))) == 0);
++  VERIFY(memcmp (&ya4, &ya6, sizeof (typeof (ya4))) == 0);
++  VERIFY(memcmp (&ya4, &ya7, sizeof (typeof (ya4))) == 0);
++
++  // Cast from each __ev64_*__ type to __ev64_s32__
++#if __EV64_US8__AVAILABLE
++  ya5 = (typeof (ya5)) ya0;
++  ya5 = (typeof (ya5)) ya1;
++#endif
++  ya5 = (typeof (ya5)) ya2;
++  ya5 = (typeof (ya5)) ya3;
++  ya5 = (typeof (ya5)) ya4;
++  ya5 = (typeof (ya5)) ya5;
++  ya5 = (typeof (ya5)) ya6;
++  ya5 = (typeof (ya5)) ya7;
++
++#if __EV64_US8__AVAILABLE
++  VERIFY(memcmp (&ya5, &ya0, sizeof (typeof (ya5))) == 0);
++  VERIFY(memcmp (&ya5, &ya1, sizeof (typeof (ya5))) == 0);
++#endif
++  VERIFY(memcmp (&ya5, &ya2, sizeof (typeof (ya5))) == 0);
++  VERIFY(memcmp (&ya5, &ya3, sizeof (typeof (ya5))) == 0);
++  VERIFY(memcmp (&ya5, &ya4, sizeof (typeof (ya5))) == 0);
++  VERIFY(memcmp (&ya5, &ya5, sizeof (typeof (ya5))) == 0);
++  VERIFY(memcmp (&ya5, &ya6, sizeof (typeof (ya5))) == 0);
++  VERIFY(memcmp (&ya5, &ya7, sizeof (typeof (ya5))) == 0);
++
++  // Cast from each __ev64_*__ type to __ev64_u64__
++#if __EV64_US8__AVAILABLE
++  ya6 = (typeof (ya6)) ya0;
++  ya6 = (typeof (ya6)) ya1;
++#endif
++  ya6 = (typeof (ya6)) ya2;
++  ya6 = (typeof (ya6)) ya3;
++  ya6 = (typeof (ya6)) ya4;
++  ya6 = (typeof (ya6)) ya5;
++  ya6 = (typeof (ya6)) ya6;
++  ya6 = (typeof (ya6)) ya7;
++
++#if __EV64_US8__AVAILABLE
++  VERIFY(memcmp (&ya6, &ya0, sizeof (typeof (ya6))) == 0);
++  VERIFY(memcmp (&ya6, &ya1, sizeof (typeof (ya6))) == 0);
++#endif
++  VERIFY(memcmp (&ya6, &ya2, sizeof (typeof (ya6))) == 0);
++  VERIFY(memcmp (&ya6, &ya3, sizeof (typeof (ya6))) == 0);
++  VERIFY(memcmp (&ya6, &ya4, sizeof (typeof (ya6))) == 0);
++  VERIFY(memcmp (&ya6, &ya5, sizeof (typeof (ya6))) == 0);
++  VERIFY(memcmp (&ya6, &ya6, sizeof (typeof (ya6))) == 0);
++  VERIFY(memcmp (&ya6, &ya7, sizeof (typeof (ya6))) == 0);
++
++  // Cast from each __ev64_*__ type to __ev64_s64__
++#if __EV64_US8__AVAILABLE
++  ya7 = (typeof (ya7)) ya0;
++  ya7 = (typeof (ya7)) ya1;
++#endif
++  ya7 = (typeof (ya7)) ya2;
++  ya7 = (typeof (ya7)) ya3;
++  ya7 = (typeof (ya7)) ya4;
++  ya7 = (typeof (ya7)) ya5;
++  ya7 = (typeof (ya7)) ya6;
++  ya7 = (typeof (ya7)) ya7;
++
++#if __EV64_US8__AVAILABLE
++  VERIFY(memcmp (&ya7, &ya0, sizeof (typeof (ya7))) == 0);
++  VERIFY(memcmp (&ya7, &ya1, sizeof (typeof (ya7))) == 0);
++#endif
++  VERIFY(memcmp (&ya7, &ya2, sizeof (typeof (ya7))) == 0);
++  VERIFY(memcmp (&ya7, &ya3, sizeof (typeof (ya7))) == 0);
++  VERIFY(memcmp (&ya7, &ya4, sizeof (typeof (ya7))) == 0);
++  VERIFY(memcmp (&ya7, &ya5, sizeof (typeof (ya7))) == 0);
++  VERIFY(memcmp (&ya7, &ya6, sizeof (typeof (ya7))) == 0);
++  VERIFY(memcmp (&ya7, &ya7, sizeof (typeof (ya7))) == 0);
++
++  // 2.2.4.1 __ev64_*__ Initialization and Literals
++  // Per: "The __ev64_opaque__ type is the only __ev64_*__ type
++  //  that cannot be initialized. The remaining __ev64_*__ types
++  //  can be initialized using the C99 array initialization syntax.
++  //  Each type is treated as an array of the specified data
++  //  contents of the appropriate size.", we use the []-notation,
++  //  here and elsewhere. That works for assigning to individual
++  //  elements of the array, >>when the __ev64_*__ array is in
++  //  memory, *not* when it is in a 64-bit GPR, qualified by the
++  //  register keyword<<; in other words, GCC permits:
++  //
++  //  __ev64_*__ v;
++  //
++  //  followed by:
++  //
++  //  v[0] = val0;
++  //  v[1] = val1;
++  //  v[2] = val2;
++  //  ...
++  //
++  //  - the individual elements get assigned to, as expected, but
++  //  the same does not work if we were to declare v, (say) as:
++  //
++  //  register __ev64_*__ v asm ("30");
++  //
++  //  (Only the lowest word (in the case of __ev64_u32__) gets
++  //  assigned to). However, when qualified as 'register', we can still
++  //  access the individual components of as if 'v' were an array in
++  //  _uses_.
++  //
++  //  Here, we test both forms of access - what we find GCC accepts
++  //  and what the SPE2PIM specifies.
++  //
++  //  TODO: See if the access works with the SPE2PIM intrinsics
++  //  on register qualified ev's! :)
++
++#if __EV64_US8__AVAILABLE
++  __ev64_u8__  a = {  5,  3,  9,  6,  1,  8, 9, 1 };
++  VERIFY(a[0] == 5 && a[1] == 3 && a[2] == 9 && a[3] == 6 &&
++         a[4] == 1 && a[5] == 8 && a[6] == 9 && a[7] == 1);
++
++  __ev64_s8__  b = { -1, -6, -7, -2, -3, -5, 4, 6 };
++  VERIFY(b[0] == -1 && b[1] == -6 && b[2] == -7 && b[3] == -2 &&
++         b[4] == -3 && b[5] == -5 && b[6] ==  4 && b[7] == 6);
++#endif
++
++  __ev64_u16__ c = {  2,  1,  7,  4 };
++  VERIFY(c[0] == 2);
++  VERIFY(c[1] == 1);
++  VERIFY(c[2] == 7);
++  VERIFY(c[3] == 4);
++  VERIFY(__ev_get_u16(c, 0) == 2);
++  VERIFY(__ev_get_u16(c, 1) == 1);
++  VERIFY(__ev_get_u16(c, 2) == 7);
++  VERIFY(__ev_get_u16(c, 3) == 4);
++
++  __ev64_s16__ d = { -2, -7, -5,  9 };
++  VERIFY(d[0] == -2);
++  VERIFY(d[1] == -7);
++  VERIFY(d[2] == -5);
++  VERIFY(d[3] ==  9);
++  VERIFY(__ev_get_s16(d, 0) == -2);
++  VERIFY(__ev_get_s16(d, 1) == -7);
++  VERIFY(__ev_get_s16(d, 2) == -5);
++  VERIFY(__ev_get_s16(d, 3) ==  9);
++
++  __ev64_u32__ e = {  5, 2 };
++  VERIFY(e[0] == 5);
++  VERIFY(e[1] == 2);
++  VERIFY(__ev_get_upper_u32(e) == 5);
++  VERIFY(__ev_get_lower_u32(e) == 2);
++  VERIFY(__ev_get_u32(e, 0) == 5);
++  VERIFY(__ev_get_u32(e, 1) == 2);
++
++  __ev64_s32__ f = { -8, 7 };
++  VERIFY(f[0] == -8);
++  VERIFY(f[1] ==  7);
++  VERIFY(__ev_get_upper_s32(f) == -8);
++  VERIFY(__ev_get_lower_s32(f) ==  7);
++  VERIFY(__ev_get_s32(f, 0) == -8);
++  VERIFY(__ev_get_s32(f, 1) ==  7);
++
++  __ev64_u64__ g = { 29 };
++  VERIFY(g[0] == 29);
++  // Wishful thinking: VERIFY(__ev_get_u64(g, 0) == 29);
++
++  __ev64_s64__ h = { -56 };
++  VERIFY(h[0] == -56);
++  // Wishful thinking: VERIFY(__ev_get_s64(h, 0) == -56);
++
++#if __ADDED_FP_SUPPORT__
++  __ev64_fs__  i = { 3.14, -2.71 };
++  VERIFY(i[0] == 3.14 && i[1] == -2.71);
++#endif
++
++ // 2.2.4.2 New Operators Representing SPE2 Operations
++ // Tested elsewhere...
++
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(chapter2_spe2pim, "Chapter 2: High-Level Language Interface");
++
+ /* NOTE: To avoid having to remaster the .exp files entirely, add
+  *       new test functions /just above/ this comment.
+  *       That way, you only need to worry about the test that you
+@@ -3623,6 +4176,24 @@ test_t pool_demo_table = {
+   }
+ };
+ 
++test_t spe2pim_tests_table = {
++
++  /* Enhanced Signal Processing Extension and
++   * Embedded Floating-Point Version 2
++   * Auxiliary Processing Units
++   * Programming Interface Manual
++   * SPE2PIM
++   * Rev. 1.0-1 : Based on Specifications SPE2rev1.0 and EFP2rev1.3
++   * 10/2011
++   */
++  .type = table,
++  .description = "SPE2PIM Tests",
++  .table = {
++    F(chapter2_spe2pim),
++    NULL
++  }
++};
++
+ test_t spe_isa_misc_test_table = {
+ 
+   .type = table,
+@@ -3643,6 +4214,7 @@ test_t spe_isa_test_table = {
+   .description = "SPE ISA Tests",
+   .table = {
+     &spe_isa_insn_test_table,
++    &spe2pim_tests_table,
+     &spe_isa_misc_test_table,
+     NULL
+   }
+@@ -3685,3 +4257,4 @@ int main(void)
+ // 12. register __ev64_u16__ vec asm ("29"); // Why does this test fail if we use __ev64_s16__?
+ // 13. Add a category of tests: Trivial meaning - easy to verify - e.g. slwi (14, 1) == 28, etc.
+ // 14. Add option to run just one test.
++// 15. Add floating point examples to the spe2pim tests. See: __ADDED_FP_SUPPORT__
+diff --git a/memcheck/tests/ppc32/test_spe.stderr.exp b/memcheck/tests/ppc32/test_spe.stderr.exp
+index adf4fdc..7a13532 100644
+--- a/memcheck/tests/ppc32/test_spe.stderr.exp
++++ b/memcheck/tests/ppc32/test_spe.stderr.exp
+@@ -5,7 +5,7 @@ Invalid write of size 4
+    by 0x........: run (test_spe.h:42)
+    by 0x........: run (test_spe.h:48)
+    by 0x........: run (test_spe.h:48)
+-   by 0x........: main (test_spe.c:3666)
++   by 0x........: main (test_spe.c:4238)
+  Address 0x........ is 0 bytes after a block of size 40 alloc'd
+    at 0x........: malloc (vg_replace_malloc.c:...)
+    by 0x........: vg_quick_start_guide_aux (test_spe.c:26)
+@@ -13,7 +13,7 @@ Invalid write of size 4
+    by 0x........: run (test_spe.h:42)
+    by 0x........: run (test_spe.h:48)
+    by 0x........: run (test_spe.h:48)
+-   by 0x........: main (test_spe.c:3666)
++   by 0x........: main (test_spe.c:4238)
+ 
+ 
+ HEAP SUMMARY:
+@@ -27,7 +27,7 @@ HEAP SUMMARY:
+    by 0x........: run (test_spe.h:42)
+    by 0x........: run (test_spe.h:48)
+    by 0x........: run (test_spe.h:48)
+-   by 0x........: main (test_spe.c:3666)
++   by 0x........: main (test_spe.c:4238)
+ 
+ LEAK SUMMARY:
+    definitely lost: 40 bytes in 1 blocks
+diff --git a/memcheck/tests/ppc32/test_spe.stdout.exp b/memcheck/tests/ppc32/test_spe.stdout.exp
+index 4037c13..2c8e686 100644
+--- a/memcheck/tests/ppc32/test_spe.stdout.exp
++++ b/memcheck/tests/ppc32/test_spe.stdout.exp
+@@ -75,6 +75,8 @@ SPE Regression Tests: PASS
+ ....evsrwiu: PASS
+ ....evsrws: PASS
+ ....evsrwis: PASS
++..SPE2PIM Tests: PASS
++...Chapter 2: High-Level Language Interface: PASS
+ ..SPE ISA Miscellaneous Tests: PASS
+ ...Memory transfer using evldd-evstdd: PASS
+ ...Value pool demo: PASS
+diff --git a/regtest-power7-64.log b/regtest-power7-64.log
+index 067c7e2..3a1e6fb 100644
+--- a/regtest-power7-64.log
++++ b/regtest-power7-64.log
+@@ -461,7 +461,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -gdwarf-4 -fdebug-types-section -Wno-long-lo
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests'
+-make[5]: Warning: File `.deps/xml1.Po' has modification time 68 s in the future
++make[5]: Warning: File `.deps/xml1.Po' has modification time 69 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1158,7 +1158,7 @@ gcc -Winline -Wall -Wshadow -g -m32 -Winline -Wall -O -lm -g -mregnames -DHAS_DF
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc32'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc32'
+-make[5]: Warning: File `.deps/xlc_dbl_u32.Po' has modification time 70 s in the future
++make[5]: Warning: File `.deps/xlc_dbl_u32.Po' has modification time 71 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1226,7 +1226,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Winline -Wall -O -lm -g -mregnames -DHAS_DF
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc64'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc64'
+-make[5]: Warning: File `.deps/twi_tdi.Po' has modification time 70 s in the future
++make[5]: Warning: File `.deps/twi_tdi.Po' has modification time 71 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1418,7 +1418,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/helgrind/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/helgrind/tests'
+-make[4]: Warning: File `.deps/tc24_nonzero_sem.Po' has modification time 72 s in the future
++make[4]: Warning: File `.deps/tc24_nonzero_sem.Po' has modification time 73 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1863,7 +1863,7 @@ gcc -Winline -Wall -Wshadow -g -O -m64 -Wno-shadow -Wno-inline -Wno-long-long  -
+ make[3]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/perf'
+ make  check-local
+ make[3]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/perf'
+-make[3]: Warning: File `.deps/tinycc-tinycc.Po' has modification time 72 s in the future
++make[3]: Warning: File `.deps/tinycc-tinycc.Po' has modification time 73 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1980,7 +1980,7 @@ badfree-2trace:  valgrind   --num-callers=2 -q ./badfree
+ badfree:         valgrind   -q ./badfree 
+ badfree3:        valgrind   -q --fullpath-after=/proj/ppc/DT/labhome/anmol/valgrind-3.8.1/ ./badfree 
+ badjump:         valgrind   ./badjump 
+-sh: line 1: 23894 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
++sh: line 1: 26758 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
+ badjump2:        valgrind   -q ./badjump2 
+ badloop:         valgrind   -q ./badloop 
+ badpoll:         valgrind   -q ./badpoll 
+@@ -1997,7 +1997,7 @@ clo_redzone_default: valgrind   --leak-check=no -q ./clo_redzone
+ custom-overlap:  valgrind   --leak-check=summary -q ./custom-overlap 
+ custom_alloc:    valgrind   -q ./custom_alloc 
+ deep-backtrace:  valgrind   -q --num-callers=500 ./deep-backtrace 
+-sh: line 1: 24453 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
++sh: line 1: 27317 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
+ deep_templates:  valgrind   -q ./deep_templates 
+ describe-block:  valgrind   ./describe-block 
+ doublefree:      valgrind   -q ./doublefree 
+@@ -2110,7 +2110,7 @@ supp-dir:        valgrind   --suppressions=x86/ ./../../tests/true
+ supp1:           valgrind   --suppressions=supp.supp -q ./supp1 
+ supp2:           valgrind   --suppressions=supp.supp -q ./supp2 
+ supp_unknown:    valgrind   -q --suppressions=supp_unknown.supp ./badjump 
+-sh: line 1: 29142 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
++sh: line 1: 32006 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
+ *** supp_unknown failed (stderr) ***
+ suppfree:        valgrind   --suppressions=suppfree.supp -q ./suppfree 
+ test-plo-no:     valgrind   -q ./test-plo 
+@@ -2246,7 +2246,7 @@ gxx304:          valgrind   ./gxx304
+ ifunc:           (skipping, prereq failed: test -e ifunc)
+ -- Running  tests in none/tests/linux ----------------------------------
+ blockfault:      valgrind   ./blockfault 
+-sh: line 1:  1282 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
++sh: line 1:  4165 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
+ mremap:          valgrind   ./mremap 
+ mremap2:         valgrind   ./mremap2 
+ mremap3:         valgrind   ./mremap3 
+@@ -2412,7 +2412,7 @@ tc20_verifywrap: valgrind   --read-var-info=yes ./tc20_verifywrap
+ *** tc20_verifywrap failed (stderr) ***
+ tc21_pthonce:    valgrind   --read-var-info=yes ./tc21_pthonce 
+ tc22_exit_w_lock: valgrind   ./tc22_exit_w_lock 
+-sh: line 1: 18772 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1: 21657 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   ./tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --hg-sanity-flags=111111 ./tc24_nonzero_sem 
+ -- Finished tests in helgrind/tests ------------------------------------
+@@ -2531,7 +2531,7 @@ tc18_semabuse:   valgrind   ./../../helgrind/tests/tc18_semabuse
+ tc19_shadowmem:  valgrind   --error-limit=no --read-var-info=yes --show-confl-seg=no --num-callers=3 ./../../helgrind/tests/tc19_shadowmem 
+ tc21_pthonce:    valgrind   --num-callers=3 ./../../helgrind/tests/tc21_pthonce 
+ tc22_exit_w_lock: valgrind   --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock 
+-sh: line 1: 24122 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1: 27000 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   --num-callers=3 ./../../helgrind/tests/tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --read-var-info=yes ./../../helgrind/tests/tc24_nonzero_sem 
+ thread_name:     valgrind   --read-var-info=yes --check-stack-var=yes --num-callers=3 ./thread_name 
+-- 
+1.7.3.4
+

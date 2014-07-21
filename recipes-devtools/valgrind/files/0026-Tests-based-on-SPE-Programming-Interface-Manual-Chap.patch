@@ -1,0 +1,407 @@
+From 26c74d915446d57be340d1cebee8b6a17c59477b Mon Sep 17 00:00:00 2001
+From: Anmol P. Paralkar <anmol@freescale.com>
+Date: Fri, 15 Feb 2013 14:57:19 -0800
+Subject: [PATCH 26/65] Tests based on SPE Programming Interface Manual, Chapter 4: Additional Operations, Section 4.1: Data Manipulation.
+
+---
+ memcheck/tests/ppc32/test_spe.c          |  269 ++++++++++++++++++++++++++++++
+ memcheck/tests/ppc32/test_spe.stderr.exp |    6 +-
+ memcheck/tests/ppc32/test_spe.stdout.exp |    1 +
+ regtest-power7-64.log                    |   12 +-
+ 4 files changed, 279 insertions(+), 9 deletions(-)
+
+diff --git a/memcheck/tests/ppc32/test_spe.c b/memcheck/tests/ppc32/test_spe.c
+index fb3506d..6da8902 100644
+--- a/memcheck/tests/ppc32/test_spe.c
++++ b/memcheck/tests/ppc32/test_spe.c
+@@ -4195,6 +4195,272 @@ int chapter5_spe2pim(void)
+ }
+ TEST_SPE_DECL(chapter5_spe2pim, "Chapter 5: Programming Interface Examples");
+ 
++int chapter4_spe2pim(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++
++  int i, j;
++
++  /* Ref. SPE2PIM:Chapter 4
++   * Additional Operations
++   */
++
++  // 4.1.1 Creation Intrinsics
++  uint64_t x0 = 0x01234567deadbeef;
++  __ev64_opaque__ v0 = __ev_create_u64(x0);
++  VERIFY(memcmp (&x0, &v0, sizeof (x0)) == 0);
++
++  int64_t x1 = 0xdeadbeef01234567;
++  __ev64_opaque__ v1 = __ev_create_s64(x1);
++  VERIFY(memcmp (&x1, &v1, sizeof (x1)) == 0);
++
++#if __ADDED_FP_SUPPORT__
++  __ev64_opaque__ __ev_create_fs( float a, float b );
++#endif
++
++  uint32_t a0[2] = { 0xeaeaeaea, 0x21782414 };
++  __ev64_opaque__ v2 = __ev_create_u32(a0[0], a0[1]);
++  VERIFY(memcmp (&a0[0], &v2, sizeof (a0)) == 0);
++
++  int32_t a1[2] = { 0xffffffff, 0x91aefb2c };
++  __ev64_opaque__ v3 = __ev_create_s32(a1[0], a1[1]);
++  VERIFY(memcmp (&a1[0], &v3, sizeof (a1)) == 0);
++
++  uint16_t a2[4] = { 0xa21b, 0xfc10, 0x2cb5, 0x2179 };
++  __ev64_opaque__ v4 = __ev_create_u16(a2[0], a2[1], a2[2], a2[3]);
++  VERIFY(memcmp (&a2[0], &v4, sizeof (a2)) == 0);
++
++  int16_t a3[4] = { 0x920a, 0xff51, 0x8cd7, 0xbbcc };
++  __ev64_opaque__ v5 = __ev_create_s16(a3[0], a3[1], a3[2], a3[3]);
++  VERIFY(memcmp (&a3[0], &v5, sizeof (a3)) == 0);
++
++#if __EV64_US8__AVAILABLE
++  uint8_t a4[8] = { 0x22, 0x15, 0xae, 0xc9,
++                    0x97, 0xba, 0x98, 0xf3 };
++  __ev64_opaque__ v6 = __ev_create_u8(a4[0], a4[1], a4[2], a4[3],
++                                      a4[4], a4[5], a4[6], a4[7]);
++  VERIFY(memcmp (&a4[0], &v6, sizeof (a4)) == 0);
++
++  int8_t a5[8] = { 0xf9, 0x76, 0xb0, 0xdf,
++                   0xa1, 0xab, 0x22, 0x50 };
++  __ev64_opaque__ v7 = __ev_create_s8(a5[0], a5[1], a5[2], a5[3],
++                                      a5[4], a5[5], a5[6], a5[7]);
++  VERIFY(memcmp (&a5[0], &v7, sizeof (a5)) == 0);
++#endif
++
++#if __ADDED_FP_SUPPORT__
++  __ev64_opaque__ __ev_create_sfix32_fs( float a, float b );
++  __ev64_opaque__ __ev_create_ufix32_fs( float a, float b );
++#endif
++
++  // 4.1.2 Convert Intrinsics
++  uint64_t u64 = __ev_convert_u64(v0);
++  int64_t  s64 = __ev_convert_s64(v1);
++  VERIFY(u64 == x0);
++  VERIFY(s64 == x1);
++
++  // 4.1.3 Get Intrinsics
++
++  // 4.1.3.1 Get_Upper/Lower
++  VERIFY(__ev_get_upper_u32(v2) == a0[0]);
++  VERIFY(__ev_get_lower_u32(v2) == a0[1]);
++  VERIFY(__ev_get_upper_s32(v3) == a1[0]);
++  VERIFY(__ev_get_lower_s32(v3) == a1[1]);
++
++#if __ADDED_FP_SUPPORT__
++  float __ev_get_upper_fs( __ev64_opaque__ a );
++  float __ev_get_lower_fs( __ev64_opaque__ a );
++#endif
++
++  // 4.1.3.2 Get Explicit Position
++  VERIFY(__ev_get_u32(v2, 0) == a0[0]);
++  VERIFY(__ev_get_u32(v2, 1) == a0[1]);
++
++  VERIFY(__ev_get_s32(v3, 0) == a1[0]);
++  VERIFY(__ev_get_s32(v3, 1) == a1[1]);
++
++#if __ADDED_FP_SUPPORT__
++  float __ev_get_fs(__ev64_opaque__ a, uint32_t pos );
++#endif
++
++  VERIFY(__ev_get_u16(v4, 0) == a2[0]);
++  VERIFY(__ev_get_u16(v4, 1) == a2[1]);
++  VERIFY(__ev_get_u16(v4, 2) == a2[2]);
++  VERIFY(__ev_get_u16(v4, 3) == a2[3]);
++
++  VERIFY(__ev_get_s16(v5, 0) == a3[0]);
++  VERIFY(__ev_get_s16(v5, 1) == a3[1]);
++  VERIFY(__ev_get_s16(v5, 2) == a3[2]);
++  VERIFY(__ev_get_s16(v5, 3) == a3[3]);
++
++#if __EV64_US8__AVAILABLE
++  uint8_t __ev_get_u8( __ev64_opaque__ a, uint32_t pos );
++  int8_t __ev_get_s8( __ev64_opaque__ a, uint32_t pos );
++#endif
++
++  // 4.1.4 Set Intrinsics
++  //
++  // 4.1.4.1 Set_Upper/Lower
++  v2 = __ev_set_upper_u32(v2, 0x0);
++  v2 = __ev_set_lower_u32(v2, 0x0);
++  VERIFY(__ev_get_upper_u32 (v2) == 0x0);
++  VERIFY(__ev_get_lower_u32 (v2) == 0x0);
++
++  v3 = __ev_set_upper_s32(v3, 0xffffffff);
++  v3 = __ev_set_lower_s32(v3, 0xffffffff);
++  VERIFY(__ev_get_upper_s32 (v3) == 0xffffffff);
++  VERIFY(__ev_get_lower_s32 (v3) == 0xffffffff);
++
++#if __ADDED_FP_SUPPORT__
++  __ev64_opaque__     __ev_set_upper_fs( __ev64_opaque__ a, float b );
++  __ev64_opaque__     __ev_set_lower_fs( __ev64_opaque__ a, float b );
++#endif
++
++#if __ADDED_ACCUMULATOR_SUPPORT__
++  // 4.1.4.2 Set Accumulator
++  // __ev64_opaque__ __ev_set_acc_u64( uint64_t a );
++  // __ev64_opaque__ __ev_set_acc_s64( int64_t a );
++  // __ev64_opaque__ __ev_set_acc_vec64( __ev64_opaque__ a );
++#endif
++
++  // 4.1.4.3 Set Explicit Position
++  __ev64_opaque__ vs_u32[2];
++  for (i = 0; i < NELTS (vs_u32); i++)
++    for (j = 0; j < 2; j++)
++      vs_u32[i] = __ev_set_u32(vs_u32[i], (i == j), j);
++  VERIFY(__ev_get_u32(vs_u32[0], 0) == 1);
++  VERIFY(__ev_get_u32(vs_u32[0], 1) == 0);
++  VERIFY(__ev_get_u32(vs_u32[1], 0) == 0);
++  VERIFY(__ev_get_u32(vs_u32[1], 1) == 1);
++
++  __ev64_opaque__ vs_s32[2];
++  for (i = 0; i < NELTS (vs_s32); i++)
++    for (j = 0; j < 2; j++)
++      vs_s32[i] = __ev_set_s32(vs_s32[i], (i-j), j);
++  VERIFY(__ev_get_s32(vs_s32[0], 0) ==  0);
++  VERIFY(__ev_get_s32(vs_s32[0], 1) == -1);
++  VERIFY(__ev_get_s32(vs_s32[1], 0) ==  1);
++  VERIFY(__ev_get_s32(vs_s32[1], 1) ==  0);
++
++#if __ADDED_FP_SUPPORT__
++__ev64_opaque__ __ev_set_fs( __ev64_opaque__ a, float b, uint32_t pos );
++#endif
++
++  __ev64_opaque__ vs_u16[4];
++  for (i = 0; i < NELTS (vs_u16); i++)
++    for (j = 0; j < 4; j++)
++    vs_u16[i] = __ev_set_u16(vs_u16[i], (i == j), j);
++  for (i = 0; i < NELTS (vs_u16); i++)
++    for (j = 0; j < 4; j++)
++      VERIFY(__ev_get_u16(vs_u16[i], j) == (i == j));
++
++  __ev64_opaque__ vs_s16[4];
++  for (i = 0; i < NELTS (vs_s16); i++)
++    for (j = 0; j < 4; j++)
++    vs_s16[i] = __ev_set_s16(vs_s16[i], (i - j), j);
++  for (i = 0; i < NELTS (vs_s16); i++)
++    for (j = 0; j < 4; j++)
++      VERIFY(__ev_get_s16(vs_s16[i], j) == (i - j));
++
++#if __EV64_US8__AVAILABLE
++__ev64_opaque__ __ev_set_u8( __ev64_opaque__ a, uint8_t b, uint32_t pos );
++__ev64_opaque__ __ev_set_s8( __ev64_opaque__ a, int8_t b, uint32_t pos );
++#endif
++
++#if TODO
++  // TODO: ADD examples here.
++  // 4.2 Signal Processing Engine (SPE) APU Registers
++  // 4.2.2 SPEFSCR Intrinsics
++  // 4.2.2.1 SPEFSCR Low-Level Accessors
++uint32_t __ev_get_spefscr_sovh( );
++uint32_t __ev_get_spefscr_ovh( );
++uint32_t __ev_get_spefscr_fgh( );
++uint32_t __ev_get_spefscr_fxh( );
++uint32_t __ev_get_spefscr_finvh( );
++uint32_t __ev_get_spefscr_fdbzh( );
++uint32_t __ev_get_spefscr_funfh( );
++uint32_t __ev_get_spefscr_fovfh( );
++uint32_t __ev_get_spefscr_finxs(  );
++uint32_t __ev_get_spefscr_finvs(  );
++uint32_t __ev_get_spefscr_fdbzs(  );
++uint32_t __ev_get_spefscr_funfs(  );
++uint32_t __ev_get_spefscr_fovfs(  );
++uint32_t __ev_get_spefscr_mode( );
++uint32_t __ev_get_spefscr_sov( );
++uint32_t __ev_get_spefscr_ov( );
++uint32_t __ev_get_spefscr_fg( );
++uint32_t __ev_get_spefscr_fx( );
++uint32_t __ev_get_spefscr_finv( );
++uint32_t __ev_get_spefscr_fdbz( );
++uint32_t __ev_get_spefscr_funf( );
++uint32_t __ev_get_spefscr_fovf( );
++uint32_t __ev_get_spefscr_finxe( );
++uint32_t __ev_get_spefscr_finve( );
++uint32_t __ev_get_spefscr_fdbze( );
++uint32_t __ev_get_spefscr_funfe( );
++uint32_t __ev_get_spefscr_fovfe( );
++uint32_t __ev_get_spefscr_frmc( );
++void __ev_clr_spefscr_sovh( );
++void __ev_clr_spefscr_sov( );
++void __ev_clr_spefscr_finxs(  );
++void __ev_clr_spefscr_finvs(  );
++void __ev_clr_spefscr_fdbzs(  );
++void __ev_clr_spefscr_funfs(  );
++void __ev_clr_spefscr_fovfs(  );
++void __ev_set_spefscr_frmc( uint32_t rnd );
++                                 // rnd = 0 (nearest), rnd = 1 (zero),
++                                 //                                  // rnd = 2 (+inf), rnd = 3 (-inf)
++                                 //
++4.3      Application Binary Interface (ABI) Extensions
++The following sections discuss ABI extensions.
++4.3.1     malloc(), realloc(), calloc(), and new
++4.3.2 printf Example
++__ev64_opaque__ a ;
++a = __ev_create_s32 ( 2, -3 );
++printf ( " %d %d \n", __ev_get_upper_s32(a), __ev_get_lower_s32(a) );
++// output:
++// // 2 -3
++printf ("%lr", 0x4000);==> "0.500000"
++printf ("%r", 0x40000000); ==> "0.500000"
++printf ("%hr", 0x4000000000000000ull);==> "0.500000"
++printf ("%09.5r",0x40000000);==> "000.50000"
++printf ("%09.5f",0.5);==> "000.50000"
++
++4.3.3 Additional Library Routines
++#include <spe.h>
++int8_t atosfix8(const char *str);
++int16_t atosfix16(const char *str);
++int32_t atosfix32(const char *str);
++int64_t atosfix64(const char *str);
++uint8_t atoufix8(const char *str);
++uint16_t atoufix16(const char *str);
++uint32_t atoufix32(const char *str);
++uint64_t atoufix64(const char *str);
++atosfix8: strtosfix8(str, (char **)NULL)
++atosfix16: strtosfix16(str, (char **)NULL)
++atosfix32: strtosfix32(str, (char **)NULL)
++atosfix64: strtosfix64(str, (char **)NULL)
++atoufix8: strtoufix8(str, (char **)NULL)
++atoufix16: strtoufix16(str, (char **)NULL)
++atoufix32: strtoufix32(str, (char **)NULL)
++atoufix64: strtoufix64(str, (char **)NULL)
++#include <spe.h>
++int8_t strtosfix8(const char *str, char **endptr);
++int16_t strtosfix16(const char *str, char **endptr);
++int32_t strtosfix32(const char *str, char **endptr);
++int64_t strtosfix64(const char *str, char **endptr);
++uint8_t strtoufix8(const char *str, char **endptr);
++uint16_t strtoufix16(const char *str, char **endptr);
++uint32_t strtoufix32(const char *str, char **endptr);
++uint64_t strtoufix64(const char *str, char **endptr);
++#endif
++
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(chapter4_spe2pim, "Chapter 4: Additional Operations");
++
+ /* NOTE: To avoid having to remaster the .exp files entirely, add
+  *       new test functions /just above/ this comment.
+  *       That way, you only need to worry about the test that you
+@@ -4370,6 +4636,7 @@ test_t spe2pim_tests_table = {
+   .table = {
+     F(chapter2_spe2pim),
+     F(chapter5_spe2pim),
++    F(chapter4_spe2pim),
+     NULL
+   }
+ };
+@@ -4438,3 +4705,5 @@ int main(void)
+ // 13. Add a category of tests: Trivial meaning - easy to verify - e.g. slwi (14, 1) == 28, etc.
+ // 14. Add option to run just one test.
+ // 15. Add floating point examples to the spe2pim tests. See: __ADDED_FP_SUPPORT__
++// 16. Add accumulator support. See: __ADDED_ACCUMULATOR_SUPPORT__
++// 17. Get around to: #if TODO
+diff --git a/memcheck/tests/ppc32/test_spe.stderr.exp b/memcheck/tests/ppc32/test_spe.stderr.exp
+index 40fa966..aecee58 100644
+--- a/memcheck/tests/ppc32/test_spe.stderr.exp
++++ b/memcheck/tests/ppc32/test_spe.stderr.exp
+@@ -5,7 +5,7 @@ Invalid write of size 4
+    by 0x........: run (test_spe.h:42)
+    by 0x........: run (test_spe.h:48)
+    by 0x........: run (test_spe.h:48)
+-   by 0x........: main (test_spe.c:4418)
++   by 0x........: main (test_spe.c:4685)
+  Address 0x........ is 0 bytes after a block of size 40 alloc'd
+    at 0x........: malloc (vg_replace_malloc.c:...)
+    by 0x........: vg_quick_start_guide_aux (test_spe.c:26)
+@@ -13,7 +13,7 @@ Invalid write of size 4
+    by 0x........: run (test_spe.h:42)
+    by 0x........: run (test_spe.h:48)
+    by 0x........: run (test_spe.h:48)
+-   by 0x........: main (test_spe.c:4418)
++   by 0x........: main (test_spe.c:4685)
+ 
+ 
+ HEAP SUMMARY:
+@@ -27,7 +27,7 @@ HEAP SUMMARY:
+    by 0x........: run (test_spe.h:42)
+    by 0x........: run (test_spe.h:48)
+    by 0x........: run (test_spe.h:48)
+-   by 0x........: main (test_spe.c:4418)
++   by 0x........: main (test_spe.c:4685)
+ 
+ LEAK SUMMARY:
+    definitely lost: 40 bytes in 1 blocks
+diff --git a/memcheck/tests/ppc32/test_spe.stdout.exp b/memcheck/tests/ppc32/test_spe.stdout.exp
+index d4ff5c8..33201ad 100644
+--- a/memcheck/tests/ppc32/test_spe.stdout.exp
++++ b/memcheck/tests/ppc32/test_spe.stdout.exp
+@@ -78,6 +78,7 @@ SPE Regression Tests: PASS
+ ..SPE2PIM Tests: PASS
+ ...Chapter 2: High-Level Language Interface: PASS
+ ...Chapter 5: Programming Interface Examples: PASS
++...Chapter 4: Additional Operations: PASS
+ ..SPE ISA Miscellaneous Tests: PASS
+ ...Memory transfer using evldd-evstdd: PASS
+ ...Value pool demo: PASS
+diff --git a/regtest-power7-64.log b/regtest-power7-64.log
+index d8cbf5d..c21e8e7 100644
+--- a/regtest-power7-64.log
++++ b/regtest-power7-64.log
+@@ -1980,7 +1980,7 @@ badfree-2trace:  valgrind   --num-callers=2 -q ./badfree
+ badfree:         valgrind   -q ./badfree 
+ badfree3:        valgrind   -q --fullpath-after=/proj/ppc/DT/labhome/anmol/valgrind-3.8.1/ ./badfree 
+ badjump:         valgrind   ./badjump 
+-sh: line 1:  4143 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
++sh: line 1:   562 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
+ badjump2:        valgrind   -q ./badjump2 
+ badloop:         valgrind   -q ./badloop 
+ badpoll:         valgrind   -q ./badpoll 
+@@ -1997,7 +1997,7 @@ clo_redzone_default: valgrind   --leak-check=no -q ./clo_redzone
+ custom-overlap:  valgrind   --leak-check=summary -q ./custom-overlap 
+ custom_alloc:    valgrind   -q ./custom_alloc 
+ deep-backtrace:  valgrind   -q --num-callers=500 ./deep-backtrace 
+-sh: line 1:  4703 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
++sh: line 1:  1241 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
+ deep_templates:  valgrind   -q ./deep_templates 
+ describe-block:  valgrind   ./describe-block 
+ doublefree:      valgrind   -q ./doublefree 
+@@ -2110,7 +2110,7 @@ supp-dir:        valgrind   --suppressions=x86/ ./../../tests/true
+ supp1:           valgrind   --suppressions=supp.supp -q ./supp1 
+ supp2:           valgrind   --suppressions=supp.supp -q ./supp2 
+ supp_unknown:    valgrind   -q --suppressions=supp_unknown.supp ./badjump 
+-sh: line 1:  9413 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
++sh: line 1:  5947 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
+ *** supp_unknown failed (stderr) ***
+ suppfree:        valgrind   --suppressions=suppfree.supp -q ./suppfree 
+ test-plo-no:     valgrind   -q ./test-plo 
+@@ -2246,7 +2246,7 @@ gxx304:          valgrind   ./gxx304
+ ifunc:           (skipping, prereq failed: test -e ifunc)
+ -- Running  tests in none/tests/linux ----------------------------------
+ blockfault:      valgrind   ./blockfault 
+-sh: line 1: 13932 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
++sh: line 1: 10490 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
+ mremap:          valgrind   ./mremap 
+ mremap2:         valgrind   ./mremap2 
+ mremap3:         valgrind   ./mremap3 
+@@ -2412,7 +2412,7 @@ tc20_verifywrap: valgrind   --read-var-info=yes ./tc20_verifywrap
+ *** tc20_verifywrap failed (stderr) ***
+ tc21_pthonce:    valgrind   --read-var-info=yes ./tc21_pthonce 
+ tc22_exit_w_lock: valgrind   ./tc22_exit_w_lock 
+-sh: line 1: 31352 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1: 27912 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   ./tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --hg-sanity-flags=111111 ./tc24_nonzero_sem 
+ -- Finished tests in helgrind/tests ------------------------------------
+@@ -2531,7 +2531,7 @@ tc18_semabuse:   valgrind   ./../../helgrind/tests/tc18_semabuse
+ tc19_shadowmem:  valgrind   --error-limit=no --read-var-info=yes --show-confl-seg=no --num-callers=3 ./../../helgrind/tests/tc19_shadowmem 
+ tc21_pthonce:    valgrind   --num-callers=3 ./../../helgrind/tests/tc21_pthonce 
+ tc22_exit_w_lock: valgrind   --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock 
+-sh: line 1:  4389 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1:   823 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   --num-callers=3 ./../../helgrind/tests/tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --read-var-info=yes ./../../helgrind/tests/tc24_nonzero_sem 
+ thread_name:     valgrind   --read-var-info=yes --check-stack-var=yes --num-callers=3 ./thread_name 
+-- 
+1.7.3.4
+

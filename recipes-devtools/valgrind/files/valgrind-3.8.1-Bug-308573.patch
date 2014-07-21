@@ -1,0 +1,105 @@
+Valgrind, ppc:  Fix missing checks for 64-bit instructions operating in 32-b mode
+
+A number of the POWER instructions are only intended to run on 64-bit
+hardware.  These instructions will give a SIGILL instruction on 32-bit
+hardware.  The check for 32-bit mode on some of these instructions is
+missing.  Although, the 64-bit hardware will execute these instructions
+on 64-bit hardware without generating a SIGILL the use of these
+instructions in 32-bit mode on 64-bit hardware is typically indicative of
+a programming error. There are cases where these instructions are used
+to determine if the code is running on 32-bit hardware or not.  In these
+cases, the instruction needs to generate a SIGILL for the error handler
+to properly determine the hardware is running in 32-bit mode.
+
+This patch adds the 32-bit mode check for those 64-bit instructions that
+do not have the check.  If the check fails, the instruction is flagged
+as an unsupported instruction and a SIGILL message is generated.
+
+This patch does not fix or add an errors to the regression test suite.
+
+Signed-off-by: Carl Love <cel@us.ibm.com>
+---
+ VEX/priv/guest_ppc_toIR.c | 33 +++++++++++++++++++++++++++------
+ 1 file changed, 27 insertions(+), 6 deletions(-)
+
+diff --git a/VEX/priv/guest_ppc_toIR.c b/VEX/priv/guest_ppc_toIR.c
+index f7d8d0f..035bf86 100644
+--- a/VEX/priv/guest_ppc_toIR.c
++++ b/VEX/priv/guest_ppc_toIR.c
+@@ -16653,6 +16653,7 @@ DisResult disInstr_PPC_WRK (
+ 
+    /* 64bit Integer Rotate Instructions */
+    case 0x1E: // rldcl, rldcr, rldic, rldicl, rldicr, rldimi
++      if (!mode64) goto decode_failure;
+       if (dis_int_rot( theInstr )) goto decode_success;
+       goto decode_failure;
+ 
+@@ -16687,7 +16688,12 @@ DisResult disInstr_PPC_WRK (
+       goto decode_failure;
+ 
+    /* Trap Instructions */
+-   case 0x02: case 0x03: // tdi, twi
++   case 0x02:    // tdi
++      if (!mode64) goto decode_failure;
++      if (dis_trapi(theInstr, &dres)) goto decode_success;
++      goto decode_failure;
++
++   case 0x03:   // twi
+       if (dis_trapi(theInstr, &dres)) goto decode_success;
+       goto decode_failure;
+ 
+@@ -17288,7 +17294,12 @@ DisResult disInstr_PPC_WRK (
+          goto decode_failure;
+ 
+          /* 64bit Integer Parity Instructions */
+-      case 0xba: case 0x9a: // prtyd, prtyw
++      case 0xba: // prtyd
++         if (!mode64) goto decode_failure;
++         if (dis_int_parity( theInstr )) goto decode_success;
++         goto decode_failure;
++
++      case 0x9a: // prtyw
+          if (dis_int_parity( theInstr )) goto decode_success;
+          goto decode_failure;
+ 
+@@ -17333,9 +17344,13 @@ DisResult disInstr_PPC_WRK (
+          goto decode_failure;
+ 
+       /* Integer Load and Store with Byte Reverse Instructions */
+-      case 0x316: case 0x216: case 0x396: // lhbrx, lwbrx, sthbrx
+-      case 0x296: case 0x214:             // stwbrx, ldbrx
+-      case 0x294:                         // stdbrx
++      case 0x214: case 0x294: // ldbrx, stdbrx
++         if (!mode64) goto decode_failure;
++         if (dis_int_ldst_rev( theInstr )) goto decode_success;
++         goto decode_failure;
++
++      case 0x216: case 0x316: case 0x296:    // lwbrx, lhbrx, stwbrx
++      case 0x396:                            // sthbrx
+          if (dis_int_ldst_rev( theInstr )) goto decode_success;
+          goto decode_failure;
+          
+@@ -17385,7 +17400,12 @@ DisResult disInstr_PPC_WRK (
+ //zz          goto decode_failure;
+ 
+       /* Trap Instructions */
+-      case 0x004: case 0x044:             // tw,   td
++      case 0x004:             // tw
++         if (dis_trap(theInstr, &dres)) goto decode_success;
++         goto decode_failure;
++
++      case 0x044:             // td
++         if (!mode64) goto decode_failure;
+          if (dis_trap(theInstr, &dres)) goto decode_success;
+          goto decode_failure;
+ 
+@@ -17479,6 +17499,7 @@ DisResult disInstr_PPC_WRK (
+     	  goto decode_failure;
+ 
+       case 0x0FC: // bpermd
++         if (!mode64) goto decode_failure;
+          if (dis_int_logic( theInstr )) goto decode_success;
+          goto decode_failure;
+ 
+-- 
+1.7.11.4

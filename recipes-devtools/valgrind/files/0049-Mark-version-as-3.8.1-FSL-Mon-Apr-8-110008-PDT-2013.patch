@@ -1,0 +1,39 @@
+From af3bdee1f3f2e1e61ee806379c0448a26b4f17e3 Mon Sep 17 00:00:00 2001
+From: Anmol P. Paralkar <anmol@freescale.com>
+Date: Mon, 8 Apr 2013 11:24:32 -0700
+Subject: [PATCH 49/65] Mark version as: 3.8.1-FSL-Mon-Apr--8-110008-PDT-2013
+
+---
+ FSL-SPE-README.txt |    2 +-
+ configure.in       |    2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/FSL-SPE-README.txt b/FSL-SPE-README.txt
+index e239685..d6e779b 100644
+--- a/FSL-SPE-README.txt
++++ b/FSL-SPE-README.txt
+@@ -67,7 +67,7 @@
+  evmwhsmfa, evmhosmf, evmhosmfa, evmhosmfaaw, evmhosmfanw, evmhesmf, evmhesmfa,
+  evmhesmfaaw, evmhesmfanw
+ 
+- New instructions implemented since last drop:
++ New instructions implemented in version 3.8.1-FSL-Mon-Apr--8-110008-PDT-2013:
+ 
+  evmhegsmfaa, evmhegsmfan, evmhogsmfaa, evmhogsmfan,
+  evmhegsmiaa, evmhegsmian, evmhegumiaa, evmhegumian,
+diff --git a/configure.in b/configure.in
+index 75e479c..0899c62 100644
+--- a/configure.in
++++ b/configure.in
+@@ -8,7 +8,7 @@
+ ##------------------------------------------------------------##
+ 
+ # Process this file with autoconf to produce a configure script.
+-AC_INIT([Valgrind],[3.8.1-FSL-Thu-Mar-28-165508-PDT-2013],[valgrind-users@lists.sourceforge.net])
++AC_INIT([Valgrind],[3.8.1-FSL-Mon-Apr--8-110008-PDT-2013],[valgrind-users@lists.sourceforge.net])
+ AC_CONFIG_SRCDIR(coregrind/m_main.c)
+ AC_CONFIG_HEADERS([config.h])
+ AM_INIT_AUTOMAKE([foreign])
+-- 
+1.7.3.4
+

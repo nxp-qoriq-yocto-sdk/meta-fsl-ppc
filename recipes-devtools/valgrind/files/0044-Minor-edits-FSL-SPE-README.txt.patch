@@ -1,0 +1,297 @@
+From 2e666cf8e8e4f162cbaca8af5df154796c38628b Mon Sep 17 00:00:00 2001
+From: Anmol P. Paralkar <anmol@freescale.com>
+Date: Fri, 29 Mar 2013 17:55:25 -0700
+Subject: [PATCH 44/65] Minor edits: FSL-SPE-README.txt
+
+---
+ FSL-SPE-README.txt |  261 ++++++++++++++++++++++++++++++++++++++++++++++++++-
+ 1 files changed, 255 insertions(+), 6 deletions(-)
+
+diff --git a/FSL-SPE-README.txt b/FSL-SPE-README.txt
+index 312a50e..6760303 100644
+--- a/FSL-SPE-README.txt
++++ b/FSL-SPE-README.txt
+@@ -4,9 +4,11 @@
+ 
+  Introduction:
+  -------------
+- 
++
+  This document contains instructions for installation, building and details the
+- current status of the SPE port for the Valgrind/memcheck tool.
++ current status of the SPE port for the Valgrind/memcheck tool. Some example
++ sessions of standard UNIX programs running on Valgrind with SPE support, on a
++ p1022ds board running Linux, appear at the end.
+ 
+  Installation:
+  -------------
+@@ -15,11 +17,9 @@
+ 
+   valgrind-3.8.1-<id>.tar.gz
+ 
+- $TOP# mkdir valgrind-3.8.1-<id>
+- $TOP# mv valgrind-3.8.1-<id>.tar.gz valgrind-3.8.1-<id>
++ $TOP# gunzip -dr valgrind-3.8.1-<id>.tar.gz
++ $TOP# tar -xvf valgrind-3.8.1-<id>.tar
+  $TOP# cd valgrind-3.8.1-<id>
+- $TOP/valgrind-3.8.1-<id># gunzip -d valgrind-3.8.1-<id>.tar.gz
+- $TOP/valgrind-3.8.1-<id># tar -xvf valgrind-3.8.1-<id>.tar
+ 
+  Building:
+  ---------
+@@ -95,3 +95,252 @@
+  evmwhssf, evmwhssfa, evmwhumi, evmwhumia, evmwlssiaaw, evmwlssianw,
+  evmwlusiaaw, evmwlusianw, evmwssf, evmwssfa, evmwssfaa, evmwssfan,
+  evsubfssiaaw, evsubfusiaaw, extsb?, extsb.?, extsh?, extsh.?
++
++ Simple UNIX Utilities running under Valgrind on a p1022ds Linux system
++ ----------------------------------------------------------------------
++
++ Example 0: wc
++
++root@p1022ds:~/beta/valgrind-3.8.1-FSL-Thu-Mar-28-165508-PDT-2013# ./bin/valgrind --leak-check=full wc memcheck/tests/ppc32/test_spe.c
++==31682== Memcheck, a memory error detector
++==31682== Copyright (C) 2002-2012, and GNU GPL'd, by Julian Seward et al.
++==31682== Using Valgrind-3.8.1-FSL-Thu-Mar-28-165508-PDT-2013 and LibVEX; rerun with -h for copyright info
++==31682== Command: wc memcheck/tests/ppc32/test_spe.c
++==31682==
++ 13217  51751 438010 memcheck/tests/ppc32/test_spe.c
++==31682==
++==31682== HEAP SUMMARY:
++==31682==     in use at exit: 0 bytes in 0 blocks
++==31682==   total heap usage: 4 allocs, 4 frees, 168 bytes allocated
++==31682==
++==31682== All heap blocks were freed -- no leaks are possible
++==31682==
++==31682== For counts of detected and suppressed errors, rerun with: -v
++==31682== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 1 from 1)
++root@p1022ds:~/beta/valgrind-3.8.1-FSL-Thu-Mar-28-165508-PDT-2013# wc memcheck/tests/ppc32/test_spe.c
++ 13217  51751 438010 memcheck/tests/ppc32/test_spe.c
++root@p1022ds:~/beta/valgrind-3.8.1-FSL-Thu-Mar-28-165508-PDT-2013#
++
++ Example 1: grep
++
++root@p1022ds:~/beta/valgrind-3.8.1-FSL-Thu-Mar-28-165508-PDT-2013# ./bin/valgrind --leak-check=full grep evmhesmfa memcheck/tests/ppc32/test_spe.c
++==31694== Memcheck, a memory error detector
++==31694== Copyright (C) 2002-2012, and GNU GPL'd, by Julian Seward et al.
++==31694== Using Valgrind-3.8.1-FSL-Thu-Mar-28-165508-PDT-2013 and LibVEX; rerun with -h for copyright info
++==31694== Command: grep evmhesmfa memcheck/tests/ppc32/test_spe.c
++==31694==
++__ev64_s32__ evmhesmfanw_baseline[] = {
++int evmhesmfanw_asm(void)
++    asm volatile ("evmhesmfanw %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++    VERIFY(regD[0] == evmhesmfanw_baseline[i][0]);
++    VERIFY(regD[1] == evmhesmfanw_baseline[i][1]);
++TEST_SPE_DECL(evmhesmfanw_asm, "evmhesmfanw");
++__ev64_s32__ evmhesmfaaw_baseline[] = {
++int evmhesmfaaw_asm(void)
++    asm volatile ("evmhesmfaaw %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++    VERIFY(regD[0] == evmhesmfaaw_baseline[i][0]);
++    VERIFY(regD[1] == evmhesmfaaw_baseline[i][1]);
++TEST_SPE_DECL(evmhesmfaaw_asm, "evmhesmfaaw");
++__ev64_s32__ *evmhesmfa_baseline = evmhesmf_baseline;
++int evmhesmfa_asm(void)
++    asm volatile ("evmhesmfa %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++    VERIFY(regD[0] == evmhesmfa_baseline[i][0]);
++    VERIFY(regD[1] == evmhesmfa_baseline[i][1]);
++    // Verify that evmhesmfa wrote into the ACC:
++    VERIFY(regD[0] == evmhesmfa_baseline[i][0]);
++    VERIFY(regD[1] == evmhesmfa_baseline[i][1]);
++TEST_SPE_DECL(evmhesmfa_asm, "evmhesmfa");
++    F(evmhesmfanw_asm),
++    F(evmhesmfaaw_asm),
++    F(evmhesmfa_asm),
++==31694==
++==31694== HEAP SUMMARY:
++==31694==     in use at exit: 43,687 bytes in 42 blocks
++==31694==   total heap usage: 243 allocs, 201 frees, 46,650 bytes allocated
++==31694==
++==31694== LEAK SUMMARY:
++==31694==    definitely lost: 0 bytes in 0 blocks
++==31694==    indirectly lost: 0 bytes in 0 blocks
++==31694==      possibly lost: 0 bytes in 0 blocks
++==31694==    still reachable: 43,687 bytes in 42 blocks
++==31694==         suppressed: 0 bytes in 0 blocks
++==31694== Reachable blocks (those to which a pointer was found) are not shown.
++==31694== To see them, rerun with: --leak-check=full --show-reachable=yes
++==31694==
++==31694== For counts of detected and suppressed errors, rerun with: -v
++==31694== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 1 from 1)
++root@p1022ds:~/beta/valgrind-3.8.1-FSL-Thu-Mar-28-165508-PDT-2013#
++
++ Example 2: ls
++
++root@p1022ds:~/beta/valgrind-3.8.1-FSL-Thu-Mar-28-165508-PDT-2013# ./bin/valgrind --leak-check=full ls memcheck/tests/ppc32/test_spe.c
++==31699== Memcheck, a memory error detector
++==31699== Copyright (C) 2002-2012, and GNU GPL'd, by Julian Seward et al.
++==31699== Using Valgrind-3.8.1-FSL-Thu-Mar-28-165508-PDT-2013 and LibVEX; rerun with -h for copyright info
++==31699== Command: ls memcheck/tests/ppc32/test_spe.c
++==31699==
++memcheck/tests/ppc32/test_spe.c
++==31699==
++==31699== HEAP SUMMARY:
++==31699==     in use at exit: 13,776 bytes in 7 blocks
++==31699==   total heap usage: 9 allocs, 2 frees, 13,808 bytes allocated
++==31699==
++==31699== LEAK SUMMARY:
++==31699==    definitely lost: 0 bytes in 0 blocks
++==31699==    indirectly lost: 0 bytes in 0 blocks
++==31699==      possibly lost: 0 bytes in 0 blocks
++==31699==    still reachable: 13,776 bytes in 7 blocks
++==31699==         suppressed: 0 bytes in 0 blocks
++==31699== Reachable blocks (those to which a pointer was found) are not shown.
++==31699== To see them, rerun with: --leak-check=full --show-reachable=yes
++==31699==
++==31699== For counts of detected and suppressed errors, rerun with: -v
++==31699== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 1 from 1)
++root@p1022ds:~/beta/valgrind-3.8.1-FSL-Thu-Mar-28-165508-PDT-2013#
++
++ Example 3: ls -l
++
++root@p1022ds:~/beta/valgrind-3.8.1-FSL-Thu-Mar-28-165508-PDT-2013# ./bin/valgrind --leak-check=full ls -l memcheck/tests/ppc32/test_spe.c
++==31700== Memcheck, a memory error detector
++==31700== Copyright (C) 2002-2012, and GNU GPL'd, by Julian Seward et al.
++==31700== Using Valgrind-3.8.1-FSL-Thu-Mar-28-165508-PDT-2013 and LibVEX; rerun with -h for copyright info
++==31700== Command: ls -l memcheck/tests/ppc32/test_spe.c
++==31700==
++-rw-r--r-- 1 65002905 rn453 438010 Mar 27 10:56 memcheck/tests/ppc32/test_spe.c
++==31700==
++==31700== HEAP SUMMARY:
++==31700==     in use at exit: 14,083 bytes in 29 blocks
++==31700==   total heap usage: 98 allocs, 69 frees, 22,687 bytes allocated
++==31700==
++==31700== 160 (40 direct, 120 indirect) bytes in 1 blocks are definitely lost in loss record 27 of 29
++==31700==    at 0xFF48E78: malloc (vg_replace_malloc.c:270)
++==31700==    by 0x40FF75F: nss_parse_service_list (nsswitch.c:615)
++==31700==    by 0x40FFD67: __nss_database_lookup (nsswitch.c:167)
++==31700==    by 0xFC3AA47: ???
++==31700==    by 0xFC3C33B: ???
++==31700==    by 0x40B5AC3: getpwuid_r@@GLIBC_2.1.2 (getXXbyYY_r.c:256)
++==31700==    by 0x40B52E3: getpwuid (getXXbyYY.c:117)
++==31700==    by 0x1000D60F: ??? (in /bin/ls.coreutils)
++==31700==    by 0x10005E4B: ??? (in /bin/ls.coreutils)
++==31700==    by 0x10007B5F: ??? (in /bin/ls.coreutils)
++==31700==    by 0x10002C8F: ??? (in /bin/ls.coreutils)
++==31700==    by 0x4025E9B: generic_start_main.isra.0 (libc-start.c:226)
++==31700==
++==31700== 160 (40 direct, 120 indirect) bytes in 1 blocks are definitely lost in loss record 28 of 29
++==31700==    at 0xFF48E78: malloc (vg_replace_malloc.c:270)
++==31700==    by 0x40FF75F: nss_parse_service_list (nsswitch.c:615)
++==31700==    by 0x40FFD67: __nss_database_lookup (nsswitch.c:167)
++==31700==    by 0xFC39563: ???
++==31700==    by 0xFC3A3B3: ???
++==31700==    by 0x40B3FCF: getgrgid_r@@GLIBC_2.1.2 (getXXbyYY_r.c:256)
++==31700==    by 0x40B35F7: getgrgid (getXXbyYY.c:117)
++==31700==    by 0x1000D89F: ??? (in /bin/ls.coreutils)
++==31700==    by 0x10007BE7: ??? (in /bin/ls.coreutils)
++==31700==    by 0x10002C8F: ??? (in /bin/ls.coreutils)
++==31700==    by 0x4025E9B: generic_start_main.isra.0 (libc-start.c:226)
++==31700==    by 0x402606B: (below main) (libc-start.c:105)
++==31700==
++==31700== LEAK SUMMARY:
++==31700==    definitely lost: 80 bytes in 2 blocks
++==31700==    indirectly lost: 240 bytes in 20 blocks
++==31700==      possibly lost: 0 bytes in 0 blocks
++==31700==    still reachable: 13,763 bytes in 7 blocks
++==31700==         suppressed: 0 bytes in 0 blocks
++==31700== Reachable blocks (those to which a pointer was found) are not shown.
++==31700== To see them, rerun with: --leak-check=full --show-reachable=yes
++==31700==
++==31700== For counts of detected and suppressed errors, rerun with: -v
++==31700== ERROR SUMMARY: 2 errors from 2 contexts (suppressed: 1 from 1)
++root@p1022ds:~/beta/valgrind-3.8.1-FSL-Thu-Mar-28-165508-PDT-2013#
++
++ Example 4: cat, awk (output too long)
++
++root@p1022ds:~/beta/valgrind-3.8.1-FSL-Thu-Mar-28-165508-PDT-2013# ./bin/valgrind --leak-check=full cat memcheck/tests/ppc32/test_spe.c
++root@p1022ds:~/beta/valgrind-3.8.1-FSL-Thu-Mar-28-165508-PDT-2013# ./bin/valgrind --leak-check=full cat memcheck/tests/ppc32/test_spe.c | awk 'length ($0) > 80 { print; }'
++
++ Example 5: Loading a simple hello-world program under gdb - under valgrind:
++
++root@p1022ds:~/valgrind-3.8.1-FSL-Thu-Mar-28-165508-PDT-2013# cat /home/root/hello.c
++#include <stdio.h>
++
++int main(void)
++{
++  printf("hello!\n");
++  return 0;
++}
++root@p1022ds:~/valgrind-3.8.1-FSL-Thu-Mar-28-165508-PDT-2013# ./bin/valgrind --leak-check=full gdb /home/root/hello
++==9312== Memcheck, a memory error detector
++==9312== Copyright (C) 2002-2012, and GNU GPL'd, by Julian Seward et al.
++==9312== Using Valgrind-3.8.1-FSL-Thu-Mar-28-165508-PDT-2013 and LibVEX; rerun with -h for copyright info
++==9312== Command: gdb /home/root/hello
++==9312==
++==9313==
++==9313== HEAP SUMMARY:
++==9313==     in use at exit: 310,578 bytes in 13,009 blocks
++==9313==   total heap usage: 13,940 allocs, 931 frees, 395,157 bytes allocated
++==9313==
++==9313== LEAK SUMMARY:
++==9313==    definitely lost: 0 bytes in 0 blocks
++==9313==    indirectly lost: 0 bytes in 0 blocks
++==9313==      possibly lost: 0 bytes in 0 blocks
++==9313==    still reachable: 310,578 bytes in 13,009 blocks
++==9313==         suppressed: 0 bytes in 0 blocks
++==9313== Reachable blocks (those to which a pointer was found) are not shown.
++==9313== To see them, rerun with: --leak-check=full --show-reachable=yes
++==9313==
++==9313== For counts of detected and suppressed errors, rerun with: -v
++==9313== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 1 from 1)
++GNU gdb (GDB) 7.3
++Copyright (C) 2011 Free Software Foundation, Inc.
++License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
++This is free software: you are free to change and redistribute it.
++There is NO WARRANTY, to the extent permitted by law.  Type "show copying"
++and "show warranty" for details.
++This GDB was configured as "powerpc-fsl-linux-gnuspe".
++For bug reporting instructions, please see:
++<http://www.gnu.org/software/gdb/bugs/>...
++Reading symbols from /home/root/hello...==9312== Source and destination overlap in memcpy(0x435a680, 0x435a680, 40)
++==9312==    at 0xFF4B988: memcpy (mc_replace_strmem.c:878)
++==9312==    by 0x1000D4E7: ??? (in /usr/bin/gdb)
++==9312==    by 0x100B4CA7: ??? (in /usr/bin/gdb)
++==9312==    by 0x1010FEEF: ??? (in /usr/bin/gdb)
++==9312==    by 0x10110233: ??? (in /usr/bin/gdb)
++==9312==    by 0x10110AC7: ??? (in /usr/bin/gdb)
++==9312==    by 0x1013463F: ??? (in /usr/bin/gdb)
++==9312==    by 0x100058AB: ??? (in /usr/bin/gdb)
++==9312==    by 0x1013459B: ??? (in /usr/bin/gdb)
++==9312==    by 0x10006043: ??? (in /usr/bin/gdb)
++==9312==    by 0x10004D03: ??? (in /usr/bin/gdb)
++==9312==    by 0x4026E9B: generic_start_main.isra.0 (libc-start.c:226)
++==9312==
++done.
++(gdb) q
++... *** LONG OUTPUT DELETED ***                                                          <---------------
++... *** LONG OUTPUT DELETED ***                                                          <---------------
++... *** LONG OUTPUT DELETED ***                                                          <---------------
++==9312== 4,064 bytes in 1 blocks are possibly lost in loss record 14,227 of 14,239
++==9312==    at 0xFF48E78: malloc (vg_replace_malloc.c:270)
++==9312==    by 0x10013277: xmalloc (in /usr/bin/gdb)
++==9312==    by 0x40918CF: _obstack_begin (obstack.c:186)
++==9312==    by 0x1013E3BB: ??? (in /usr/bin/gdb)
++==9312==    by 0x1003BAAF: ??? (in /usr/bin/gdb)
++==9312==    by 0x10149503: ??? (in /usr/bin/gdb)
++==9312==    by 0x1014A4DB: ??? (in /usr/bin/gdb)
++==9312==    by 0x10006827: ??? (in /usr/bin/gdb)
++==9312==    by 0x1013463F: ??? (in /usr/bin/gdb)
++==9312==    by 0x10005C37: ??? (in /usr/bin/gdb)
++==9312==    by 0x1013459B: ??? (in /usr/bin/gdb)
++==9312==    by 0x10006043: ??? (in /usr/bin/gdb)
++==9312==
++==9312== LEAK SUMMARY:
++==9312==    definitely lost: 4,948 bytes in 30 blocks
++==9312==    indirectly lost: 24 bytes in 2 blocks
++==9312==      possibly lost: 14,240 bytes in 130 blocks
++==9312==    still reachable: 526,254 bytes in 14,235 blocks
++==9312==         suppressed: 0 bytes in 0 blocks
++==9312== Reachable blocks (those to which a pointer was found) are not shown.
++==9312== To see them, rerun with: --leak-check=full --show-reachable=yes
++==9312==
++==9312== For counts of detected and suppressed errors, rerun with: -v
++==9312== ERROR SUMMARY: 199 errors from 161 contexts (suppressed: 1 from 1)
++root@p1022ds:~/valgrind-3.8.1-FSL-Thu-Mar-28-165508-PDT-2013#
+-- 
+1.7.3.4
+

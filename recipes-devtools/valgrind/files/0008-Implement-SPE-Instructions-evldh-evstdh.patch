@@ -1,0 +1,437 @@
+From b2591320f2ec6892e5d5d9532db4f75a0a316cbb Mon Sep 17 00:00:00 2001
+From: Anmol P. Paralkar <anmol@freescale.com>
+Date: Sat, 26 Jan 2013 06:40:37 -0800
+Subject: [PATCH 08/65] Implement SPE Instructions: { evldh, evstdh }.
+
+---
+ VEX/priv/guest_ppc_toIR.c                |   91 ++++++++++++++++++
+ memcheck/tests/ppc32/test_spe.c          |  153 ++++++++++++++++++++++++++++++
+ memcheck/tests/ppc32/test_spe.stderr.exp |    6 +-
+ memcheck/tests/ppc32/test_spe.stdout.exp |    2 +
+ regtest-power7-64.log                    |   14 ++--
+ 5 files changed, 256 insertions(+), 10 deletions(-)
+
+diff --git a/VEX/priv/guest_ppc_toIR.c b/VEX/priv/guest_ppc_toIR.c
+index f4e28a3..1170363 100644
+--- a/VEX/priv/guest_ppc_toIR.c
++++ b/VEX/priv/guest_ppc_toIR.c
+@@ -11655,6 +11655,27 @@ static Bool dis_spe_load ( VexAbiInfo* vbi, UInt theInstr )
+    IRTemp EA = newTemp( Ity_I32 );
+    IRTemp rD = newTemp( Ity_I64 );
+ 
++   IRTemp ea0 = newTemp( Ity_I32 );
++   IRTemp ea2 = newTemp( Ity_I32 );
++   IRTemp ea4 = newTemp( Ity_I32 );
++   IRTemp ea6 = newTemp( Ity_I32 );
++
++   IRTemp ehwu = newTemp( Ity_I16 );
++   IRTemp ohwu = newTemp( Ity_I16 );
++   IRTemp ehwl = newTemp( Ity_I16 );
++   IRTemp ohwl = newTemp( Ity_I16 );
++
++   IRTemp u0 = newTemp( Ity_I32 );
++   IRTemp u1 = newTemp( Ity_I32 );
++   IRTemp u2 = newTemp( Ity_I32 );
++
++   IRTemp l0 = newTemp( Ity_I32 );
++   IRTemp l1 = newTemp( Ity_I32 );
++   IRTemp l2 = newTemp( Ity_I32 );
++
++   IRTemp wu  = newTemp( Ity_I32 );
++   IRTemp wl  = newTemp( Ity_I32 );
++
+    if (opc1 != 0x4) {
+       vex_printf( "dis_spe_load(ppc)(opc1 != 0x4)\n" );
+       return False;
+@@ -11674,6 +11695,37 @@ static Bool dis_spe_load ( VexAbiInfo* vbi, UInt theInstr )
+       assign( EA, ea_rAor0_disp( rA_addr, disp ) );
+       putSPEReg( rD_addr, loadBE( Ity_I64, addr_align( mkexpr( EA ), 8 ) ) );
+       break;
++   case 0x305:
++      // evldh (Vector Load Double into Four Half Words, SPEPEM p5-114)
++      disp = 8 * uimm;
++      DIP( "evldh r%d, %u(r%u)\n", rD_addr, disp, rA_addr );
++
++      assign( EA, addr_align( ea_rAor0_disp( rA_addr, disp ), 8 ) );
++
++      assign( ea0, (binop( mkSzOp( Ity_I32, Iop_Add8 ), mkexpr( EA ), mkU32 ( 0 ) ) ) );
++      assign( ea2, (binop( mkSzOp( Ity_I32, Iop_Add8 ), mkexpr( EA ), mkU32 ( 2 ) ) ) );
++      assign( ea4, (binop( mkSzOp( Ity_I32, Iop_Add8 ), mkexpr( EA ), mkU32 ( 4 ) ) ) );
++      assign( ea6, (binop( mkSzOp( Ity_I32, Iop_Add8 ), mkexpr( EA ), mkU32 ( 6 ) ) ) );
++
++      assign( ehwu, loadBE( Ity_I16, mkexpr ( ea0 ) ) );
++      assign( ohwu, loadBE( Ity_I16, mkexpr ( ea2 ) ) );
++      assign( ehwl, loadBE( Ity_I16, mkexpr ( ea4 ) ) );
++      assign( ohwl, loadBE( Ity_I16, mkexpr ( ea6 ) ) );
++
++      assign( u0, unop ( Iop_16Uto32, mkexpr ( ehwu ) ) );
++      assign( u1, binop( Iop_Shl32,   mkexpr ( u0 ), mkU8( 16 ) ) );
++      assign( u2, unop ( Iop_16Uto32, mkexpr ( ohwu ) ) );
++      assign( wu, binop( Iop_Or32,    mkexpr ( u1 ), mkexpr ( u2 ) ) );
++
++      assign( l0, unop ( Iop_16Uto32, mkexpr ( ehwl ) ) );
++      assign( l1, binop( Iop_Shl32,   mkexpr ( l0 ), mkU8( 16 ) ) );
++      assign( l2, unop ( Iop_16Uto32, mkexpr ( ohwl ) ) );
++      assign( wl, binop( Iop_Or32,    mkexpr ( l1 ), mkexpr ( l2 ) ) );
++
++      assign( rD, binop( Iop_32HLto64, mkexpr ( wu ), mkexpr ( wl ) ) );
++
++      putSPEReg( rD_addr, mkexpr ( rD ) );
++      break;
+    }
+ 
+    return True;
+@@ -11696,6 +11748,19 @@ static Bool dis_spe_store ( UInt theInstr )
+    IRTemp EA = newTemp( Ity_I32 );
+    IRTemp rS = newTemp( Ity_I64 );
+ 
++   IRTemp ea0 = newTemp( Ity_I32 );
++   IRTemp ea2 = newTemp( Ity_I32 );
++   IRTemp ea4 = newTemp( Ity_I32 );
++   IRTemp ea6 = newTemp( Ity_I32 );
++
++   IRTemp rSU  = newTemp( Ity_I32 );
++   IRTemp rSL  = newTemp( Ity_I32 );
++
++   IRTemp rSUU = newTemp( Ity_I16 );
++   IRTemp rSUL = newTemp( Ity_I16 );
++   IRTemp rSLU = newTemp( Ity_I16 );
++   IRTemp rSLL = newTemp( Ity_I16 );
++
+    if (opc1 != 0x4) {
+       vex_printf( "dis_spe_store(ppc)(opc1 != 0x4)\n" );
+       return False;
+@@ -11717,6 +11782,30 @@ static Bool dis_spe_store ( UInt theInstr )
+       assign( EA, ea_rAor0_disp( rA_addr, disp ) );
+       storeBE( addr_align( mkexpr( EA ), 8 ), mkexpr( rS ) );
+       break;
++   case 0x325:
++      // evstdh (Vector Store Double of Four Half Words, SPEPEM p5-230)
++      disp = 8 * uimm;
++      DIP( "evstdh r%d, %u(r%u)\n", rS_addr, disp, rA_addr );
++
++      assign( EA, addr_align( ea_rAor0_disp( rA_addr, disp ), 8 ) );
++
++      assign( ea0, (binop( mkSzOp( Ity_I32, Iop_Add8 ), mkexpr( EA ), mkU32 ( 0 ) ) ) );
++      assign( ea2, (binop( mkSzOp( Ity_I32, Iop_Add8 ), mkexpr( EA ), mkU32 ( 2 ) ) ) );
++      assign( ea4, (binop( mkSzOp( Ity_I32, Iop_Add8 ), mkexpr( EA ), mkU32 ( 4 ) ) ) );
++      assign( ea6, (binop( mkSzOp( Ity_I32, Iop_Add8 ), mkexpr( EA ), mkU32 ( 6 ) ) ) );
++
++      assign ( rSU, unop( Iop_64HIto32, mkexpr ( rS ) ) );
++      assign ( rSL, unop( Iop_64to32,   mkexpr ( rS ) ) );
++
++      assign ( rSUU, unop( Iop_32HIto16, mkexpr ( rSU ) ) );
++      assign ( rSUL, unop( Iop_32to16,   mkexpr ( rSU ) ) );
++      assign ( rSLU, unop( Iop_32HIto16, mkexpr ( rSL ) ) );
++      assign ( rSLL, unop( Iop_32to16,   mkexpr ( rSL ) ) );
++
++      storeBE( mkexpr( ea0 ), mkexpr( rSUU ) );
++      storeBE( mkexpr( ea2 ), mkexpr( rSUL ) );
++      storeBE( mkexpr( ea4 ), mkexpr( rSLU ) );
++      storeBE( mkexpr( ea6 ), mkexpr( rSLL ) );
+    }
+ 
+    return True;
+@@ -17752,11 +17841,13 @@ DisResult disInstr_PPC_WRK (
+       switch (opc2) {
+       case 0x300: // evlddx
+       case 0x301: // evldd
++      case 0x305: // evldh
+          if (!allow_SPE) goto decode_noSPE;
+          if (dis_spe_load( abiinfo, theInstr )) goto decode_success;
+          goto decode_failure;
+       case 0x320: // evstddx
+       case 0x321: // evstdd
++      case 0x325: // evstdh
+          if (!allow_SPE) goto decode_noSPE;
+          if (dis_spe_store( theInstr )) goto decode_success;
+          goto decode_failure;
+diff --git a/memcheck/tests/ppc32/test_spe.c b/memcheck/tests/ppc32/test_spe.c
+index 5f8fa56..a154615 100644
+--- a/memcheck/tests/ppc32/test_spe.c
++++ b/memcheck/tests/ppc32/test_spe.c
+@@ -1013,6 +1013,156 @@ int evstddx_asm(void)
+ }
+ TEST_SPE_DECL(evstddx_asm, "Unit test for evstddx using asm");
+ 
++#ifdef __SPE__
++__ev64_u16__ evldh_asm_src[32] = {
++
++  (__ev64_u16__) { 0x71ef, 0x9842, 0x308c, 0x55d3 },
++  (__ev64_u16__) { 0xd4ea, 0xcd1c, 0xde21, 0xc2df },
++  (__ev64_u16__) { 0xf1f7, 0xe213, 0x239c, 0x316a },
++  (__ev64_u16__) { 0x9103, 0x599d, 0x8eb2, 0xe8c9 },
++  (__ev64_u16__) { 0x47d5, 0x9ce5, 0xcac4, 0xf89e },
++  (__ev64_u16__) { 0x88f7, 0x6a5e, 0x1dce, 0x769d },
++  (__ev64_u16__) { 0x9265, 0x826a, 0xf1a0, 0x6557 },
++  (__ev64_u16__) { 0x48c4, 0xbbf2, 0xb5f6, 0x0d56 },
++  (__ev64_u16__) { 0x902d, 0x7174, 0x9c4a, 0x74a3 },
++  (__ev64_u16__) { 0xec08, 0x566b, 0xf2d4, 0x510b },
++  (__ev64_u16__) { 0x1853, 0x1f8d, 0x116b, 0x5aa1 },
++  (__ev64_u16__) { 0x02f9, 0xd7d4, 0xddbb, 0xebfc },
++  (__ev64_u16__) { 0xf732, 0x6d97, 0x0261, 0xd5a6 },
++  (__ev64_u16__) { 0xeba3, 0xd32b, 0x8ff2, 0xa8bc },
++  (__ev64_u16__) { 0xdf2a, 0x19cf, 0x4c2d, 0x5c80 },
++  (__ev64_u16__) { 0xc2da, 0x9c5e, 0x743f, 0xfb8a },
++  (__ev64_u16__) { 0xc92c, 0x8690, 0x90e2, 0x82eb },
++  (__ev64_u16__) { 0xdf29, 0x1a8f, 0x3f46, 0x25d8 },
++  (__ev64_u16__) { 0x492f, 0x32c9, 0xd565, 0x642e },
++  (__ev64_u16__) { 0x502c, 0x9467, 0x7580, 0x3037 },
++  (__ev64_u16__) { 0x2cb3, 0x9493, 0xe8f8, 0x1b8e },
++  (__ev64_u16__) { 0xdeec, 0x713d, 0xe660, 0x8657 },
++  (__ev64_u16__) { 0x2643, 0x7bf1, 0x191d, 0x3ad4 },
++  (__ev64_u16__) { 0x8af3, 0xd95f, 0x006c, 0xf976 },
++  (__ev64_u16__) { 0x1462, 0x9a3c, 0xf1d3, 0xe7d1 },
++  (__ev64_u16__) { 0x56db, 0xfb5b, 0xbc03, 0xd675 },
++  (__ev64_u16__) { 0x15a2, 0xac3c, 0x4e3c, 0xce2b },
++  (__ev64_u16__) { 0xdb24, 0x21fc, 0xf47a, 0x8dca },
++  (__ev64_u16__) { 0xb6a6, 0x2cda, 0x306a, 0x1304 },
++  (__ev64_u16__) { 0x3d47, 0xc3bf, 0x29eb, 0xc414 },
++  (__ev64_u16__) { 0xbeca, 0x6def, 0xb46a, 0xac27 },
++  (__ev64_u16__) { 0x758a, 0x056f, 0x48bf, 0xa1da },
++
++};
++#endif // __SPE__
++
++int evldh_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register void *src_base asm ("30");
++  register __ev64_u16__ vec asm ("29");
++
++  asm volatile ("lis %[b], evldh_asm_src@ha" : [b] "=r" (src_base));
++  asm volatile ("addic %[bd], %[bs], evldh_asm_src@l" : [bd] "=r" (src_base) : [bs] "r" (src_base));
++  VERIFY (src_base == evldh_asm_src);
++
++#define EVLDH(index)                                                                      \
++  asm volatile ("evldh %[v], " #index " *8(%[b])" : [v] "=r" (vec) : [b] "r" (src_base)); \
++  VERIFY (vec[0] == evldh_asm_src[index][0] && vec[1] == evldh_asm_src[index][1] &&       \
++          vec[2] == evldh_asm_src[index][2] && vec[3] == evldh_asm_src[index][3]);
++
++  EVLDH(0);
++  EVLDH(1);
++  EVLDH(2);
++  EVLDH(3);
++  EVLDH(4);
++  EVLDH(5);
++  EVLDH(6);
++  EVLDH(7);
++  EVLDH(8);
++  EVLDH(9);
++  EVLDH(10);
++  EVLDH(11);
++  EVLDH(12);
++  EVLDH(13);
++  EVLDH(14);
++  EVLDH(15);
++  EVLDH(16);
++  EVLDH(17);
++  EVLDH(18);
++  EVLDH(19);
++  EVLDH(20);
++  EVLDH(21);
++  EVLDH(22);
++  EVLDH(23);
++  EVLDH(24);
++  EVLDH(25);
++  EVLDH(26);
++  EVLDH(27);
++  EVLDH(28);
++  EVLDH(29);
++  EVLDH(30);
++  EVLDH(31);
++
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evldh_asm, "Unit test for evldh using asm");
++
++#ifdef __SPE__
++__ev64_u16__ evstdh_asm_dst[32];
++#endif // __SPE__
++
++int evstdh_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register void *dst_base asm ("29");
++  register __ev64_u16__ vec asm ("30");
++
++  asm volatile ("lis %[b], evstdh_asm_dst@ha" : [b] "=r" (dst_base));
++  asm volatile ("addic %[bd], %[bs], evstdh_asm_dst@l" : [bd] "=r" (dst_base) : [bs] "r" (dst_base));
++
++#define EVSTDH(index, hw0, hw1, hw2, hw3)                                                 \
++  vec = (__ev64_u16__) { (hw0), (hw1), (hw2), (hw3) };                                    \
++  asm volatile ("evstdh %[v], " #index "*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base)); \
++  VERIFY (evstdh_asm_dst[index][0] == (hw0) && evstdh_asm_dst[index][1] == (hw1) &&       \
++          evstdh_asm_dst[index][2] == (hw2) && evstdh_asm_dst[index][3] == (hw3));
++
++  EVSTDH(0, 0xf03d, 0xc01d, 0x5dce, 0x105a);
++  EVSTDH(1, 0x21e2, 0xab01, 0xd44c, 0x6e17);
++  EVSTDH(2, 0x397e, 0x8667, 0x198a, 0x9f89);
++  EVSTDH(3, 0x7114, 0xdf86, 0x7588, 0x6667);
++  EVSTDH(4, 0xd5a8, 0xf203, 0xfec1, 0x0141);
++  EVSTDH(5, 0xd8cb, 0x5fc3, 0x861b, 0xb3e8);
++  EVSTDH(6, 0x7114, 0xf9b5, 0x58dc, 0xc615);
++  EVSTDH(7, 0x2212, 0x8f0f, 0xd82c, 0x14d2);
++  EVSTDH(8, 0x88f9, 0xb951, 0x343f, 0x95f7);
++  EVSTDH(9, 0xb87d, 0x2d19, 0xdbf0, 0x1712);
++  EVSTDH(10, 0x67cc, 0x152e, 0xe8c7, 0x9973);
++  EVSTDH(11, 0xcc63, 0x6192, 0xf54d, 0xbc11);
++  EVSTDH(12, 0xc437, 0x81b4, 0xe2c3, 0x05da);
++  EVSTDH(13, 0x69ba, 0xe6a1, 0x094b, 0xd9d8);
++  EVSTDH(14, 0xb310, 0x503c, 0x44b3, 0x94be);
++  EVSTDH(15, 0x7ec7, 0xce4c, 0xbdab, 0x90d8);
++  EVSTDH(16, 0x6eba, 0x47d2, 0x302a, 0x572e);
++  EVSTDH(17, 0xe9d3, 0x817d, 0x6050, 0xbd19);
++  EVSTDH(18, 0xafb1, 0xce08, 0x7e9d, 0x5d86);
++  EVSTDH(19, 0x0ab0, 0xf5dc, 0xca05, 0x900a);
++  EVSTDH(20, 0xd880, 0xf6fe, 0x0070, 0xa3e7);
++  EVSTDH(21, 0x5243, 0x8c91, 0xfeb1, 0x5441);
++  EVSTDH(22, 0x2b6f, 0xe9cb, 0x6556, 0x6147);
++  EVSTDH(23, 0x6f4b, 0x1dbd, 0xe18a, 0x6067);
++  EVSTDH(24, 0x0d45, 0x32c3, 0x4157, 0xcddb);
++  EVSTDH(25, 0xc967, 0xed10, 0xe177, 0x94ce);
++  EVSTDH(26, 0x1ddb, 0x7a29, 0xde47, 0xc593);
++  EVSTDH(27, 0xcfef, 0x3a05, 0x91a3, 0xf02f);
++  EVSTDH(28, 0x4b0c, 0xfe0b, 0xab33, 0xb06c);
++  EVSTDH(29, 0xb224, 0xcda0, 0xf746, 0x8ddb);
++  EVSTDH(30, 0xabda, 0xe546, 0x74e5, 0x862c);
++  EVSTDH(31, 0x443d, 0x598c, 0x743a, 0x3a29);
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evstdh_asm, "Unit test for evstdh using asm");
++
+ /* NOTE: To avoid having to remaster the .exp files entirely, add
+  *       new test functions /just above/ this comment.
+  *       That way, you only need to worry about the test that you
+@@ -1059,6 +1209,8 @@ test_t spe_isa_load_store_test_table = {
+     F(evstdd_asm),
+     F(evlddx_asm),
+     F(evstddx_asm),
++    F(evldh_asm),
++    F(evstdh_asm),
+     NULL
+   }
+ };
+@@ -1132,3 +1284,4 @@ int main(void)
+ // 0. Add extensive tests for printf ()-family functions with varied format.
+ // 1. Make VERIFY() a variadic function, parametrized with the local paramters in addition to __LINE__.
+ // 2. Make a data header file per test and include those throughout the code where you have those blobs of 0x's.
++// 3. Cleanup evstdd_asm (); like macroise like evstdh_asm ()
+diff --git a/memcheck/tests/ppc32/test_spe.stderr.exp b/memcheck/tests/ppc32/test_spe.stderr.exp
+index 00f2f76..07fbb6a 100644
+--- a/memcheck/tests/ppc32/test_spe.stderr.exp
++++ b/memcheck/tests/ppc32/test_spe.stderr.exp
+@@ -5,7 +5,7 @@ Invalid write of size 4
+    by 0x........: run (test_spe.h:42)
+    by 0x........: run (test_spe.h:48)
+    by 0x........: run (test_spe.h:48)
+-   by 0x........: main (test_spe.c:1126)
++   by 0x........: main (test_spe.c:1278)
+  Address 0x........ is 0 bytes after a block of size 40 alloc'd
+    at 0x........: malloc (vg_replace_malloc.c:...)
+    by 0x........: vg_quick_start_guide_aux (test_spe.c:26)
+@@ -13,7 +13,7 @@ Invalid write of size 4
+    by 0x........: run (test_spe.h:42)
+    by 0x........: run (test_spe.h:48)
+    by 0x........: run (test_spe.h:48)
+-   by 0x........: main (test_spe.c:1126)
++   by 0x........: main (test_spe.c:1278)
+ 
+ 
+ HEAP SUMMARY:
+@@ -27,7 +27,7 @@ HEAP SUMMARY:
+    by 0x........: run (test_spe.h:42)
+    by 0x........: run (test_spe.h:48)
+    by 0x........: run (test_spe.h:48)
+-   by 0x........: main (test_spe.c:1126)
++   by 0x........: main (test_spe.c:1278)
+ 
+ LEAK SUMMARY:
+    definitely lost: 40 bytes in 1 blocks
+diff --git a/memcheck/tests/ppc32/test_spe.stdout.exp b/memcheck/tests/ppc32/test_spe.stdout.exp
+index 714eaa6..3a9baaf 100644
+--- a/memcheck/tests/ppc32/test_spe.stdout.exp
++++ b/memcheck/tests/ppc32/test_spe.stdout.exp
+@@ -17,6 +17,8 @@ SPE Regression Tests: PASS
+ ....Unit test for evstdd using asm: PASS
+ ....Unit test for evlddx using asm: PASS
+ ....Unit test for evstddx using asm: PASS
++....Unit test for evldh using asm: PASS
++....Unit test for evstdh using asm: PASS
+ ...SPE ISA Bitwise Operators Tests: PASS
+ ....Unit test for evxor using asm: PASS
+ ..SPE ISA Miscellaneous Tests: PASS
+diff --git a/regtest-power7-64.log b/regtest-power7-64.log
+index 9306be8..80959da 100644
+--- a/regtest-power7-64.log
++++ b/regtest-power7-64.log
+@@ -1418,7 +1418,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/helgrind/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/helgrind/tests'
+-make[4]: Warning: File `.deps/tc24_nonzero_sem.Po' has modification time 69 s in the future
++make[4]: Warning: File `.deps/tc24_nonzero_sem.Po' has modification time 70 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1980,7 +1980,7 @@ badfree-2trace:  valgrind   --num-callers=2 -q ./badfree
+ badfree:         valgrind   -q ./badfree 
+ badfree3:        valgrind   -q --fullpath-after=/proj/ppc/DT/labhome/anmol/valgrind-3.8.1/ ./badfree 
+ badjump:         valgrind   ./badjump 
+-sh: line 1: 18704 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
++sh: line 1: 16421 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
+ badjump2:        valgrind   -q ./badjump2 
+ badloop:         valgrind   -q ./badloop 
+ badpoll:         valgrind   -q ./badpoll 
+@@ -1997,7 +1997,7 @@ clo_redzone_default: valgrind   --leak-check=no -q ./clo_redzone
+ custom-overlap:  valgrind   --leak-check=summary -q ./custom-overlap 
+ custom_alloc:    valgrind   -q ./custom_alloc 
+ deep-backtrace:  valgrind   -q --num-callers=500 ./deep-backtrace 
+-sh: line 1: 19268 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
++sh: line 1: 16980 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
+ deep_templates:  valgrind   -q ./deep_templates 
+ describe-block:  valgrind   ./describe-block 
+ doublefree:      valgrind   -q ./doublefree 
+@@ -2110,7 +2110,7 @@ supp-dir:        valgrind   --suppressions=x86/ ./../../tests/true
+ supp1:           valgrind   --suppressions=supp.supp -q ./supp1 
+ supp2:           valgrind   --suppressions=supp.supp -q ./supp2 
+ supp_unknown:    valgrind   -q --suppressions=supp_unknown.supp ./badjump 
+-sh: line 1: 23965 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
++sh: line 1: 21683 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
+ *** supp_unknown failed (stderr) ***
+ suppfree:        valgrind   --suppressions=suppfree.supp -q ./suppfree 
+ test-plo-no:     valgrind   -q ./test-plo 
+@@ -2246,7 +2246,7 @@ gxx304:          valgrind   ./gxx304
+ ifunc:           (skipping, prereq failed: test -e ifunc)
+ -- Running  tests in none/tests/linux ----------------------------------
+ blockfault:      valgrind   ./blockfault 
+-sh: line 1: 28448 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
++sh: line 1: 26156 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
+ mremap:          valgrind   ./mremap 
+ mremap2:         valgrind   ./mremap2 
+ mremap3:         valgrind   ./mremap3 
+@@ -2412,7 +2412,7 @@ tc20_verifywrap: valgrind   --read-var-info=yes ./tc20_verifywrap
+ *** tc20_verifywrap failed (stderr) ***
+ tc21_pthonce:    valgrind   --read-var-info=yes ./tc21_pthonce 
+ tc22_exit_w_lock: valgrind   ./tc22_exit_w_lock 
+-sh: line 1: 13600 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1: 11310 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   ./tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --hg-sanity-flags=111111 ./tc24_nonzero_sem 
+ -- Finished tests in helgrind/tests ------------------------------------
+@@ -2531,7 +2531,7 @@ tc18_semabuse:   valgrind   ./../../helgrind/tests/tc18_semabuse
+ tc19_shadowmem:  valgrind   --error-limit=no --read-var-info=yes --show-confl-seg=no --num-callers=3 ./../../helgrind/tests/tc19_shadowmem 
+ tc21_pthonce:    valgrind   --num-callers=3 ./../../helgrind/tests/tc21_pthonce 
+ tc22_exit_w_lock: valgrind   --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock 
+-sh: line 1: 18941 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1: 16648 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   --num-callers=3 ./../../helgrind/tests/tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --read-var-info=yes ./../../helgrind/tests/tc24_nonzero_sem 
+ thread_name:     valgrind   --read-var-info=yes --check-stack-var=yes --num-callers=3 ./thread_name 
+-- 
+1.7.3.4
+

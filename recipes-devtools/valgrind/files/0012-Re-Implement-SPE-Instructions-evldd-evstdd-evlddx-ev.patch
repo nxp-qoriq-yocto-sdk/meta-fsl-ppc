@@ -1,0 +1,130 @@
+From 54fc6ae6e012920dd389190ba08591c26c63d799 Mon Sep 17 00:00:00 2001
+From: Anmol P. Paralkar <anmol@freescale.com>
+Date: Thu, 31 Jan 2013 09:37:39 -0800
+Subject: [PATCH 12/65] Re-Implement SPE Instructions: { evldd, evstdd, evlddx, evstddx } for uniformity.
+
+---
+ VEX/priv/guest_ppc_toIR.c |   66 +++++++++++++++++++++-----------------------
+ 1 files changed, 32 insertions(+), 34 deletions(-)
+
+diff --git a/VEX/priv/guest_ppc_toIR.c b/VEX/priv/guest_ppc_toIR.c
+index 453ef4d..86e1961 100644
+--- a/VEX/priv/guest_ppc_toIR.c
++++ b/VEX/priv/guest_ppc_toIR.c
+@@ -11684,22 +11684,13 @@ static Bool dis_spe_load ( VexAbiInfo* vbi, UInt theInstr )
+    }
+ 
+    switch (opc2) {
+-   case 0x300:
+-      // evlddx (Vector Load Double Word into Double Word Indexed, SPEPEM p5-113)
+-      DIP( "evlddx r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
+-      assign( EA, ea_rAor0_idxd ( rA_addr, rB_addr ) );
+-      putSPEReg( rD_addr, loadBE( Ity_I64, addr_align( mkexpr( EA ), 8 ) ) );
+-      break;
+-   case 0x301:
+-      // evldd (Vector Load Double of Double, SPEPEM p5-112)
+-      disp = 8 * uimm;
+-      DIP( "evldd r%d, %u(r%u)\n", rD_addr, disp, rA_addr );
+-      assign( EA, ea_rAor0_disp( rA_addr, disp ) );
+-      putSPEReg( rD_addr, loadBE( Ity_I64, addr_align( mkexpr( EA ), 8 ) ) );
+-      break;
+-   case 0x302 ... 0x305:
+-      if (opc2 == 0x302 || opc2 == 0x304) {
++   case 0x300 ... 0x305:
++      if (opc2 == 0x300 || opc2 == 0x302 || opc2 == 0x304) {
+         switch (opc2) {
++        case 0x300:
++           // evlddx (Vector Load Double Word into Double Word Indexed, SPEPEM p5-113)
++           insn = "evlddx";
++           break;
+         case 0x302:
+            // evldwx (Vector Load Double into Two Words Indexed, SPEPEM p5-117)
+            insn = "evldwx";
+@@ -11712,9 +11703,13 @@ static Bool dis_spe_load ( VexAbiInfo* vbi, UInt theInstr )
+         DIP( "%s r%d, r%d, r%d\n", insn, rD_addr, rA_addr, rB_addr );
+         assign( EA, addr_align( ea_rAor0_idxd( rA_addr, rB_addr ), 8 ) );
+       }
+-      if (opc2 == 0x303 || opc2 == 0x305) {
++      if (opc2 == 0x301 || opc2 == 0x303 || opc2 == 0x305) {
+         disp = 8 * uimm;
+         switch (opc2) {
++        case 0x301:
++           // evldd (Vector Load Double of Double, SPEPEM p5-112)
++           insn = "evldd";
++           break;
+         case 0x303:
+            // evldw (Vector Load Double into Two Words, SPEPEM p5-116)
+            insn = "evldw";
+@@ -11757,8 +11752,12 @@ static Bool dis_spe_load ( VexAbiInfo* vbi, UInt theInstr )
+         assign( wu, loadBE( Ity_I32, mkexpr ( ea0 ) ) );
+         assign( wl, loadBE( Ity_I32, mkexpr ( ea4 ) ) );
+       }
+-
+-      assign( rD, binop( Iop_32HLto64, mkexpr ( wu ), mkexpr ( wl ) ) );
++      if (opc2 == 0x300 /* evlddx */ ||
++          opc2 == 0x301 /* evldd  */) {
++        assign (rD, loadBE( Ity_I64, mkexpr ( ea0 ) ) );
++      } else {
++        assign( rD, binop( Iop_32HLto64, mkexpr ( wu ), mkexpr ( wl ) ) );
++      }
+ 
+       putSPEReg( rD_addr, mkexpr ( rD ) );
+       break;
+@@ -11807,22 +11806,13 @@ static Bool dis_spe_store ( UInt theInstr )
+    assign( rS, getSPEReg( rS_addr ) );
+ 
+    switch (opc2) {
+-   case 0x320:
+-      // evstddx (Vector Store Double of Double Indexed, SPEPEM p5-229)
+-      DIP( "evstddx r%d, r%d, r%d\n", rS_addr, rA_addr, rB_addr );
+-      assign( EA, ea_rAor0_idxd( rA_addr, rB_addr ) );
+-      storeBE( addr_align( mkexpr( EA ), 8 ), mkexpr( rS ) );
+-      break;
+-   case 0x321:
+-      // evstdd (Vector Store Double of Double, SPEPEM p5-228)
+-      disp = 8 * uimm;
+-      DIP( "evstdd r%d, %u(r%u)\n", rS_addr, disp, rA_addr );
+-      assign( EA, ea_rAor0_disp( rA_addr, disp ) );
+-      storeBE( addr_align( mkexpr( EA ), 8 ), mkexpr( rS ) );
+-      break;
+-   case 0x322 ... 0x325:
+-      if (opc2 == 0x322 || opc2 == 0x324) {
++   case 0x320 ... 0x325:
++      if (opc2 == 0x320 || opc2 == 0x322 || opc2 == 0x324) {
+         switch (opc2) {
++        case 0x320:
++           // evstddx (Vector Store Double of Double Indexed, SPEPEM p5-229)
++           insn = "evstddx";
++           break;
+         case 0x322:
+            // evstdwx (Vector Store Double of Two Words Indexed, SPEPEM p5-233)
+            insn = "evstdwx";
+@@ -11835,9 +11825,13 @@ static Bool dis_spe_store ( UInt theInstr )
+         DIP( "%s r%d, r%d, r%d\n", insn, rS_addr, rA_addr, rB_addr );
+         assign( EA, ea_rAor0_idxd( rA_addr, rB_addr ) );
+       }
+-      if (opc2 == 0x323 || opc2 == 0x325) {
++      if (opc2 == 0x321 || opc2 == 0x323 || opc2 == 0x325) {
+         disp = 8 * uimm;
+         switch (opc2) {
++        case 0x321:
++           // evstdd (Vector Store Double of Double, SPEPEM p5-228)
++           insn = "evstdd";
++           break;
+         case 0x323:
+            // evstdw (Vector Store Double of Two Words, SPEPEM p5-232)
+            insn = "evstdw";
+@@ -11877,6 +11871,10 @@ static Bool dis_spe_store ( UInt theInstr )
+         storeBE( mkexpr( ea0 ), mkexpr( rSU ) );
+         storeBE( mkexpr( ea4 ), mkexpr( rSL ) );
+       }
++      if (opc2 == 0x320 /* evstddx */ ||
++          opc2 == 0x321 /* evstdd  */) {
++        storeBE( mkexpr( ea0 ), mkexpr( rS ) );
++      }
+       break;
+    }
+ 
+-- 
+1.7.3.4
+

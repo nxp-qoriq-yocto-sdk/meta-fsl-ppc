@@ -1,0 +1,43 @@
+From 88dd4afe5e3e83952c1b2955fed273cb3f53f955 Mon Sep 17 00:00:00 2001
+From: Anmol P. Paralkar <anmol@freescale.com>
+Date: Mon, 3 Jun 2013 13:53:03 -0700
+Subject: [PATCH 63/65] FSL-SPE-README.txt: Add prlimit(2) being an unsupported syscall to the list of known issues.
+
+---
+ FSL-SPE-README.txt |   14 +++++++++++---
+ 1 files changed, 11 insertions(+), 3 deletions(-)
+
+diff --git a/FSL-SPE-README.txt b/FSL-SPE-README.txt
+index bde8f32..1bd8f84 100644
+--- a/FSL-SPE-README.txt
++++ b/FSL-SPE-README.txt
+@@ -122,15 +122,23 @@
+  Known Issues & Limitations:
+  ---------------------------
+ 
+- 0. The Valgrind SPE port does not detect/warn upon an unaligned SPE load/store
++ Known issues with the Valgrind SPE port:
++
++  0. The Valgrind SPE port does not detect/warn upon an unaligned SPE load/store
+     e.g. For the evldd/evstdd the SPEPEM Rev. 0, 01/2008 states:
+     "If the EA is not double-word aligned, an alignment exception occurs".
+     (The Valgrind port assumes that the EA is per the SPEPEM).
+ 
+- 1. ptrace(2) is not supported on the Power architecture in general (as of
++ 1. The ptrace(2) system call is not supported on the Power architecture in general (as of
+     valgrind-3.8.1), and on the Valgrind SPE port in particular.
+ 
+- 2. The Valgrind SPE port has not yet added support for the e500v2 SPE to
++    This manifests as: WARNING: unhandled syscall:  26
++
++ 2. The prlimit(2) system call is not supported.
++
++     This manifests as: unhandled syscall: 325
++
++ 3. The Valgrind SPE port has not yet added support for the e500v2 SPE to
+     Valgrind's internal gdbserver.
+ 
+  Standard UNIX Utilities running stand-alone and under Valgrind on a p1022ds Linux system:
+-- 
+1.7.3.4
+

@@ -1,0 +1,920 @@
+From f314220639a4ef08a14d36fcb61daead3dfa8c98 Mon Sep 17 00:00:00 2001
+From: Anmol P. Paralkar <anmol@freescale.com>
+Date: Fri, 3 May 2013 09:24:13 -0700
+Subject: [PATCH 56/65] Implement SPE Instructions: {
+
+ evfsabs, evfsadd, evfscfsf, evfscfsi, evfscfuf, evfscfui, evfscmpeq, evfscmpgt,
+ evfscmplt, evfsctsf, evfsctsi, evfsctsiz, evfsctuf, evfsctui, evfsctuiz, evfsdiv,
+ evfsmul, evfsnabs, evfsneg, evfssub, evfststeq, evfststgt, evfststlt
+
+}.
+---
+ FSL-SPE-README.txt                       |    8 +-
+ VEX/priv/guest_ppc_defs.h                |   23 +++
+ VEX/priv/guest_ppc_helpers.c             |  127 +++++++++++-------
+ VEX/priv/guest_ppc_toIR.c                |  215 +++++++++++++++++++++++++-----
+ memcheck/tests/ppc32/test_spe.c          |  178 ++++++++++++++++++++++++-
+ memcheck/tests/ppc32/test_spe.stderr.exp |    6 +-
+ memcheck/tests/ppc32/test_spe.stdout.exp |   23 +++
+ regtest-power7-64.default-build.log      |   12 +-
+ regtest-power7-64.log                    |   12 +-
+ 9 files changed, 500 insertions(+), 104 deletions(-)
+
+diff --git a/FSL-SPE-README.txt b/FSL-SPE-README.txt
+index ff8ce16..e0fa131 100644
+--- a/FSL-SPE-README.txt
++++ b/FSL-SPE-README.txt
+@@ -83,6 +83,10 @@
+  efscmplt, efsctsf, efsctsi, efsctsiz, efsctuf, efsctui, efsctuiz, efsdiv, efsmul,
+  efsnabs, efsneg, efssub, efststeq, efststgt, efststlt,
+ 
++ evfsabs, evfsadd, evfscfsf, evfscfsi, evfscfuf, evfscfui, evfscmpeq, evfscmpgt,
++ evfscmplt, evfsctsf, evfsctsi, evfsctsiz, evfsctuf, evfsctui, evfsctuiz, evfsdiv,
++ evfsmul, evfsnabs, evfsneg, evfssub, evfststeq, evfststgt, evfststlt,
++
+  Note: Synthetic instructions appear prefixed with a leading underscore in the
+        above list. All synthetic instructions are tested as working under
+        Valgrind even though, strictly speaking, such an instruction is not
+@@ -97,10 +101,6 @@
+ 
+  ehpriv?, eqv?, eqv.?,
+ 
+- evfsabs, evfsadd, evfscfsf, evfscfsi, evfscfuf, evfscfui, evfscmpeq, evfscmpgt,
+- evfscmplt, evfsctsf, evfsctsi, evfsctsiz, evfsctuf, evfsctui, evfsctuiz, evfsdiv,
+- evfsmul, evfsnabs, evfsneg, evfssub, evfststeq, evfststgt, evfststlt,
+-
+  evmhessf, evmhessfa, evmhessfaaw, evmhessfanw, evmhessiaaw, evmhessianw, evmheusiaaw,
+  evmheusinw, evmhossf, evmhossfa, evmhossfaaw, evmhossfanw, evmhossiaaw, evmhossianw,
+  evmhousiaaw, evmhousianw, evmwhsmi, evmwhsmia, evmwhssf, evmwhssfa, evmwhumi, evmwhumia,
+diff --git a/VEX/priv/guest_ppc_defs.h b/VEX/priv/guest_ppc_defs.h
+index 1f0828a..872a51b 100644
+--- a/VEX/priv/guest_ppc_defs.h
++++ b/VEX/priv/guest_ppc_defs.h
+@@ -348,6 +348,29 @@ SPE_DIRTY_HELPER_DECL_rDrArB(efssub);
+ SPE_DIRTY_HELPER_DECL_crfDrArB(efststeq);
+ SPE_DIRTY_HELPER_DECL_crfDrArB(efststgt);
+ SPE_DIRTY_HELPER_DECL_crfDrArB(efststlt);
++SPE_DIRTY_HELPER_DECL_rDrA(evfsabs);
++SPE_DIRTY_HELPER_DECL_rDrArB(evfsadd);
++SPE_DIRTY_HELPER_DECL_rDrB(evfscfsf);
++SPE_DIRTY_HELPER_DECL_rDrB(evfscfsi);
++SPE_DIRTY_HELPER_DECL_rDrB(evfscfuf);
++SPE_DIRTY_HELPER_DECL_rDrB(evfscfui);
++SPE_DIRTY_HELPER_DECL_crfDrArB(evfscmpeq);
++SPE_DIRTY_HELPER_DECL_crfDrArB(evfscmpgt);
++SPE_DIRTY_HELPER_DECL_crfDrArB(evfscmplt);
++SPE_DIRTY_HELPER_DECL_rDrB(evfsctsf);
++SPE_DIRTY_HELPER_DECL_rDrB(evfsctsi);
++SPE_DIRTY_HELPER_DECL_rDrB(evfsctsiz);
++SPE_DIRTY_HELPER_DECL_rDrB(evfsctuf);
++SPE_DIRTY_HELPER_DECL_rDrB(evfsctui);
++SPE_DIRTY_HELPER_DECL_rDrB(evfsctuiz);
++SPE_DIRTY_HELPER_DECL_rDrArB(evfsdiv);
++SPE_DIRTY_HELPER_DECL_rDrArB(evfsmul);
++SPE_DIRTY_HELPER_DECL_rDrA(evfsnabs);
++SPE_DIRTY_HELPER_DECL_rDrA(evfsneg);
++SPE_DIRTY_HELPER_DECL_rDrArB(evfssub);
++SPE_DIRTY_HELPER_DECL_crfDrArB(evfststeq);
++SPE_DIRTY_HELPER_DECL_crfDrArB(evfststgt);
++SPE_DIRTY_HELPER_DECL_crfDrArB(evfststlt);
+ 
+ #endif /* ndef __VEX_GUEST_PPC_DEFS_H */
+ 
+diff --git a/VEX/priv/guest_ppc_helpers.c b/VEX/priv/guest_ppc_helpers.c
+index 3fd9f3e..3f59466 100644
+--- a/VEX/priv/guest_ppc_helpers.c
++++ b/VEX/priv/guest_ppc_helpers.c
+@@ -1429,6 +1429,9 @@ void spe_dirtyhelper_mtspefscr ( VexGuestPPC32State* gst,
+   return;
+ }
+ 
++/* From CR7, extract and return just that one bit holding the result. */
++#define EXTRACT_CMP_RES(cr) ((((cr) & 0xf) >> 2) & 0x1)
++
+ /* CALLED FROM GENERATED CODE */
+ /* DIRTY HELPER (reads guest state, writes guest state) */
+ #ifdef __SPE__
+@@ -1452,8 +1455,7 @@ UInt spe_dirtyhelper_##insn ( VexGuestPPC32State* gst, UInt rA_off, UInt rB_off
+   /* Get hard reg CR into the variable CR: */                                     \
+   asm volatile ("mfcr %[cr]" : [cr] "=r" (CR));                                   \
+                                                                                   \
+-  /* From CR7, extract and return just that one bit holding the result. */        \
+-  return ((CR & 0xf) >> 2) & 0x1;                                                 \
++  return EXTRACT_CMP_RES(CR);                                                     \
+ }
+ #else
+ #define SPE_DIRTY_HELPER_DEFN_crfDrArB(insn, rA_type, rB_type)                    \
+@@ -1527,54 +1529,79 @@ void spe_dirtyhelper_##insn ( VexGuestPPC32State* gst, UInt rD_off, UInt rB_off
+ #define SPE_DIRTY_HELPER_DEFN_rDrA(insn, rD_type, rA_type) \
+         SPE_DIRTY_HELPER_DEFN_rDrB(insn, rD_type, rA_type)
+ 
+-SPE_DIRTY_HELPER_DEFN_rDrA(efdabs,       __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrArB(efdadd,     __ev64_opaque__, __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrB(efdcfs,       __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrB(efdcfsf,      __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrB(efdcfsi,      __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrB(efdcfuf,      __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrB(efdcfui,      __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_crfDrArB(efdcmpeq, __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_crfDrArB(efdcmpgt, __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_crfDrArB(efdcmplt, __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrB(efdctsf,      __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrB(efdctsi,      __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrB(efdctsiz,     __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrB(efdctuf,      __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrB(efdctui,      __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrB(efdctuiz,     __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrArB(efddiv,     __ev64_opaque__, __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrArB(efdmul,     __ev64_opaque__, __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrA(efdnabs,      __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrA(efdneg,       __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrArB(efdsub,     __ev64_opaque__, __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_crfDrArB(efdtsteq, __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_crfDrArB(efdtstgt, __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_crfDrArB(efdtstlt, __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrA(efsabs,       __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrArB(efsadd,     __ev64_opaque__, __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrB(efscfd,       __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrB(efscfsf,      __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrB(efscfsi,      __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrB(efscfuf,      __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrB(efscfui,      __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_crfDrArB(efscmpeq, __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_crfDrArB(efscmpgt, __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_crfDrArB(efscmplt, __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrB(efsctsf,      __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrB(efsctsi,      __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrB(efsctsiz,     __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrB(efsctuf,      __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrB(efsctui,      __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrB(efsctuiz,     __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrArB(efsdiv,     __ev64_opaque__, __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrArB(efsmul,     __ev64_opaque__, __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrA(efsnabs,      __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrA(efsneg,       __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_rDrArB(efssub,     __ev64_opaque__, __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_crfDrArB(efststeq, __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_crfDrArB(efststgt, __ev64_opaque__, __ev64_opaque__)
+-SPE_DIRTY_HELPER_DEFN_crfDrArB(efststlt, __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrA(efdabs,        __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrArB(efdadd,      __ev64_opaque__, __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrB(efdcfs,        __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrB(efdcfsf,       __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrB(efdcfsi,       __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrB(efdcfuf,       __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrB(efdcfui,       __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_crfDrArB(efdcmpeq,  __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_crfDrArB(efdcmpgt,  __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_crfDrArB(efdcmplt,  __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrB(efdctsf,       __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrB(efdctsi,       __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrB(efdctsiz,      __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrB(efdctuf,       __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrB(efdctui,       __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrB(efdctuiz,      __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrArB(efddiv,      __ev64_opaque__, __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrArB(efdmul,      __ev64_opaque__, __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrA(efdnabs,       __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrA(efdneg,        __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrArB(efdsub,      __ev64_opaque__, __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_crfDrArB(efdtsteq,  __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_crfDrArB(efdtstgt,  __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_crfDrArB(efdtstlt,  __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrA(efsabs,        __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrArB(efsadd,      __ev64_opaque__, __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrB(efscfd,        __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrB(efscfsf,       __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrB(efscfsi,       __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrB(efscfuf,       __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrB(efscfui,       __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_crfDrArB(efscmpeq,  __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_crfDrArB(efscmpgt,  __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_crfDrArB(efscmplt,  __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrB(efsctsf,       __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrB(efsctsi,       __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrB(efsctsiz,      __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrB(efsctuf,       __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrB(efsctui,       __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrB(efsctuiz,      __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrArB(efsdiv,      __ev64_opaque__, __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrArB(efsmul,      __ev64_opaque__, __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrA(efsnabs,       __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrA(efsneg,        __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrArB(efssub,      __ev64_opaque__, __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_crfDrArB(efststeq,  __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_crfDrArB(efststgt,  __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_crfDrArB(efststlt,  __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrA(evfsabs,       __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrArB(evfsadd,     __ev64_opaque__, __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrB(evfscfsf,      __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrB(evfscfsi,      __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrB(evfscfuf,      __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrB(evfscfui,      __ev64_opaque__, __ev64_opaque__)
++#undef EXTRACT_CMP_RES
++#define EXTRACT_CMP_RES(cr) ((cr) & 0xf)
++SPE_DIRTY_HELPER_DEFN_crfDrArB(evfscmpeq, __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_crfDrArB(evfscmpgt, __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_crfDrArB(evfscmplt, __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrB(evfsctsf,      __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrB(evfsctsi,      __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrB(evfsctsiz,     __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrB(evfsctuf,      __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrB(evfsctui,      __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrB(evfsctuiz,     __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrArB(evfsdiv,     __ev64_opaque__, __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrArB(evfsmul,     __ev64_opaque__, __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrA(evfsnabs,      __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrA(evfsneg,       __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrArB(evfssub,     __ev64_opaque__, __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_crfDrArB(evfststeq, __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_crfDrArB(evfststgt, __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_crfDrArB(evfststlt, __ev64_opaque__, __ev64_opaque__)
+ 
+ /*----------------------------------------------*/
+ /*--- The exported fns ..                    ---*/
+diff --git a/VEX/priv/guest_ppc_toIR.c b/VEX/priv/guest_ppc_toIR.c
+index a09e6c3..a384e15 100644
+--- a/VEX/priv/guest_ppc_toIR.c
++++ b/VEX/priv/guest_ppc_toIR.c
+@@ -15058,30 +15058,29 @@ static Bool dis_spe_ACC_based_fractional_multiply_insns ( UInt theInstr )
+      /* execute the dirty call, side-effecting guest state */ \
+      stmt( IRStmt_Dirty(d) );
+ 
+-#define PREPARE_DIRTY_HELPER_CALL_crfDrArB(insn)                        \
+-     args = mkIRExprVec_2 ( mkU32( rA_off ),                            \
+-                            mkU32( rB_off ) );                          \
+-     d = unsafeIRDirty_1_N (val,                                        \
+-                            0 /* regparms */,                           \
+-                            "spe_dirtyhelper_" #insn,                   \
+-                            &spe_dirtyhelper_##insn,                    \
+-                            args);                                      \
+-     DIP( #insn " CR%d, r%d, r%d\n", CR_field, rA_addr, rB_addr );      \
+-     /* declare guest state effects */                                  \
+-     d->needsBBP = True;                                                \
+-     d->nFxState = 2;                                                   \
+-     vex_bzero(&d->fxState, sizeof(d->fxState));                        \
+-     d->fxState[0].fx     = Ifx_Read;                                   \
+-     d->fxState[0].offset = rA_off;                                     \
+-     d->fxState[0].size   = sizeof(ULong);                              \
+-     d->fxState[1].fx     = Ifx_Read;                                   \
+-     d->fxState[1].offset = rB_off;                                     \
+-     d->fxState[1].size   = sizeof(ULong);                              \
+-                                                                        \
+-     /* execute the dirty call, side-effecting guest state */           \
+-     stmt( IRStmt_Dirty(d) );                                           \
+-     /* Update the CR in the guest state with the returned bit-value */ \
+-     putCRbit ( CR_field * 4 + 1, mkexpr ( val ) );
++#define PREPARE_DIRTY_HELPER_CALL_crfDrArB(insn)                   \
++     args = mkIRExprVec_2 ( mkU32( rA_off ),                       \
++                            mkU32( rB_off ) );                     \
++     d = unsafeIRDirty_1_N (val,                                   \
++                            0 /* regparms */,                      \
++                            "spe_dirtyhelper_" #insn,              \
++                            &spe_dirtyhelper_##insn,               \
++                            args);                                 \
++     DIP( #insn " CR%d, r%d, r%d\n", CR_field, rA_addr, rB_addr ); \
++     /* declare guest state effects */                             \
++     d->needsBBP = True;                                           \
++     d->nFxState = 2;                                              \
++     vex_bzero(&d->fxState, sizeof(d->fxState));                   \
++     d->fxState[0].fx     = Ifx_Read;                              \
++     d->fxState[0].offset = rA_off;                                \
++     d->fxState[0].size   = sizeof(ULong);                         \
++     d->fxState[1].fx     = Ifx_Read;                              \
++     d->fxState[1].offset = rB_off;                                \
++     d->fxState[1].size   = sizeof(ULong);                         \
++                                                                   \
++     /* execute the dirty call, side-effecting guest state */      \
++     stmt( IRStmt_Dirty(d) );                                      \
++     UPDATE_CR(val);
+ 
+ #define PREPARE_DIRTY_HELPER_CALL_rDrB(insn)                  \
+      args = mkIRExprVec_2 ( mkU32( rD_off ),                  \
+@@ -15127,6 +15126,9 @@ static Bool dis_spe_ACC_based_fractional_multiply_insns ( UInt theInstr )
+      /* execute the dirty call, side-effecting guest state */ \
+      stmt( IRStmt_Dirty(d) );
+ 
++#undef UPDATE_CR
++/* Update the CR in the guest state with the returned bit-value */
++#define UPDATE_CR(val) putCRbit ( CR_field * 4 + 1, mkexpr ( val ) );
+ static Bool dis_spe_fs ( UInt theInstr )
+ {
+   /* EVX-Form */
+@@ -15150,7 +15152,7 @@ static Bool dis_spe_fs ( UInt theInstr )
+   IRTemp   val = newTemp(Ity_I32);
+ 
+   if (opc1 != 0x4) {
+-     vex_printf( "dis_spe_fd (ppc)(opc1 != 0x4)\n" );
++     vex_printf( "dis_spe_fs (ppc)(opc1 != 0x4)\n" );
+      return False;
+   }
+   switch (opc2) {
+@@ -15256,36 +15258,158 @@ static Bool dis_spe_fs ( UInt theInstr )
+   return True;
+ }
+ 
++#undef UPDATE_CR
++/* Update the CR in the guest state */
++#define UPDATE_CR(val)                                      \
++putCRbit ( CR_field * 4 + 3, binop ( Iop_And32,             \
++                                     binop( Iop_Shr32,      \
++                                            mkexpr ( val ), \
++                                            mkU8 ( 0x0 ) ), \
++                                     mkU32 ( 0x1 ) ) );     \
++putCRbit ( CR_field * 4 + 2, binop ( Iop_And32,             \
++                                     binop( Iop_Shr32,      \
++                                            mkexpr ( val ), \
++                                            mkU8 ( 0x1 ) ), \
++                                     mkU32 ( 0x1 ) ) );     \
++putCRbit ( CR_field * 4 + 1, binop ( Iop_And32,             \
++                                     binop( Iop_Shr32,      \
++                                            mkexpr ( val ), \
++                                            mkU8 ( 0x2 ) ), \
++                                     mkU32 ( 0x1 ) ) );     \
++putCRbit ( CR_field * 4 + 0, binop ( Iop_And32,             \
++                                     binop( Iop_Shr32,      \
++                                            mkexpr ( val ), \
++                                            mkU8 ( 0x3 ) ), \
++                                     mkU32 ( 0x1 ) ) );
++
+ static Bool dis_spe_fv ( UInt theInstr )
+ {
+   /* EVX-Form */
+-  UChar opc1    = evxOpcode( theInstr );
+-  UInt  opc2    = evxXO( theInstr );
+-  UChar rD_addr = evxRD( theInstr );
+-  UChar rA_addr = evxRA( theInstr );
+-  UChar rB_addr = evxRB( theInstr );
+-  UChar uimm    = evxRB( theInstr );
+-  Char  simm    = evxRA( theInstr );
++  UChar opc1     = evxOpcode( theInstr );
++  UInt  opc2     = evxXO( theInstr );
++  UChar CR_field = evxBF( theInstr );
++  UChar rD_addr  = evxRD( theInstr );
++  UChar rA_addr  = evxRA( theInstr );
++  UChar rB_addr  = evxRB( theInstr );
++  UChar uimm     = evxRB( theInstr );
++  Char  simm     = evxRA( theInstr );
+ 
+   UInt ACC_off = speACCRegOffset( );
+   UInt rD_off  = speGuestRegOffset( rD_addr );
+   UInt rA_off  = speGuestRegOffset( rA_addr );
+   UInt rB_off  = speGuestRegOffset( rB_addr );
++  UInt CRf_off;
+ 
+   IRDirty* d;
+   IRExpr** args;
++  IRTemp   val = newTemp(Ity_I32);
+ 
+   if (opc1 != 0x4) {
+      vex_printf( "dis_spe_fv (ppc)(opc1 != 0x4)\n" );
+      return False;
+   }
+   switch (opc2) {
++  case 0x280:
++     // evfsadd (Vector Floating-Point Single-Precision Add, SPEPEM p5-90)
++     PREPARE_DIRTY_HELPER_CALL_rDrArB(evfsadd);
++  break;
++  case 0x281:
++     // evfssub (Vector Floating-Point Single-Precision Subtract, SPEPEM p5-108)
++     PREPARE_DIRTY_HELPER_CALL_rDrArB(evfssub);
++  break;
++  case 0x284:
++     // evfsabs (Vector Floating-Point Single-Precision Absolute Value, SPEPEM p5-89)
++     PREPARE_DIRTY_HELPER_CALL_rDrA(evfsabs);
++  break;
++  case 0x285:
++     // evfsnabs (Vector Floating-Point Single-Precision Negative Absolute Value, SPEPEM p5-106)
++     PREPARE_DIRTY_HELPER_CALL_rDrA(evfsnabs);
++  break;
++  case 0x286:
++     // evfsneg (Vector Floating-Point Single-Precision Negate, SPEPEM p5-107)
++     PREPARE_DIRTY_HELPER_CALL_rDrA(evfsneg);
++  break;
++  case 0x288:
++     // evfsmul (Vector Floating-Point Single-Precision Multiply, SPEPEM p5-105)
++     PREPARE_DIRTY_HELPER_CALL_rDrArB(evfsmul);
++  break;
++  case 0x289:
++     // evfsdiv (Vector Floating-Point Single-Precision Divide, SPEPEM p5-104)
++     PREPARE_DIRTY_HELPER_CALL_rDrArB(evfsdiv);
++  break;
++  case 0x28c:
++     // evfscmpgt (Vector Floating-Point Single-Precision Compare Greater Than, SPEPEM p5-96)
++     PREPARE_DIRTY_HELPER_CALL_crfDrArB(evfscmpgt);
++  break;
++  case 0x28d:
++     // evfscmplt (Vector Floating-Point Single-Precision Compare Less Than, SPEPEM p5-97)
++     PREPARE_DIRTY_HELPER_CALL_crfDrArB(evfscmplt);
++  break;
++  case 0x28e:
++     // evfscmpeq (Vector Floating-Point Single-Precision Compare Equal, SPEPEM p5-95)
++     PREPARE_DIRTY_HELPER_CALL_crfDrArB(evfscmpeq);
++  break;
++  case 0x290:
++     // evfscfui (Vector Convert Floating-Point Single-Precision from Unsigned Integer, SPEPEM p5-94)
++     PREPARE_DIRTY_HELPER_CALL_rDrB(evfscfui);
++  break;
++  case 0x291:
++      // evfscfsi (Vector Convert Floating-Point Single-Precision from Signed Integer, SPEPEM p5-92)
++     PREPARE_DIRTY_HELPER_CALL_rDrB(evfscfsi);
++  break;
++  case 0x292:
++     // evfscfuf (Vector Convert Floating-Point Single-Precision from Unsigned Fraction, SPEPEM p5-93)
++     PREPARE_DIRTY_HELPER_CALL_rDrB(evfscfuf);
++  break;
++  case 0x293:
++     // evfscfsf (Vector Convert Floating-Point Single-Precision from Signed Fraction, SPEPEM p5-91)
++     PREPARE_DIRTY_HELPER_CALL_rDrB(evfscfsf);
++  break;
++  case 0x294:
++     // evfsctui (Vector Convert Floating-Point Single-Precision to Unsigned Integer, SPEPEM p5-102)
++     PREPARE_DIRTY_HELPER_CALL_rDrB(evfsctui);
++  break;
++  case 0x295:
++     // evfsctsi (Vector Convert Floating-Point Single-Precision to Signed Integer, SPEPEM p5-99)
++     PREPARE_DIRTY_HELPER_CALL_rDrB(evfsctsi);
++  break;
++  case 0x296:
++     // evfsctuf (Vector Convert Floating-Point Single-Precision to Unsigned Fraction, SPEPEM p5-101)
++     PREPARE_DIRTY_HELPER_CALL_rDrB(evfsctuf);
++  break;
++  case 0x297:
++     // evfsctsf (Vector Convert Floating-Point Single-Precision to Signed Fraction, SPEPEM p5-98)
++     PREPARE_DIRTY_HELPER_CALL_rDrB(evfsctsf);
++  break;
++  case 0x298:
++     // evfsctuiz (Vector Convert Floating-Point Single-Precision to Unsigned Integer with Round toward Zero, SPEPEM p5-103)
++     PREPARE_DIRTY_HELPER_CALL_rDrB(evfsctuiz);
++  break;
++  case 0x29a:
++     // evfsctsiz (Vector Convert Floating-Point Single-Precision to Signed Integer with Round toward Zero, SPEPEM p5-100)
++     PREPARE_DIRTY_HELPER_CALL_rDrB(evfsctsiz);
++  break;
++  case 0x29c:
++     // evfststgt (Vector Floating-Point Single-Precision Test Greater Than, SPEPEM p5-110)
++     PREPARE_DIRTY_HELPER_CALL_crfDrArB(evfststgt);
++  break;
++  case 0x29d:
++     // evfststlt (Vector Floating-Point Single-Precision Test Less Than, SPEPEM p5-111)
++     PREPARE_DIRTY_HELPER_CALL_crfDrArB(evfststlt);
++  break;
++  case 0x29e:
++     // evfststeq (Vector Floating-Point Single-Precision Test Equal, SPEPEM p5-109)
++     PREPARE_DIRTY_HELPER_CALL_crfDrArB(evfststeq);
++  break;
+   default:
+      return False;
+   }
+   return True;
+ }
+ 
++#undef UPDATE_CR
++/* Update the CR in the guest state with the returned bit-value */
++#define UPDATE_CR(val) putCRbit ( CR_field * 4 + 1, mkexpr ( val ) );
+ static Bool dis_spe_fd ( UInt theInstr )
+ {
+   /* EVX-Form */
+@@ -15415,6 +15539,7 @@ static Bool dis_spe_fd ( UInt theInstr )
+   }
+   return True;
+ }
++#undef UPDATE_CR
+ 
+ /*------------------------------------------------------------*/
+ /*--- AltiVec Instruction Translation                      ---*/
+@@ -21397,6 +21522,32 @@ DisResult disInstr_PPC_WRK (
+ #ifdef __SPE__
+       opc2 = IFIELD(theInstr, 0, 11);
+       switch (opc2) {
++      case 0x280: // evfsadd
++      case 0x281: // evfssub
++      case 0x284: // evfsabs
++      case 0x285: // evfsnabs
++      case 0x286: // evfsneg
++      case 0x288: // evfsmul
++      case 0x289: // evfsdiv
++      case 0x28c: // evfscmpgt
++      case 0x28d: // evfscmplt
++      case 0x28e: // evfscmpeq
++      case 0x290: // evfscfui
++      case 0x291: // evfscfsi
++      case 0x292: // evfscfuf
++      case 0x293: // evfscfsf
++      case 0x294: // evfsctui
++      case 0x295: // evfsctsi
++      case 0x296: // evfsctuf
++      case 0x297: // evfsctsf
++      case 0x298: // evfsctuiz
++      case 0x29a: // evfsctsiz
++      case 0x29c: // evfststgt
++      case 0x29d: // evfststlt
++      case 0x29e: // evfststeq
++         if (!allow_SPE) goto decode_noSPE;
++         if (dis_spe_fv( theInstr )) goto decode_success;
++         goto decode_failure;
+       case 0x2c0: // efsadd
+       case 0x2c1: // efssub
+       case 0x2c4: // efsabs
+diff --git a/memcheck/tests/ppc32/test_spe.c b/memcheck/tests/ppc32/test_spe.c
+index 6227996..fe4c44e 100644
+--- a/memcheck/tests/ppc32/test_spe.c
++++ b/memcheck/tests/ppc32/test_spe.c
+@@ -16157,6 +16157,7 @@ int evmhogumian_asm(void)
+ TEST_SPE_DECL(evmhogumian_asm, "evmhogumian");
+ 
+ #define EXTRACTOR
++#define FSCHECK(result_val, test_val) (EXTRACTOR(result_val) == EXTRACTOR(test_val))
+ 
+ #define SPE_DEFN_DEFAULT(insn) \
+ int insn##_asm(void)           \
+@@ -16230,9 +16231,9 @@ int insn##_asm(void)
+     regB = tval[i].bval;                                                                               \
+     asm volatile (#insn " %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));       \
+     if (generate_baseline)                                                                             \
+-      printf (baseline_format, regD);                                                                  \
++      printf (baseline_format, EXTRACTOR(regD));                                                       \
+     else                                                                                               \
+-      VERIFY(EXTRACTOR(regD) == EXTRACTOR(tval[i].dval), "i = %d\n", i);                               \
++      VERIFY(FSCHECK(regD, tval[i].dval), "i = %d\n", i);                                              \
+   }                                                                                                    \
+   return failures;                                                                                     \
+ }                                                                                                      \
+@@ -16262,7 +16263,7 @@ int insn##_asm(void)
+     if (generate_baseline)                                                                  \
+       printf (baseline_format, EXTRACTOR(regD));                                            \
+     else                                                                                    \
+-      VERIFY(EXTRACTOR(regD) == EXTRACTOR(tval[i].dval), "i = %d\n", i);                    \
++      VERIFY(FSCHECK(regD, tval[i].dval), "i = %d\n", i);                                   \
+   }                                                                                         \
+   return failures;                                                                          \
+ }                                                                                           \
+@@ -17319,6 +17320,154 @@ SPE_DEFN_crfDrArB(efststlt, float, float,
+  { 0x0,  0.0, -0.0000000000001             },
+  { 0x0,  0.0, 0.0                          })
+ 
++#undef EXTRACTOR
++#undef FSCHECK
++#define UEXTRACTOR(v) __ev_get_upper_fs(v)
++#define LEXTRACTOR(v) __ev_get_lower_fs(v)
++#define EXTRACTOR(v) UEXTRACTOR(v), LEXTRACTOR(v)
++#define FSCHECK(result_val, test_val) \
++ ((UEXTRACTOR(result_val) == UEXTRACTOR(test_val)) && \
++  (LEXTRACTOR(result_val) == LEXTRACTOR(test_val)))
++#define EVFS_FORMAT "{ %.30e, %.30e }\n"
++
++SPE_DEFN_rDrA(evfsabs, __ev64_fs__, __ev64_fs__, 0, EVFS_FORMAT,
++ { { 2.299999952316284179687500000000e+00, 1.700000092387199401855468750000e-02 }, {  2.3,              0.017    } },
++ { { 9.999999824516700441812133703934e-14, 2.172999954223632812500000000000e+01 }, { -0.0000000000001, -21.73    } })
++
++SPE_DEFN_rDrArB(evfsadd, __ev64_fs__, __ev64_fs__, __ev64_fs__, 0, EVFS_FORMAT,
++ { { 3.719000101089477539062500000000e+00, -1.131879997253417968750000000000e+01 }, { 1.71, -12.43 }, { 2.009,    1.1112 }, },
++ { { 1.199290990829467773437500000000e+00,  1.409000015258789062500000000000e+01 }, { -0.8,  11.09 }, { 1.999291, 3.0    }, })
++
++SPE_DEFN_rDrB(evfscfsf, __ev64_fs__, __ev64_u32__, 0, EVFS_FORMAT,
++ { { -2.500000000000000000000000000000e-01, -1.525878906250000000000000000000e-05 }, { 0xe0000000, 0xffff8000 } },
++ { { -6.250000000000000000000000000000e-02, -1.396983861923217773437500000000e-08 }, { 0xf8000000, 0xffffffe2 } })
++
++SPE_DEFN_rDrB(evfscfsi, __ev64_fs__, __ev64_s32__, 0, EVFS_FORMAT,
++ { { -1.0,  34.0  }, { -1,   34  } },
++ { {  2.0, -179.0 }, {  2,  -179 } })
++
++SPE_DEFN_rDrB(evfscfuf, __ev64_fs__, __ev64_u32__, 0, EVFS_FORMAT,
++ { { 2.500000000000000000000000000000e-01, 1.250000000000000000000000000000e-01 }, { 0x40000000, 0x20000000 } },
++ { { 6.250000000000000000000000000000e-02, 3.125000000000000000000000000000e-02 }, { 0x10000000, 0x08000000 } })
++
++SPE_DEFN_rDrB(evfscfui, __ev64_fs__, __ev64_u32__, 0, EVFS_FORMAT,
++ { { 1.0, 34.0  }, { 1,  34  } },
++ { { 2.0, 179.0 }, { 2,  179 } })
++
++#undef SPE_CMP
++#define SPE_CMP(insn, CR_field, cmp, regA, regB)                                                     \
++{                                                                                                    \
++  unsigned int CR;                                                                                   \
++  int field;                                                                                         \
++                                                                                                     \
++  field = CR_field;                                                                                  \
++  asm volatile (#insn " " #CR_field ", %[a], %[b]" : : [a] "r" (regA), [b] "r" (regB));              \
++  asm volatile ("mfcr %[cr]" : [cr] "=r" (CR));                                                      \
++  VERIFY(((EXTRACT_CR_FIELD(CR, field))) == cmp, "i = %d, field = %d, cmp = 0x%x\n", i, field, cmp); \
++}
++
++SPE_DEFN_crfDrArB(evfscmpeq, __ev64_fs__, __ev64_fs__,
++ { 0xf, { -4.86, 1.71 }, { -4.86,    1.71 } }, // ch = 1, cl = 1
++ { 0x6, { 11.99, -1.0 }, {  0.0,    -1.0  } }, // ch = 0, cl = 1
++ { 0xa, { 11.99, -1.0 }, {  11.99,  +1.0  } }, // ch = 1, cl = 0
++ { 0x0, { 11.99, -1.0 }, {  17.36,  +5.2  } }) // ch = 0, cl = 0
++
++SPE_DEFN_crfDrArB(evfscmpgt, __ev64_fs__, __ev64_fs__,
++ { 0xf, { +4.86, 1.71 }, { +1.29,    0.04 } }, // ch = 1, cl = 1
++ { 0x6, { 11.99, -1.0 }, {  100.1,  -9.7  } }, // ch = 0, cl = 1
++ { 0xa, { 11.99, -1.0 }, {  1.17,   +1.0  } }, // ch = 1, cl = 0
++ { 0x0, { 11.99, -1.0 }, {  17.36,  +5.2  } }) // ch = 0, cl = 0
++
++SPE_DEFN_crfDrArB(evfscmplt, __ev64_fs__, __ev64_fs__,
++ { 0xf, { +1.29,    0.04 },  { +4.86, 1.71 }, }, // ch = 1, cl = 1
++ { 0x6, {  100.1,  -9.7  },  { 11.99, -1.0 }, }, // ch = 0, cl = 1
++ { 0xa, {  1.17,   +1.0  },  { 11.99, -1.0 }, }, // ch = 1, cl = 0
++ { 0x0, {  17.36,  +5.2  },  { 11.99, -1.0 }, }) // ch = 0, cl = 0
++
++#undef EVFS_FORMAT
++#define EVFS_FORMAT "{ 0x%x, 0x%x }\n"
++
++#undef UEXTRACTOR
++#undef LEXTRACTOR
++#define UEXTRACTOR(v) __ev_get_upper_u32(v)
++#define LEXTRACTOR(v) __ev_get_lower_u32(v)
++SPE_DEFN_rDrB(evfsctsf, __ev64_u32__, __ev64_fs__, 0, EVFS_FORMAT,
++ { { 0x40000000, 0x7fffffff },  { 0.5,   1.0  }, },
++ { { 0x10000000, 0x20000000 },  { 0.125, 0.25 }, })
++
++#undef UEXTRACTOR
++#undef LEXTRACTOR
++#define UEXTRACTOR(v) __ev_get_upper_s32(v)
++#define LEXTRACTOR(v) __ev_get_lower_s32(v)
++SPE_DEFN_rDrB(evfsctsi, __ev64_s32__, __ev64_fs__, 0,  EVFS_FORMAT,
++ { { -1,  1   }, { -1.19, 1.0   } },
++ { { 0x7, -3  }, { 7.39, -3.14  } })
++
++SPE_DEFN_rDrB(evfsctsiz, __ev64_s32__, __ev64_fs__, 0,  EVFS_FORMAT,
++ { { -1,  1   }, { -1.19, 1.0   } },
++ { { 0x7, -3  }, { 7.39, -3.14  } })
++
++#undef UEXTRACTOR
++#undef LEXTRACTOR
++#define UEXTRACTOR(v) __ev_get_upper_u32(v)
++#define LEXTRACTOR(v) __ev_get_lower_u32(v)
++SPE_DEFN_rDrB(evfsctuf, __ev64_u32__, __ev64_fs__, 0, EVFS_FORMAT,
++ { { 0x80000000, 0xffffffff }, { 0.5,     1.0  } },
++ { { 0x8000000,  0x40000000 }, { 0.03125, 0.25 } })
++
++SPE_DEFN_rDrB(evfsctui, __ev64_u32__, __ev64_fs__, 0, EVFS_FORMAT,
++ { { 0, 2 }, { 0.5,     1.9  } },
++ { { 5, 7 }, { 5.03125, 7.25 } })
++
++SPE_DEFN_rDrB(evfsctuiz, __ev64_u32__, __ev64_fs__, 0, EVFS_FORMAT,
++ { { 0, 1 }, { 0.5,     1.9  } },
++ { { 5, 7 }, { 5.03125, 7.25 } })
++
++#undef UEXTRACTOR
++#undef LEXTRACTOR
++#define UEXTRACTOR(v) __ev_get_upper_fs(v)
++#define LEXTRACTOR(v) __ev_get_lower_fs(v)
++
++#undef EVFS_FORMAT
++#define EVFS_FORMAT "{ %.30e, %.30e }\n"
++
++SPE_DEFN_rDrArB(evfsdiv, __ev64_fs__, __ev64_fs__, __ev64_fs__, 0, EVFS_FORMAT,
++ { { 2.0, -2.0 }, { 3.2, -3.2 }, { 1.6, 1.6 } },
++ { { 3.0, -4.0 }, { 7.5, -1.2 }, { 2.5, 0.3 } })
++
++SPE_DEFN_rDrArB(evfsmul, __ev64_fs__, __ev64_fs__, __ev64_fs__, 0, EVFS_FORMAT,
++ { { 1.792000007629394531250000000000e+01, -2.912000083923339843750000000000e+01 }, { 3.2, -3.2 }, { 5.6, 9.1 } },
++ { { 1.875000000000000000000000000000e+01, -3.600000143051147460937500000000e-01 }, { 7.5, -1.2 }, { 2.5, 0.3 } })
++
++SPE_DEFN_rDrA(evfsnabs, __ev64_fs__, __ev64_fs__, 0, EVFS_FORMAT,
++ { { -2.299999952316284179687500000000e+00, -1.700000092387199401855468750000e-02 }, {  2.3,              0.017    } },
++ { { -9.999999824516700441812133703934e-14, -2.172999954223632812500000000000e+01 }, { -0.0000000000001, -21.73    } })
++
++SPE_DEFN_rDrA(evfsneg, __ev64_fs__, __ev64_fs__, 0, EVFS_FORMAT,
++ { { +1.709999999999999964472863211995e+00, -0.000000000000000000000000000000e+00 }, { -1.71, 0.0 } },
++ { { -2.299999999999999822364316059975e+00, -0.000000000000000000000000000000e+00 }, {  2.3 -0.0000000000001 } })
++
++SPE_DEFN_rDrArB(evfssub, __ev64_fs__, __ev64_fs__, __ev64_fs__, 0, EVFS_FORMAT,
++ { {  1.98877906799316406250,  -4.04799985885620117188 }, { -0.01020304049999999976, -1.71799999999999997158 },  { -1.99898212000100006236,  2.33000000000000007105 } })
++
++SPE_DEFN_crfDrArB(evfststeq, __ev64_fs__, __ev64_fs__,
++ { 0xf, { -4.86, 1.71 }, { -4.86,    1.71 } }, // ch = 1, cl = 1
++ { 0x6, { 11.99, -1.0 }, {  0.0,    -1.0  } }, // ch = 0, cl = 1
++ { 0xa, { 11.99, -1.0 }, {  11.99,  +1.0  } }, // ch = 1, cl = 0
++ { 0x0, { 11.99, -1.0 }, {  17.36,  +5.2  } }) // ch = 0, cl = 0
++
++SPE_DEFN_crfDrArB(evfststgt, __ev64_fs__, __ev64_fs__,
++ { 0xf, { +4.86, 1.71 }, { +1.29,    0.04 } }, // ch = 1, cl = 1
++ { 0x6, { 11.99, -1.0 }, {  100.1,  -9.7  } }, // ch = 0, cl = 1
++ { 0xa, { 11.99, -1.0 }, {  1.17,   +1.0  } }, // ch = 1, cl = 0
++ { 0x0, { 11.99, -1.0 }, {  17.36,  +5.2  } }) // ch = 0, cl = 0
++
++SPE_DEFN_crfDrArB(evfststlt, __ev64_fs__, __ev64_fs__,
++ { 0xf, { +1.29,    0.04 },  { +4.86, 1.71 }, }, // ch = 1, cl = 1
++ { 0x6, {  100.1,  -9.7  },  { 11.99, -1.0 }, }, // ch = 0, cl = 1
++ { 0xa, {  1.17,   +1.0  },  { 11.99, -1.0 }, }, // ch = 1, cl = 0
++ { 0x0, {  17.36,  +5.2  },  { 11.99, -1.0 }, }) // ch = 0, cl = 0
++
+ /* NOTE: To avoid having to remaster the .exp files entirely, add
+  *       new test functions /just above/ this comment.
+  *       That way, you only need to worry about the test that you
+@@ -17627,6 +17776,29 @@ test_t spe_isa_spe_fv_test_table = {
+   .type = table,
+   .description = "SPE ISA Single Precision Vector Floating Point Unit Tests",
+   .table = {
++    F(evfsabs_asm),
++    F(evfsadd_asm),
++    F(evfscfsf_asm),
++    F(evfscfsi_asm),
++    F(evfscfuf_asm),
++    F(evfscfui_asm),
++    F(evfscmpeq_asm),
++    F(evfscmpgt_asm),
++    F(evfscmplt_asm),
++    F(evfsctsf_asm),
++    F(evfsctsi_asm),
++    F(evfsctsiz_asm),
++    F(evfsctuf_asm),
++    F(evfsctui_asm),
++    F(evfsctuiz_asm),
++    F(evfsdiv_asm),
++    F(evfsmul_asm),
++    F(evfsnabs_asm),
++    F(evfsneg_asm),
++    F(evfssub_asm),
++    F(evfststeq_asm),
++    F(evfststgt_asm),
++    F(evfststlt_asm),
+     NULL
+   }
+ };
+diff --git a/memcheck/tests/ppc32/test_spe.stderr.exp b/memcheck/tests/ppc32/test_spe.stderr.exp
+index 03348a5..1d6a25a 100644
+--- a/memcheck/tests/ppc32/test_spe.stderr.exp
++++ b/memcheck/tests/ppc32/test_spe.stderr.exp
+@@ -5,7 +5,7 @@ Invalid write of size 4
+    by 0x........: run (test_spe.h:44)
+    by 0x........: run (test_spe.h:50)
+    by 0x........: run (test_spe.h:50)
+-   by 0x........: main (test_spe.c:17897)
++   by 0x........: main (test_spe.c:18069)
+  Address 0x........ is 0 bytes after a block of size 40 alloc'd
+    at 0x........: malloc (vg_replace_malloc.c:...)
+    by 0x........: vg_quick_start_guide_aux (test_spe.c:26)
+@@ -13,7 +13,7 @@ Invalid write of size 4
+    by 0x........: run (test_spe.h:44)
+    by 0x........: run (test_spe.h:50)
+    by 0x........: run (test_spe.h:50)
+-   by 0x........: main (test_spe.c:17897)
++   by 0x........: main (test_spe.c:18069)
+ 
+ 
+ HEAP SUMMARY:
+@@ -27,7 +27,7 @@ HEAP SUMMARY:
+    by 0x........: run (test_spe.h:44)
+    by 0x........: run (test_spe.h:50)
+    by 0x........: run (test_spe.h:50)
+-   by 0x........: main (test_spe.c:17897)
++   by 0x........: main (test_spe.c:18069)
+ 
+ LEAK SUMMARY:
+    definitely lost: 40 bytes in 1 blocks
+diff --git a/memcheck/tests/ppc32/test_spe.stdout.exp b/memcheck/tests/ppc32/test_spe.stdout.exp
+index 9346d0d..297054d 100644
+--- a/memcheck/tests/ppc32/test_spe.stdout.exp
++++ b/memcheck/tests/ppc32/test_spe.stdout.exp
+@@ -192,6 +192,29 @@ SPE Regression Tests: PASS
+ .....efststgt: PASS
+ .....efststlt: PASS
+ ....SPE ISA Single Precision Vector Floating Point Unit Tests: PASS
++.....evfsabs: PASS
++.....evfsadd: PASS
++.....evfscfsf: PASS
++.....evfscfsi: PASS
++.....evfscfuf: PASS
++.....evfscfui: PASS
++.....evfscmpeq: PASS
++.....evfscmpgt: PASS
++.....evfscmplt: PASS
++.....evfsctsf: PASS
++.....evfsctsi: PASS
++.....evfsctsiz: PASS
++.....evfsctuf: PASS
++.....evfsctui: PASS
++.....evfsctuiz: PASS
++.....evfsdiv: PASS
++.....evfsmul: PASS
++.....evfsnabs: PASS
++.....evfsneg: PASS
++.....evfssub: PASS
++.....evfststeq: PASS
++.....evfststgt: PASS
++.....evfststlt: PASS
+ ....SPE ISA Double Precision Scalar Floating Point Unit Tests: PASS
+ .....efdcmpeq: PASS
+ .....efdabs: PASS
+diff --git a/regtest-power7-64.default-build.log b/regtest-power7-64.default-build.log
+index 60cb2c6..0fb7950 100644
+--- a/regtest-power7-64.default-build.log
++++ b/regtest-power7-64.default-build.log
+@@ -1944,7 +1944,7 @@ badfree-2trace:  valgrind   --num-callers=2 -q ./badfree
+ badfree:         valgrind   -q ./badfree 
+ badfree3:        valgrind   -q --fullpath-after=/proj/ppc/DT/labhome/anmol/valgrind-3.8.1/ ./badfree 
+ badjump:         valgrind   ./badjump 
+-sh: line 1:  2384 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
++sh: line 1:  3557 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
+ badjump2:        valgrind   -q ./badjump2 
+ badloop:         valgrind   -q ./badloop 
+ badpoll:         valgrind   -q ./badpoll 
+@@ -1961,7 +1961,7 @@ clo_redzone_default: valgrind   --leak-check=no -q ./clo_redzone
+ custom-overlap:  valgrind   --leak-check=summary -q ./custom-overlap 
+ custom_alloc:    valgrind   -q ./custom_alloc 
+ deep-backtrace:  valgrind   -q --num-callers=500 ./deep-backtrace 
+-sh: line 1:  2942 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
++sh: line 1: 20083 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
+ deep_templates:  valgrind   -q ./deep_templates 
+ describe-block:  valgrind   ./describe-block 
+ doublefree:      valgrind   -q ./doublefree 
+@@ -2073,7 +2073,7 @@ supp-dir:        valgrind   --suppressions=x86/ ./../../tests/true
+ supp1:           valgrind   --suppressions=supp.supp -q ./supp1 
+ supp2:           valgrind   --suppressions=supp.supp -q ./supp2 
+ supp_unknown:    valgrind   -q --suppressions=supp_unknown.supp ./badjump 
+-sh: line 1:  7630 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
++sh: line 1: 13339 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
+ *** supp_unknown failed (stderr) ***
+ suppfree:        valgrind   --suppressions=suppfree.supp -q ./suppfree 
+ test-plo-no:     valgrind   -q ./test-plo 
+@@ -2210,7 +2210,7 @@ gxx304:          valgrind   ./gxx304
+ ifunc:           (skipping, prereq failed: test -e ifunc)
+ -- Running  tests in none/tests/linux ----------------------------------
+ blockfault:      valgrind   ./blockfault 
+-sh: line 1: 12161 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
++sh: line 1: 27178 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
+ mremap:          valgrind   ./mremap 
+ mremap2:         valgrind   ./mremap2 
+ mremap3:         valgrind   ./mremap3 
+@@ -2376,7 +2376,7 @@ tc20_verifywrap: valgrind   --read-var-info=yes ./tc20_verifywrap
+ *** tc20_verifywrap failed (stderr) ***
+ tc21_pthonce:    valgrind   --read-var-info=yes ./tc21_pthonce 
+ tc22_exit_w_lock: valgrind   ./tc22_exit_w_lock 
+-sh: line 1: 29607 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1:  4470 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   ./tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --hg-sanity-flags=111111 ./tc24_nonzero_sem 
+ -- Finished tests in helgrind/tests ------------------------------------
+@@ -2493,7 +2493,7 @@ tc18_semabuse:   valgrind   ./../../helgrind/tests/tc18_semabuse
+ tc19_shadowmem:  valgrind   --error-limit=no --read-var-info=yes --show-confl-seg=no --num-callers=3 ./../../helgrind/tests/tc19_shadowmem 
+ tc21_pthonce:    valgrind   --num-callers=3 ./../../helgrind/tests/tc21_pthonce 
+ tc22_exit_w_lock: valgrind   --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock 
+-sh: line 1:  2621 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1: 21326 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   --num-callers=3 ./../../helgrind/tests/tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --read-var-info=yes ./../../helgrind/tests/tc24_nonzero_sem 
+ thread_name:     valgrind   --read-var-info=yes --check-stack-var=yes --num-callers=3 ./thread_name 
+diff --git a/regtest-power7-64.log b/regtest-power7-64.log
+index fec1ee8..dd258df 100644
+--- a/regtest-power7-64.log
++++ b/regtest-power7-64.log
+@@ -1944,7 +1944,7 @@ badfree-2trace:  valgrind   --num-callers=2 -q ./badfree
+ badfree:         valgrind   -q ./badfree 
+ badfree3:        valgrind   -q --fullpath-after=/proj/ppc/DT/labhome/anmol/valgrind-3.8.1/ ./badfree 
+ badjump:         valgrind   ./badjump 
+-sh: line 1:  6479 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
++sh: line 1: 28743 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
+ badjump2:        valgrind   -q ./badjump2 
+ badloop:         valgrind   -q ./badloop 
+ badpoll:         valgrind   -q ./badpoll 
+@@ -1961,7 +1961,7 @@ clo_redzone_default: valgrind   --leak-check=no -q ./clo_redzone
+ custom-overlap:  valgrind   --leak-check=summary -q ./custom-overlap 
+ custom_alloc:    valgrind   -q ./custom_alloc 
+ deep-backtrace:  valgrind   -q --num-callers=500 ./deep-backtrace 
+-sh: line 1:  7038 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
++sh: line 1:  3288 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
+ deep_templates:  valgrind   -q ./deep_templates 
+ describe-block:  valgrind   ./describe-block 
+ doublefree:      valgrind   -q ./doublefree 
+@@ -2074,7 +2074,7 @@ supp-dir:        valgrind   --suppressions=x86/ ./../../tests/true
+ supp1:           valgrind   --suppressions=supp.supp -q ./supp1 
+ supp2:           valgrind   --suppressions=supp.supp -q ./supp2 
+ supp_unknown:    valgrind   -q --suppressions=supp_unknown.supp ./badjump 
+-sh: line 1: 11735 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
++sh: line 1: 12610 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
+ *** supp_unknown failed (stderr) ***
+ suppfree:        valgrind   --suppressions=suppfree.supp -q ./suppfree 
+ test-plo-no:     valgrind   -q ./test-plo 
+@@ -2210,7 +2210,7 @@ gxx304:          valgrind   ./gxx304
+ ifunc:           (skipping, prereq failed: test -e ifunc)
+ -- Running  tests in none/tests/linux ----------------------------------
+ blockfault:      valgrind   ./blockfault 
+-sh: line 1: 16264 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
++sh: line 1: 21221 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
+ mremap:          valgrind   ./mremap 
+ mremap2:         valgrind   ./mremap2 
+ mremap3:         valgrind   ./mremap3 
+@@ -2376,7 +2376,7 @@ tc20_verifywrap: valgrind   --read-var-info=yes ./tc20_verifywrap
+ *** tc20_verifywrap failed (stderr) ***
+ tc21_pthonce:    valgrind   --read-var-info=yes ./tc21_pthonce 
+ tc22_exit_w_lock: valgrind   ./tc22_exit_w_lock 
+-sh: line 1:  1369 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1: 24399 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   ./tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --hg-sanity-flags=111111 ./tc24_nonzero_sem 
+ -- Finished tests in helgrind/tests ------------------------------------
+@@ -2495,7 +2495,7 @@ tc18_semabuse:   valgrind   ./../../helgrind/tests/tc18_semabuse
+ tc19_shadowmem:  valgrind   --error-limit=no --read-var-info=yes --show-confl-seg=no --num-callers=3 ./../../helgrind/tests/tc19_shadowmem 
+ tc21_pthonce:    valgrind   --num-callers=3 ./../../helgrind/tests/tc21_pthonce 
+ tc22_exit_w_lock: valgrind   --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock 
+-sh: line 1:  6732 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1: 18931 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   --num-callers=3 ./../../helgrind/tests/tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --read-var-info=yes ./../../helgrind/tests/tc24_nonzero_sem 
+ thread_name:     valgrind   --read-var-info=yes --check-stack-var=yes --num-callers=3 ./thread_name 
+-- 
+1.7.3.4
+

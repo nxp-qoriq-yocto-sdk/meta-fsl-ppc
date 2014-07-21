@@ -1,0 +1,2332 @@
+From 6fca2e7f8503107a9ded366ddf1fcc0569227ca8 Mon Sep 17 00:00:00 2001
+From: Anmol P. Paralkar <anmol@freescale.com>
+Date: Fri, 8 Mar 2013 11:09:46 -0800
+Subject: [PATCH 38/65] Implement SPE Instructions: {
+
+ evmhesmi, evmhesmia, evmhesmiaaw, evmhesmianw,
+ evmheumi, evmheumia, evmheumiaaw, evmheumianw,
+ evmhosmi, evmhosmia, evmhosmiaaw, evmhosmianw,
+ evmhoumi, evmhoumia, evmhoumiaaw, evmhoumianw,
+ evmwlumi, evmwlumia, evmwlumiaaw, evmwlumianw,
+ evmwsmi,  evmwsmia,  evmwsmiaa,   evmwsmian,
+ evmwumi,  evmwumia,  evmwumiaa,   evmwumian,
+
+ evmwhsmi, evmwhsmia,
+ evmwhumi, evmwhumia,
+
+ evmwlsmiaaw, evmwlsmianw,
+
+}.
+---
+ VEX/priv/guest_ppc_toIR.c                |  850 ++++++++++++++++++++++
+ memcheck/tests/ppc32/test_spe.c          | 1130 ++++++++++++++++++++++++++++++
+ memcheck/tests/ppc32/test_spe.stderr.exp |    6 +-
+ memcheck/tests/ppc32/test_spe.stdout.exp |   35 +
+ regtest-power7-64.log                    |   44 +-
+ 5 files changed, 2040 insertions(+), 25 deletions(-)
+
+diff --git a/VEX/priv/guest_ppc_toIR.c b/VEX/priv/guest_ppc_toIR.c
+index 2b0b082..d10e7a0 100644
+--- a/VEX/priv/guest_ppc_toIR.c
++++ b/VEX/priv/guest_ppc_toIR.c
+@@ -13345,6 +13345,819 @@ static Bool dis_spe_add_insns ( UInt theInstr )
+ 
+   return True;
+ }
++
++static IRExpr* spe_neg64 ( IRExpr* src )
++{
++  vassert(typeOfIRExpr(irsb->tyenv, src) == Ity_I64 );
++  return binop ( Iop_Add64,
++                 unop ( Iop_Not64,
++                        src ),
++                 mkU64 ( 0x1 ) );
++}
++
++static IRExpr* spe_exts_16_in_32 ( IRExpr* src )
++{
++  /* src is an IRExpr corresponding to a Ity_I32, but contains a half-word.
++   * If bit-24 is set, spe_exts_16_in_32() return's a sign-extended
++   * 32-bit number.
++   */
++  IRTemp w0 = newTemp( Ity_I32 );
++  IRTemp c0 = newTemp( Ity_I1 );
++  IRTemp b0 = newTemp( Ity_I8 );
++
++  assign( w0, binop( Iop_Shr32,
++                     src,
++                     mkU8( 0xf ) ) );
++
++  assign( c0, binop( Iop_CmpEQ32,
++                     mkexpr( w0 ),
++                     mkU32( 0x1 ) ) );
++
++  assign( b0, unop( Iop_1Uto8,
++                    mkexpr( c0 ) ) );
++
++  return IRExpr_Mux0X ( mkexpr( b0 ),
++                        src, /* else   (b1 holds False) */
++                        binop( Iop_Or32, /* if (b1 holds True)  */
++                               mkU32( 0xffff0000 ),
++                               src ) );
++}
++
++static IRExpr* spe_extz_16_in_32 ( IRExpr* src )
++{
++  /* src is an IRExpr corresponding to a Ity_I32; but contains a half-word.
++   * return a zero-extended 32-bit number.
++   */
++  return binop( Iop_And32,
++                mkU32( 0x0000ffff ),
++                src );
++}
++
++static Bool dis_spe_ACC_based_multiply_insns ( UInt theInstr )
++{
++  /* EVX-Form */
++  UChar opc1    = evxOpcode( theInstr );
++  UInt  opc2    = evxXO( theInstr );
++  UChar rD_addr = evxRD( theInstr );
++  UChar rA_addr = evxRA( theInstr );
++  UChar rB_addr = evxRB( theInstr );
++  UChar uimm    = evxRB( theInstr );
++  Char  simm    = evxRA( theInstr );
++
++  IRTemp ACC   = newTemp( Ity_I64 );
++  IRTemp rA    = newTemp( Ity_I64 );
++  IRTemp rB    = newTemp( Ity_I64 );
++  IRTemp rT    = newTemp( Ity_I64 );
++  IRTemp rLIP  = newTemp( Ity_I64 );
++  IRTemp rUIP  = newTemp( Ity_I64 );
++
++  IRTemp ACCU  = newTemp( Ity_I32 );
++  IRTemp ACCL  = newTemp( Ity_I32 );
++  IRTemp rAU   = newTemp( Ity_I32 );
++  IRTemp rAL   = newTemp( Ity_I32 );
++  IRTemp rBU   = newTemp( Ity_I32 );
++  IRTemp rBL   = newTemp( Ity_I32 );
++  IRTemp rDU   = newTemp( Ity_I32 );
++  IRTemp rDL   = newTemp( Ity_I32 );
++  IRTemp rsu   = newTemp( Ity_I32 );
++  IRTemp rsl   = newTemp( Ity_I32 );
++  IRTemp rtu   = newTemp( Ity_I32 );
++  IRTemp rtl   = newTemp( Ity_I32 );
++  IRTemp rvu   = newTemp( Ity_I32 );
++  IRTemp rvl   = newTemp( Ity_I32 );
++  IRTemp rwu   = newTemp( Ity_I32 );
++  IRTemp rwl   = newTemp( Ity_I32 );
++
++  IRTemp hwa0   = newTemp( Ity_I16 );
++  IRTemp hwa1   = newTemp( Ity_I16 );
++  IRTemp hwa2   = newTemp( Ity_I16 );
++  IRTemp hwa3   = newTemp( Ity_I16 );
++  IRTemp hwb0   = newTemp( Ity_I16 );
++  IRTemp hwb1   = newTemp( Ity_I16 );
++  IRTemp hwb2   = newTemp( Ity_I16 );
++  IRTemp hwb3   = newTemp( Ity_I16 );
++
++  IRTemp rD = newTemp( Ity_I64 );
++
++  if (opc1 != 0x4) {
++     vex_printf( "dis_spe_ACC_based_multiply_insns (ppc)(opc1 != 0x4)\n" );
++     return False;
++  }
++  switch (opc2) {
++  case 0x408:
++     // evmheumi (Vector Multiply Half Words, Even, Unsigned, Modulo, Integer, SPEPEM p5-155)
++     DIP( "evmheumi r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x409:
++     // evmhesmi (Vector Multiply Half Words, Even, Signed, Modulo, Integer, SPEPEM p5-147)
++     DIP( "evmhesmi r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x40c:
++     // evmhoumi (Vector Multiply Half Words, Odd, Unsigned, Modulo, Integer, SPEPEM p5-178)
++     DIP( "evmhoumi r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x40d:
++     // evmhosmi (Vector Multiply Half Words, Odd, Signed, Modulo, Integer, SPEPEM p5-169)
++     DIP( "evmhosmi r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x428:
++     // evmheumia (Vector Multiply Half Words, Even, Unsigned, Modulo, Integer (to Accumulator), SPEPEM p5-155)
++     DIP( "evmheumia r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x429:
++     // evmhesmia (Vector Multiply Half Words, Even, Signed, Modulo, Integer (to Accumulator), SPEPEM p5-148)
++     DIP( "evmhesmia r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x42c:
++     // evmhoumia (Vector Multiply Half Words, Odd, Unsigned, Modulo, Integer (to Accumulator), SPEPEM p5-178)
++     DIP( "evmhoumia r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x42d:
++     // evmhosmia (Vector Multiply Half Words, Odd, Signed, Modulo, Integer (to Accumulator), SPEPEM p5-169)
++     DIP( "evmhosmia r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x448:
++     // evmwlumi (Vector Multiply Word Low Unsigned, Modulo, Integer, SPEPEM p5-194)
++     DIP( "evmwlumi r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x44c:
++     // evmwhumi (Vector Multiply Word High Unsigned, Modulo, Integer, SPEPEM p5-188)
++     DIP( "evmwhumi r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x44d:
++     // evmwhsmi (Vector Multiply Word High Signed, Modulo, Integer, SPEPEM p5-185)
++     DIP( "evmwhsmi r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x458:
++     // evmwumi (Vector Multiply Word Unsigned, Modulo, Integer, SPEPEM p5-208)
++     DIP( "evmwumi r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x468:
++     // evmwlumia (Vector Multiply Word Low Unsigned, Modulo, Integer to Accumulator, SPEPEM p5-194)
++     DIP( "evmwlumia r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x46c:
++     // evmwhumia (Vector Multiply Word High Unsigned, Modulo, Integer to Accumulator, SPEPEM p5-188)
++     DIP( "evmwhumia r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x46d:
++     // evmwhsmia (Vector Multiply Word High Unsigned, Modulo, Integer to Accumulator, SPEPEM p5-185)
++     DIP( "evmwhsmia r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x478:
++     // evmwumia (Vector Multiply Word Unsigned, Modulo, Integer to Accumulator, SPEPEM p5-208)
++     DIP( "evmwumia r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x459:
++     // evmwsmi (Vector Multiply Word Signed, Modulo, Integer, SPEPEM p5-202)
++     DIP( "evmwsmi r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x479:
++     // evmwsmia (Vector Multiply Word Signed, Modulo, Integer to Accumulator, SPEPEM p5-202)
++     DIP( "evmwsmia r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x508:
++     // evmheumiaaw (Vector Multiply Half Words, Even, Unsigned, Modulo, Integer and Accumulate into Words, SPEPEM p5-156)
++     DIP( "evmheumiaaw r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x509:
++     // evmhesmiaaw (Vector Multiply Half Words, Even, Signed, Modulo, Integer and Accumulate into Words, SPEPEM p5-148)
++     DIP( "evmhesmiaaw r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x50c:
++     // evmhoumiaaw (Vector Multiply Half Words, Odd, Unsigned, Modulo, Integer and Accumulate into Words, SPEPEM p5-179)
++     DIP( "evmhoumiaaw r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x50d:
++     // evmhosmiaaw (Vector Multiply Half Words, Odd, Signed, Modulo, Integer and Accumulate into Words, SPEPEM p5-170)
++     DIP( "evmhosmiaaw r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x548:
++     // evmwlumiaaw (Vector Multiply Word Low Unsigned, Modulo, Integer and Accumulate in Words, SPEPEM p5-195)
++     DIP( "evmwlumiaaw r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x549:
++     // evmwlsmiaaw (Vector Multiply Word Low Signed, Modulo, Integer and Accumulate in Words, SPEPEM p5-189)
++     DIP( "evmwlsmiaaw r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x558:
++     // evmwumiaa (Vector Multiply Word Unsigned, Modulo, Integer and Accumulate, SPEPEM p5-209)
++     DIP( "evmwumiaa r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x588:
++     // evmheumianw (Vector Multiply Half Words, Even, Unsigned, Modulo, Integer and Accumulate Negative into Words, SPEPEM p5-157)
++     DIP( "evmheumianw r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x589:
++     // evmhesmianw (Vector Multiply Half Words, Even, Signed, Modulo, Integer and Accumulate Negative into Words, SPEPEM p5-149)
++     DIP( "evmhesmianw r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x58c:
++     // evmhoumianw (Vector Multiply Half Words, Odd, Unsigned, Modulo, Integer and Accumulate Negative into Words, SPEPEM p5-180)
++     DIP( "evmhoumianw r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x58d:
++     // evmhosmianw (Vector Multiply Half Words, Odd, Signed, Modulo, Integer and Accumulate Negative into Words, SPEPEM p5-171)
++     DIP( "evmhosmianw r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x5c8:
++     // evmwlumianw (Vector Multiply Word Low Unsigned, Modulo, Integer and Accumulate Negative in Words, SPEPEM p5-196)
++     DIP( "evmwlumianw r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x5c9:
++     // evmwlsmianw (Vector Multiply Word Low Signed, Modulo, Integer and Accumulate Negative in Words, SPEPEM p5-190)
++     DIP( "evmwlsmianw r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x5d8:
++     // evmwumian (Vector Multiply Word Unsigned, Modulo, Integer and Accumulate Negative, SPEPEM p5-210)
++     DIP( "evmwumian r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x559:
++     // evmwsmiaa (Vector Multiply Word Signed, Modulo, Integer and Accumulate, SPEPEM p5-203)
++     DIP( "evmwsmiaa r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  case 0x5d9:
++     // evmwsmian (Vector Multiply Word Signed, Modulo, Integer and Accumulate Negative, SPEPEM p5-204)
++     DIP( "evmwsmian r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
++     break;
++  default:
++     return False;
++  }
++
++  assign ( ACC, getSPE_ACCReg( ) );
++  assign ( rA,  getSPEReg( rA_addr ) );
++  assign ( rB,  getSPEReg( rB_addr ) );
++
++  assign ( ACCL, unop( Iop_64to32,
++                       mkexpr ( ACC ) ) );
++  assign ( ACCU, unop( Iop_64HIto32,
++                       mkexpr ( ACC ) ) );
++  assign ( rAL,  unop( Iop_64to32,
++                       mkexpr ( rA ) ) );
++  assign ( rAU,  unop( Iop_64HIto32,
++                       mkexpr ( rA ) ) );
++  assign ( rBL,  unop( Iop_64to32,
++                       mkexpr ( rB ) ) );
++  assign ( rBU,  unop( Iop_64HIto32,
++                       mkexpr ( rB ) ) );
++
++  switch (opc2) {
++  case 0x408: // evmheumi  (See: evmheumianw)
++  case 0x428: // evmheumia (See: evmheumianw)
++
++     // Get the zero extended even half-words first:
++     assign ( rsl, spe_extz_16_in_32 ( binop ( Iop_Shr32, mkexpr ( rAL ), mkU8 ( 0x10 ) ) ) );
++     assign ( rsu, spe_extz_16_in_32 ( binop ( Iop_Shr32, mkexpr ( rAU ), mkU8 ( 0x10 ) ) ) );
++     assign ( rtl, spe_extz_16_in_32 ( binop ( Iop_Shr32, mkexpr ( rBL ), mkU8 ( 0x10 ) ) ) );
++     assign ( rtu, spe_extz_16_in_32 ( binop ( Iop_Shr32, mkexpr ( rBU ), mkU8 ( 0x10 ) ) ) );
++
++     assign ( rLIP, binop ( Iop_MullU32,
++                            mkexpr ( rsl ),
++                            mkexpr ( rtl ) ) );
++     assign ( rUIP, binop ( Iop_MullU32,
++                            mkexpr ( rsu ),
++                            mkexpr ( rtu ) ) );
++
++     assign ( rDL, unop ( Iop_64to32, mkexpr ( rLIP ) ) );
++     assign ( rDU, unop ( Iop_64to32, mkexpr ( rUIP ) ) );
++
++     assign ( rD, binop( Iop_32HLto64,
++                         mkexpr ( rDU ),
++                         mkexpr ( rDL ) ) );
++     break;
++  case 0x409: // evmhesmi  (See: evmheumianw)
++  case 0x429: // evmhesmia (See: evmheumianw)
++
++     // Get the sign extended even half-words first:
++     assign ( rsl, spe_exts_16_in_32 ( binop ( Iop_Shr32, mkexpr ( rAL ), mkU8 ( 0x10 ) ) ) );
++     assign ( rsu, spe_exts_16_in_32 ( binop ( Iop_Shr32, mkexpr ( rAU ), mkU8 ( 0x10 ) ) ) );
++     assign ( rtl, spe_exts_16_in_32 ( binop ( Iop_Shr32, mkexpr ( rBL ), mkU8 ( 0x10 ) ) ) );
++     assign ( rtu, spe_exts_16_in_32 ( binop ( Iop_Shr32, mkexpr ( rBU ), mkU8 ( 0x10 ) ) ) );
++
++     assign ( rLIP, binop ( Iop_MullS32,
++                            mkexpr ( rsl ),
++                            mkexpr ( rtl ) ) );
++     assign ( rUIP, binop ( Iop_MullS32,
++                            mkexpr ( rsu ),
++                            mkexpr ( rtu ) ) );
++
++     assign ( rDL, unop ( Iop_64to32, mkexpr ( rLIP ) ) );
++     assign ( rDU, unop ( Iop_64to32, mkexpr ( rUIP ) ) );
++
++     assign ( rD, binop( Iop_32HLto64,
++                         mkexpr ( rDU ),
++                         mkexpr ( rDL ) ) );
++     break;
++  case 0x40c: // evmhoumi  (See: evmhoumianw)
++  case 0x42c: // evmhoumia (See: evmhoumianw)
++
++     // Get the odd half-words first:
++     assign ( rsl, binop ( Iop_And32, mkexpr ( rAL ), mkU32 ( 0xffff ) ) );
++     assign ( rsu, binop ( Iop_And32, mkexpr ( rAU ), mkU32 ( 0xffff ) ) );
++     assign ( rtl, binop ( Iop_And32, mkexpr ( rBL ), mkU32 ( 0xffff ) ) );
++     assign ( rtu, binop ( Iop_And32, mkexpr ( rBU ), mkU32 ( 0xffff ) ) );
++
++     assign ( rLIP, binop ( Iop_MullU32,
++                            mkexpr ( rsl ),
++                            mkexpr ( rtl ) ) );
++     assign ( rUIP, binop ( Iop_MullU32,
++                            mkexpr ( rsu ),
++                            mkexpr ( rtu ) ) );
++
++     assign ( rDL, unop ( Iop_64to32, mkexpr ( rLIP ) ) );
++     assign ( rDU, unop ( Iop_64to32, mkexpr ( rUIP ) ) );
++
++     assign ( rD, binop( Iop_32HLto64,
++                         mkexpr ( rDU ),
++                         mkexpr ( rDL ) ) );
++     break;
++  case 0x40d: // evmhosmi  (See: evmhoumianw)
++  case 0x42d: // evmhosmia (See: evmhoumianw)
++
++     // Get the sign extended odd half-words first:
++     assign ( rsl, spe_exts_16_in_32 ( binop ( Iop_And32, mkexpr ( rAL ), mkU32 ( 0xffff ) ) ) );
++     assign ( rsu, spe_exts_16_in_32 ( binop ( Iop_And32, mkexpr ( rAU ), mkU32 ( 0xffff ) ) ) );
++     assign ( rtl, spe_exts_16_in_32 ( binop ( Iop_And32, mkexpr ( rBL ), mkU32 ( 0xffff ) ) ) );
++     assign ( rtu, spe_exts_16_in_32 ( binop ( Iop_And32, mkexpr ( rBU ), mkU32 ( 0xffff ) ) ) );
++
++     assign ( rLIP, binop ( Iop_MullS32,
++                            mkexpr ( rsl ),
++                            mkexpr ( rtl ) ) );
++     assign ( rUIP, binop ( Iop_MullS32,
++                            mkexpr ( rsu ),
++                            mkexpr ( rtu ) ) );
++
++     assign ( rDL, unop ( Iop_64to32, mkexpr ( rLIP ) ) );
++     assign ( rDU, unop ( Iop_64to32, mkexpr ( rUIP ) ) );
++
++     assign ( rD, binop( Iop_32HLto64,
++                         mkexpr ( rDU ),
++                         mkexpr ( rDL ) ) );
++     break;
++  case 0x448: // evmwlumi
++  case 0x468: // evmwlumia
++     assign ( rLIP, binop ( Iop_MullU32,
++                            mkexpr ( rAL ),
++                            mkexpr ( rBL ) ) );
++     assign ( rUIP, binop ( Iop_MullU32,
++                            mkexpr ( rAU ),
++                            mkexpr ( rBU ) ) );
++
++     assign ( rtl, unop ( Iop_64to32,
++                          mkexpr ( rLIP ) ) );
++     assign ( rtu, unop ( Iop_64to32,
++                          mkexpr ( rUIP ) ) );
++
++     assign ( rDL, mkexpr ( rtl ) );
++     assign ( rDU, mkexpr ( rtu ) );
++
++     assign ( rD,  binop(  Iop_32HLto64,
++                           mkexpr ( rDU ),
++                           mkexpr ( rDL ) ) );
++     break;
++  case 0x44c: // evmwhumi
++  case 0x46c: // evmwhumia
++     assign ( rDL, unop ( Iop_64HIto32,
++                          binop ( Iop_MullU32,
++                                  mkexpr ( rAL ),
++                                  mkexpr ( rBL ) ) ) );
++     assign ( rDU, unop ( Iop_64HIto32,
++                          binop ( Iop_MullU32,
++                                  mkexpr ( rAU ),
++                                  mkexpr ( rBU ) ) ) );
++     assign ( rD,  binop(  Iop_32HLto64,
++                           mkexpr ( rDU ),
++                           mkexpr ( rDL ) ) );
++     break;
++  case 0x44d: // evmwhsmi
++  case 0x46d: // evmwhsmia
++     assign ( rDL, unop ( Iop_64HIto32,
++                          binop ( Iop_MullS32,
++                                  mkexpr ( rAL ),
++                                  mkexpr ( rBL ) ) ) );
++     assign ( rDU, unop ( Iop_64HIto32,
++                          binop ( Iop_MullS32,
++                                  mkexpr ( rAU ),
++                                  mkexpr ( rBU ) ) ) );
++     assign ( rD,  binop(  Iop_32HLto64,
++                           mkexpr ( rDU ),
++                           mkexpr ( rDL ) ) );
++     break;
++  case 0x458: // evmwumi
++  case 0x478: // evmwumia
++     assign ( rD, binop ( Iop_MullU32,
++                          mkexpr ( rAL ),
++                          mkexpr ( rBL ) ) );
++     break;
++  case 0x459: // evmwsmi
++  case 0x479: // evmwsmia
++     assign ( rD, binop ( Iop_MullS32,
++                          mkexpr ( rAL ),
++                          mkexpr ( rBL ) ) );
++     break;
++  case 0x508: // evmheumiaaw (See: evmhoumianw)
++
++     // Get the zero extended even half-words first:
++     assign ( rsl, spe_extz_16_in_32 ( binop ( Iop_Shr32, mkexpr ( rAL ), mkU8 ( 0x10 ) ) ) );
++     assign ( rsu, spe_extz_16_in_32 ( binop ( Iop_Shr32, mkexpr ( rAU ), mkU8 ( 0x10 ) ) ) );
++     assign ( rtl, spe_extz_16_in_32 ( binop ( Iop_Shr32, mkexpr ( rBL ), mkU8 ( 0x10 ) ) ) );
++     assign ( rtu, spe_extz_16_in_32 ( binop ( Iop_Shr32, mkexpr ( rBU ), mkU8 ( 0x10 ) ) ) );
++
++     assign ( rLIP, binop ( Iop_MullU32,
++                            mkexpr ( rsl ),
++                            mkexpr ( rtl ) ) );
++     assign ( rUIP, binop ( Iop_MullU32,
++                            mkexpr ( rsu ),
++                            mkexpr ( rtu ) ) );
++
++     assign ( rwl, unop ( Iop_64to32, mkexpr ( rLIP ) ) );
++     assign ( rwu, unop ( Iop_64to32, mkexpr ( rUIP ) ) );
++
++     assign ( rDL, binop ( Iop_Add32,
++                           mkexpr ( ACCL ),
++                           mkexpr ( rwl ) ) );
++     assign ( rDU, binop ( Iop_Add32,
++                           mkexpr ( ACCU ),
++                           mkexpr ( rwu ) ) );
++
++     assign ( rD, binop( Iop_32HLto64,
++                         mkexpr ( rDU ),
++                         mkexpr ( rDL ) ) );
++     break;
++  case 0x509: // evmhesmiaaw (See: evmheumianw)
++
++     // Get the sign extended even half-words first:
++     assign ( rsl, spe_exts_16_in_32 ( binop ( Iop_Shr32, mkexpr ( rAL ), mkU8 ( 0x10 ) ) ) );
++     assign ( rsu, spe_exts_16_in_32 ( binop ( Iop_Shr32, mkexpr ( rAU ), mkU8 ( 0x10 ) ) ) );
++     assign ( rtl, spe_exts_16_in_32 ( binop ( Iop_Shr32, mkexpr ( rBL ), mkU8 ( 0x10 ) ) ) );
++     assign ( rtu, spe_exts_16_in_32 ( binop ( Iop_Shr32, mkexpr ( rBU ), mkU8 ( 0x10 ) ) ) );
++
++     assign ( rLIP, binop ( Iop_MullS32,
++                            mkexpr ( rsl ),
++                            mkexpr ( rtl ) ) );
++     assign ( rUIP, binop ( Iop_MullS32,
++                            mkexpr ( rsu ),
++                            mkexpr ( rtu ) ) );
++
++     assign ( rwl, unop ( Iop_64to32, mkexpr ( rLIP ) ) );
++     assign ( rwu, unop ( Iop_64to32, mkexpr ( rUIP ) ) );
++
++     assign ( rDL, binop ( Iop_Add32,
++                           mkexpr ( ACCL ),
++                           mkexpr ( rwl ) ) );
++     assign ( rDU, binop ( Iop_Add32,
++                           mkexpr ( ACCU ),
++                           mkexpr ( rwu ) ) );
++
++     assign ( rD, binop( Iop_32HLto64,
++                         mkexpr ( rDU ),
++                         mkexpr ( rDL ) ) );
++     break;
++  case 0x50c: // evmhoumiaaw (See: evmhoumianw)
++
++     // Get the odd half-words first:
++     assign ( rsl, binop ( Iop_And32, mkexpr ( rAL ), mkU32 ( 0xffff ) ) );
++     assign ( rsu, binop ( Iop_And32, mkexpr ( rAU ), mkU32 ( 0xffff ) ) );
++     assign ( rtl, binop ( Iop_And32, mkexpr ( rBL ), mkU32 ( 0xffff ) ) );
++     assign ( rtu, binop ( Iop_And32, mkexpr ( rBU ), mkU32 ( 0xffff ) ) );
++
++     assign ( rLIP, binop ( Iop_MullU32,
++                            mkexpr ( rsl ),
++                            mkexpr ( rtl ) ) );
++     assign ( rUIP, binop ( Iop_MullU32,
++                            mkexpr ( rsu ),
++                            mkexpr ( rtu ) ) );
++
++     assign ( rwl, unop ( Iop_64to32, mkexpr ( rLIP ) ) );
++     assign ( rwu, unop ( Iop_64to32, mkexpr ( rUIP ) ) );
++
++     assign ( rDL, binop ( Iop_Add32,
++                           mkexpr ( ACCL ),
++                           mkexpr ( rwl ) ) );
++     assign ( rDU, binop ( Iop_Add32,
++                           mkexpr ( ACCU ),
++                           mkexpr ( rwu ) ) );
++
++     assign ( rD, binop( Iop_32HLto64,
++                         mkexpr ( rDU ),
++                         mkexpr ( rDL ) ) );
++     break;
++  case 0x50d: // evmhosmiaaw (See: evmhoumianw)
++
++     // Get the sign extended odd half-words first:
++     assign ( rsl, spe_exts_16_in_32 ( binop ( Iop_And32, mkexpr ( rAL ), mkU32 ( 0xffff ) ) ) );
++     assign ( rsu, spe_exts_16_in_32 ( binop ( Iop_And32, mkexpr ( rAU ), mkU32 ( 0xffff ) ) ) );
++     assign ( rtl, spe_exts_16_in_32 ( binop ( Iop_And32, mkexpr ( rBL ), mkU32 ( 0xffff ) ) ) );
++     assign ( rtu, spe_exts_16_in_32 ( binop ( Iop_And32, mkexpr ( rBU ), mkU32 ( 0xffff ) ) ) );
++
++     assign ( rLIP, binop ( Iop_MullS32,
++                            mkexpr ( rsl ),
++                            mkexpr ( rtl ) ) );
++     assign ( rUIP, binop ( Iop_MullS32,
++                            mkexpr ( rsu ),
++                            mkexpr ( rtu ) ) );
++
++     assign ( rwl, unop ( Iop_64to32, mkexpr ( rLIP ) ) );
++     assign ( rwu, unop ( Iop_64to32, mkexpr ( rUIP ) ) );
++
++     assign ( rDL, binop ( Iop_Add32,
++                           mkexpr ( ACCL ),
++                           mkexpr ( rwl ) ) );
++     assign ( rDU, binop ( Iop_Add32,
++                           mkexpr ( ACCU ),
++                           mkexpr ( rwu ) ) );
++
++     assign ( rD, binop( Iop_32HLto64,
++                         mkexpr ( rDU ),
++                         mkexpr ( rDL ) ) );
++     break;
++  case 0x548: // evmwlumiaaw
++     assign ( rLIP, binop ( Iop_MullU32,
++                            mkexpr ( rAL ),
++                            mkexpr ( rBL ) ) );
++     assign ( rUIP, binop ( Iop_MullU32,
++                            mkexpr ( rAU ),
++                            mkexpr ( rBU ) ) );
++
++     assign ( rtl, unop ( Iop_64to32,
++                          mkexpr ( rLIP ) ) );
++     assign ( rtu, unop ( Iop_64to32,
++                          mkexpr ( rUIP ) ) );
++
++     assign ( rDL, binop ( Iop_Add32,
++                           mkexpr ( ACCL ),
++                           mkexpr ( rtl ) ) );
++     assign ( rDU, binop ( Iop_Add32,
++                           mkexpr ( ACCU ),
++                           mkexpr ( rtu ) ) );
++
++     assign ( rD,  binop(  Iop_32HLto64,
++                           mkexpr ( rDU ),
++                           mkexpr ( rDL ) ) );
++     break;
++  case 0x549: // evmwlsmiaaw
++     assign ( rLIP, binop ( Iop_MullS32,
++                            mkexpr ( rAL ),
++                            mkexpr ( rBL ) ) );
++     assign ( rUIP, binop ( Iop_MullS32,
++                            mkexpr ( rAU ),
++                            mkexpr ( rBU ) ) );
++
++     assign ( rtl, unop ( Iop_64to32,
++                          mkexpr ( rLIP ) ) );
++     assign ( rtu, unop ( Iop_64to32,
++                          mkexpr ( rUIP ) ) );
++
++     assign ( rDL, binop ( Iop_Add32,
++                           mkexpr ( ACCL ),
++                           mkexpr ( rtl ) ) );
++     assign ( rDU, binop ( Iop_Add32,
++                           mkexpr ( ACCU ),
++                           mkexpr ( rtu ) ) );
++
++     assign ( rD, binop( Iop_32HLto64,
++                         mkexpr ( rDU ),
++                         mkexpr ( rDL ) ) );
++     break;
++  case 0x558: // evmwumiaa
++     assign ( rLIP, binop ( Iop_MullU32,
++                            mkexpr ( rAL ),
++                            mkexpr ( rBL ) ) );
++     assign ( rD,  binop (  Iop_Add64,
++                            mkexpr ( ACC ),
++                            mkexpr ( rLIP ) ) );
++     break;
++  case 0x559: // evmwsmiaa
++     assign ( rLIP, binop ( Iop_MullS32,
++                            mkexpr ( rAL ),
++                            mkexpr ( rBL ) ) );
++     assign ( rD,  binop (  Iop_Add64,
++                            mkexpr ( ACC ),
++                            mkexpr ( rLIP ) ) );
++     break;
++  case 0x588: // evmheumianw See evmhoumianw (we have the same issue here as well) with Iop_MullS16
++
++     // Get the zero extended even half-words first:
++     assign ( rsl, spe_extz_16_in_32 ( binop ( Iop_Shr32, mkexpr ( rAL ), mkU8 ( 0x10 ) ) ) );
++     assign ( rsu, spe_extz_16_in_32 ( binop ( Iop_Shr32, mkexpr ( rAU ), mkU8 ( 0x10 ) ) ) );
++     assign ( rtl, spe_extz_16_in_32 ( binop ( Iop_Shr32, mkexpr ( rBL ), mkU8 ( 0x10 ) ) ) );
++     assign ( rtu, spe_extz_16_in_32 ( binop ( Iop_Shr32, mkexpr ( rBU ), mkU8 ( 0x10 ) ) ) );
++
++     assign ( rLIP, binop ( Iop_MullU32,
++                            mkexpr ( rsl ),
++                            mkexpr ( rtl ) ) );
++     assign ( rUIP, binop ( Iop_MullU32,
++                            mkexpr ( rsu ),
++                            mkexpr ( rtu ) ) );
++
++     assign ( rwl, spe_neg ( unop ( Iop_64to32, mkexpr ( rLIP ) ) ) );
++     assign ( rwu, spe_neg ( unop ( Iop_64to32, mkexpr ( rUIP ) ) ) );
++
++     assign ( rDL, binop ( Iop_Add32,
++                           mkexpr ( ACCL ),
++                           mkexpr ( rwl ) ) );
++     assign ( rDU, binop ( Iop_Add32,
++                           mkexpr ( ACCU ),
++                           mkexpr ( rwu ) ) );
++
++     assign ( rD, binop( Iop_32HLto64,
++                         mkexpr ( rDU ),
++                         mkexpr ( rDL ) ) );
++     break;
++  case 0x589: // evmhesmianw See evmhoumianw (we have the same issue here as well) with Iop_MullS16
++
++     // Get the sign extended even half-words first:
++     assign ( rsl, spe_exts_16_in_32 ( binop ( Iop_Shr32, mkexpr ( rAL ), mkU8 ( 0x10 ) ) ) );
++     assign ( rsu, spe_exts_16_in_32 ( binop ( Iop_Shr32, mkexpr ( rAU ), mkU8 ( 0x10 ) ) ) );
++     assign ( rtl, spe_exts_16_in_32 ( binop ( Iop_Shr32, mkexpr ( rBL ), mkU8 ( 0x10 ) ) ) );
++     assign ( rtu, spe_exts_16_in_32 ( binop ( Iop_Shr32, mkexpr ( rBU ), mkU8 ( 0x10 ) ) ) );
++
++     assign ( rLIP, binop ( Iop_MullS32,
++                            mkexpr ( rsl ),
++                            mkexpr ( rtl ) ) );
++     assign ( rUIP, binop ( Iop_MullS32,
++                            mkexpr ( rsu ),
++                            mkexpr ( rtu ) ) );
++
++     assign ( rwl, spe_neg ( unop ( Iop_64to32, mkexpr ( rLIP ) ) ) );
++     assign ( rwu, spe_neg ( unop ( Iop_64to32, mkexpr ( rUIP ) ) ) );
++
++     assign ( rDL, binop ( Iop_Add32,
++                           mkexpr ( ACCL ),
++                           mkexpr ( rwl ) ) );
++     assign ( rDU, binop ( Iop_Add32,
++                           mkexpr ( ACCU ),
++                           mkexpr ( rwu ) ) );
++
++     assign ( rD, binop( Iop_32HLto64,
++                         mkexpr ( rDU ),
++                         mkexpr ( rDL ) ) );
++     break;
++  case 0x58c: // evmhoumianw
++
++     // We had to really workaround this one: Iop_MullU16 does not reduce.
++
++     // Get the odd half-words first:
++     assign ( rsl, binop ( Iop_And32, mkexpr ( rAL ), mkU32 ( 0xffff ) ) );
++     assign ( rsu, binop ( Iop_And32, mkexpr ( rAU ), mkU32 ( 0xffff ) ) );
++     assign ( rtl, binop ( Iop_And32, mkexpr ( rBL ), mkU32 ( 0xffff ) ) );
++     assign ( rtu, binop ( Iop_And32, mkexpr ( rBU ), mkU32 ( 0xffff ) ) );
++
++     assign ( rLIP, binop ( Iop_MullU32,
++                            mkexpr ( rsl ),
++                            mkexpr ( rtl ) ) );
++     assign ( rUIP, binop ( Iop_MullU32,
++                            mkexpr ( rsu ),
++                            mkexpr ( rtu ) ) );
++
++     assign ( rwl, spe_neg ( unop ( Iop_64to32, mkexpr ( rLIP ) ) ) );
++     assign ( rwu, spe_neg ( unop ( Iop_64to32, mkexpr ( rUIP ) ) ) );
++
++     assign ( rDL, binop ( Iop_Add32,
++                           mkexpr ( ACCL ),
++                           mkexpr ( rwl ) ) );
++     assign ( rDU, binop ( Iop_Add32,
++                           mkexpr ( ACCU ),
++                           mkexpr ( rwu ) ) );
++
++     assign ( rD, binop( Iop_32HLto64,
++                         mkexpr ( rDU ),
++                         mkexpr ( rDL ) ) );
++     break;
++  case 0x58d: // evmhosmianw See evmhoumianw (we have the same issue here as well) with Iop_MullS16
++
++     // Get the sign extended odd half-words first:
++     assign ( rsl, spe_exts_16_in_32 ( binop ( Iop_And32, mkexpr ( rAL ), mkU32 ( 0xffff ) ) ) );
++     assign ( rsu, spe_exts_16_in_32 ( binop ( Iop_And32, mkexpr ( rAU ), mkU32 ( 0xffff ) ) ) );
++     assign ( rtl, spe_exts_16_in_32 ( binop ( Iop_And32, mkexpr ( rBL ), mkU32 ( 0xffff ) ) ) );
++     assign ( rtu, spe_exts_16_in_32 ( binop ( Iop_And32, mkexpr ( rBU ), mkU32 ( 0xffff ) ) ) );
++
++     assign ( rLIP, binop ( Iop_MullS32,
++                            mkexpr ( rsl ),
++                            mkexpr ( rtl ) ) );
++     assign ( rUIP, binop ( Iop_MullS32,
++                            mkexpr ( rsu ),
++                            mkexpr ( rtu ) ) );
++
++     assign ( rwl, spe_neg ( unop ( Iop_64to32, mkexpr ( rLIP ) ) ) );
++     assign ( rwu, spe_neg ( unop ( Iop_64to32, mkexpr ( rUIP ) ) ) );
++
++     assign ( rDL, binop ( Iop_Add32,
++                           mkexpr ( ACCL ),
++                           mkexpr ( rwl ) ) );
++     assign ( rDU, binop ( Iop_Add32,
++                           mkexpr ( ACCU ),
++                           mkexpr ( rwu ) ) );
++
++     assign ( rD, binop( Iop_32HLto64,
++                         mkexpr ( rDU ),
++                         mkexpr ( rDL ) ) );
++     break;
++  case 0x5c8: // evmwlumianw
++     assign ( rLIP, binop ( Iop_MullU32,
++                            mkexpr ( rAL ),
++                            mkexpr ( rBL ) ) );
++     assign ( rUIP, binop ( Iop_MullU32,
++                            mkexpr ( rAU ),
++                            mkexpr ( rBU ) ) );
++
++     assign ( rtl, spe_neg ( unop ( Iop_64to32,
++                                    mkexpr ( rLIP ) ) ) );
++     assign ( rtu, spe_neg ( unop ( Iop_64to32,
++                                    mkexpr ( rUIP ) ) ) );
++
++     assign ( rDL, binop ( Iop_Add32,
++                           mkexpr ( ACCL ),
++                           mkexpr ( rtl ) ) );
++     assign ( rDU, binop ( Iop_Add32,
++                           mkexpr ( ACCU ),
++                           mkexpr ( rtu ) ) );
++
++     assign ( rD, binop( Iop_32HLto64,
++                         mkexpr ( rDU ),
++                         mkexpr ( rDL ) ) );
++     break;
++  case 0x5c9: // evmwlsmianw
++     assign ( rLIP, binop ( Iop_MullS32,
++                            mkexpr ( rAL ),
++                            mkexpr ( rBL ) ) );
++     assign ( rUIP, binop ( Iop_MullS32,
++                            mkexpr ( rAU ),
++                            mkexpr ( rBU ) ) );
++
++     assign ( rtl, spe_neg ( unop ( Iop_64to32,
++                                    mkexpr ( rLIP ) ) ) );
++     assign ( rtu, spe_neg ( unop ( Iop_64to32,
++                                    mkexpr ( rUIP ) ) ) );
++
++     assign ( rDL, binop ( Iop_Add32,
++                           mkexpr ( ACCL ),
++                           mkexpr ( rtl ) ) );
++     assign ( rDU, binop ( Iop_Add32,
++                           mkexpr ( ACCU ),
++                           mkexpr ( rtu ) ) );
++
++     assign ( rD, binop( Iop_32HLto64,
++                         mkexpr ( rDU ),
++                         mkexpr ( rDL ) ) );
++     break;
++  case 0x5d8: // evmwumian
++     assign ( rLIP, binop ( Iop_MullU32,
++                            mkexpr ( rAL ),
++                            mkexpr ( rBL ) ) );
++     assign ( rT,  spe_neg64 ( mkexpr ( rLIP ) ) );
++     assign ( rD,  binop (     Iop_Add64,
++                               mkexpr ( ACC ),
++                               mkexpr ( rT ) ) );
++     break;
++  case 0x5d9: // evmwsmian
++     assign ( rLIP, binop ( Iop_MullS32,
++                            mkexpr ( rAL ),
++                            mkexpr ( rBL ) ) );
++     assign ( rT,  spe_neg64 ( mkexpr ( rLIP ) ) );
++     assign ( rD,  binop (     Iop_Add64,
++                               mkexpr ( ACC ),
++                               mkexpr ( rT ) ) );
++     break;
++  default:
++     return False;
++  }
++  putSPEReg ( rD_addr, mkexpr ( rD ) );
++
++  switch (opc2) {
++  case 0x428: // evmheumia
++  case 0x429: // evmhesmia
++  case 0x42c: // evmhoumia
++  case 0x42d: // evmhosmia
++  case 0x468: // evmwlumia
++  case 0x46c: // evmwhumia
++  case 0x46d: // evmwhsmia
++  case 0x478: // evmwumia
++  case 0x479: // evmwsmia
++  case 0x509: // evmhesmiaaw
++  case 0x508: // evmheumiaaw
++  case 0x50c: // evmhoumiaaw
++  case 0x50d: // evmhoumiaaw
++  case 0x548: // evmwlumiaaw
++  case 0x549: // evmwlsmiaaw
++  case 0x558: // evmwumiaa
++  case 0x559: // evmwsmiaa
++  case 0x588: // evmheumianw
++  case 0x589: // evmhesmianw
++  case 0x5c8: // evmwlumianw
++  case 0x58c: // evmhoumianw
++  case 0x58d: // evmhosmianw
++  case 0x5c9: // evmwlsmianw
++  case 0x5d8: // evmwumian
++  case 0x5d9: // evmwsmian
++     putSPE_ACCReg ( mkexpr ( rD ) );
++  default:
++     break;
++  }
++
++  return True;
++}
++
+ /*------------------------------------------------------------*/
+ /*--- AltiVec Instruction Translation                      ---*/
+ /*------------------------------------------------------------*/
+@@ -19421,6 +20234,43 @@ DisResult disInstr_PPC_WRK (
+          if (!allow_SPE) goto decode_noSPE;
+          if (dis_spe_compare( theInstr )) goto decode_success;
+          goto decode_failure;
++      case 0x408: // evmheumi
++      case 0x409: // evmhesmi
++      case 0x40c: // evmhoumi
++      case 0x40d: // evmhosmi
++      case 0x428: // evmheumia
++      case 0x429: // evmhesmia
++      case 0x42c: // evmhoumic
++      case 0x42d: // evmhosmic
++      case 0x448: // evmwlumi
++      case 0x44c: // evmwhumi
++      case 0x44d: // evmwhsmi
++      case 0x458: // evmwumi
++      case 0x478: // evmwumia
++      case 0x459: // evmwsmi
++      case 0x468: // evmwlumia
++      case 0x46c: // evmwhumia
++      case 0x46d: // evmwhsmia
++      case 0x479: // evmwsmia
++      case 0x508: // evmheumiaaw
++      case 0x509: // evmhesmiaaw
++      case 0x50c: // evmhoumiaaw
++      case 0x50d: // evmhosmiaaw
++      case 0x548: // evmwlumiaaw
++      case 0x549: // evmwlsmiaaw
++      case 0x558: // evmwumiaa
++      case 0x588: // evmheumianw
++      case 0x589: // evmhesmianw
++      case 0x58c: // evmhoumianw
++      case 0x58d: // evmhosmianw
++      case 0x5c8: // evmwlumianw
++      case 0x5c9: // evmwlsmianw
++      case 0x5d8: // evmwumian
++      case 0x559: // evmwsmiaa
++      case 0x5d9: // evmwsmian
++         if (!allow_SPE) goto decode_noSPE;
++         if (dis_spe_ACC_based_multiply_insns( theInstr )) goto decode_success;
++         goto decode_failure;
+       case 0x4c4: // evmra
+          if (!allow_SPE) goto decode_noSPE;
+          if (dis_spe_initialize_ACC( theInstr )) goto decode_success;
+diff --git a/memcheck/tests/ppc32/test_spe.c b/memcheck/tests/ppc32/test_spe.c
+index 7a259d6..d8f1a7c 100644
+--- a/memcheck/tests/ppc32/test_spe.c
++++ b/memcheck/tests/ppc32/test_spe.c
+@@ -7967,6 +7967,1092 @@ int evsubfw_asm(void)
+ }
+ TEST_SPE_DECL(evsubfw_asm, "evsubfw");
+ 
++int evmwsmi_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_s32__ regA asm ("30");
++  register __ev64_s32__ regB asm ("29");
++  register __ev64_s32__ regD asm ("28");
++  int64_t i, j;
++
++  for (i = 0; i < NELTS(rA2s32); i++) {
++    for (j = 0; j < NELTS(rB2s32); j++) {
++      regA = rA2s32[i];
++      regB = rB2s32[j];
++      asm volatile ("evmwsmi %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++      VERIFY(__ev_convert_s64 (regD) == (int64_t) ((int64_t) regA[1] * (int64_t) regB[1]));
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmwsmi_asm, "evmwsmi");
++
++int evmwsmia_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_s32__ regA asm ("30");
++  register __ev64_s32__ regB asm ("29");
++  register __ev64_s32__ regD asm ("28");
++  int64_t i, j;
++
++  for (i = 0; i < NELTS(rA2s32); i++) {
++    for (j = 0; j < NELTS(rB2s32); j++) {
++
++      // Initialize the ACC.
++      regA = (__ev64_s32__) { 0, 0 };
++      asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++      VERIFY(regD[0] == 0 && regD[1] == 0);
++
++      // Verify the multiplication.
++      regA = rA2s32[i];
++      regB = rB2s32[j];
++      asm volatile ("evmwsmia %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++      VERIFY(__ev_convert_s64 (regD) == (int64_t) ((int64_t) regA[1] * (int64_t) regB[1]));
++
++      // (Indirectly) Verify that the product of the multiplication is also recorded in the ACC.
++      regA = (__ev64_s32__) { 0x0, 0x0 };
++      asm volatile ("evaddsmiaaw %[b], %[a]" : [b] "=r" (regB) : [a] "r" (regA));
++      VERIFY(regB[0] == regD[0] && regB[1] == regD[1]);
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmwsmia_asm, "evmwsmia");
++
++int evmwumi_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_u32__ regA asm ("30");
++  register __ev64_u32__ regB asm ("29");
++  register __ev64_u32__ regD asm ("28");
++  int64_t i, j;
++
++  for (i = 0; i < NELTS(rA2u32); i++) {
++    for (j = 0; j < NELTS(rB2u32); j++) {
++      regA = rA2u32[i];
++      regB = rB2u32[j];
++      asm volatile ("evmwumi %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++      VERIFY(__ev_convert_u64 (regD) == (uint64_t) ((uint64_t) regA[1] * (uint64_t) regB[1]));
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmwumi_asm, "evmwumi");
++
++int evmwumia_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_u32__ regA asm ("30");
++  register __ev64_u32__ regB asm ("29");
++  register __ev64_u32__ regD asm ("28");
++  int64_t i, j;
++
++  for (i = 0; i < NELTS(rA2u32); i++) {
++    for (j = 0; j < NELTS(rB2u32); j++) {
++
++      // Initialize the ACC.
++      regA = (__ev64_u32__) { 0, 0 };
++      asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++      VERIFY(regD[0] == 0 && regD[1] == 0);
++
++      // Verify the multiplication.
++      regA = rA2u32[i];
++      regB = rB2u32[j];
++      asm volatile ("evmwumia %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++      VERIFY(__ev_convert_u64 (regD) == (uint64_t) ((uint64_t) regA[1] * (uint64_t) regB[1]));
++
++      // (Indirectly) Verify that the product of the multiplication is also recorded in the ACC.
++      regA = (__ev64_u32__) { 0, 0 };
++      asm volatile ("evaddumiaaw %[b], %[a]" : [b] "=r" (regB) : [a] "r" (regA));
++      VERIFY(regB[0] == regD[0] && regB[1] == regD[1]);
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmwumia_asm, "evmwumia");
++
++int evmwumiaa_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_u32__ regA asm ("30");
++  register __ev64_u32__ regB asm ("29");
++  register __ev64_u32__ regD asm ("28");
++  uint64_t i, sum;
++
++  // Initialize the ACC.
++  regA = (__ev64_u32__) { 0, 0 };
++  asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++  VERIFY(regD[0] == 0 && regD[1] == 0);
++
++  for (i = 0, sum = 0; i < NELTS(rA2u32); i++) {
++
++    regA = rA2u32[i];
++    regB = rB2u32[i];
++
++    asm volatile ("evmwumiaa %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++    // Verify that regD always contains the sum (j : (0 <= j and j < i) : (regA[j] * regB[j]))
++    sum += (uint64_t) ((uint64_t) regA[1] * (uint64_t) regB[1]);
++    VERIFY(__ev_convert_u64 (regD) == sum);
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmwumiaa_asm, "evmwumiaa");
++
++int evmwumian_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_u32__ regA asm ("30");
++  register __ev64_u32__ regB asm ("29");
++  register __ev64_u32__ regD asm ("28");
++  uint64_t i, sum;
++
++  // Initialize the ACC.
++  regA = (__ev64_u32__) { 0, 0 };
++  asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++  VERIFY(regD[0] == 0 && regD[1] == 0);
++
++  for (i = 0, sum = 0; i < NELTS(rA2u32); i++) {
++
++    regA = rA2u32[i];
++    regB = rB2u32[i];
++
++    asm volatile ("evmwumian %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++    // Verify that regD always contains the negative of the sum (j : (0 <= j and j < i) : (regA[j] * regB[j]))
++    sum -= (uint64_t) ((uint64_t) regA[1] * (uint64_t) regB[1]);
++    VERIFY(__ev_convert_u64 (regD) == sum);
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmwumian_asm, "evmwumian");
++
++int evmwsmiaa_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_s32__ regA asm ("30");
++  register __ev64_s32__ regB asm ("29");
++  register __ev64_s32__ regD asm ("28");
++  uint64_t i, sum;
++
++  // Initialize the ACC.
++  regA = (__ev64_s32__) { 0, 0 };
++  asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++  VERIFY(regD[0] == 0 && regD[1] == 0);
++
++  for (i = 0, sum = 0; i < NELTS(rA2s32); i++) {
++
++    regA = rA2s32[i];
++    regB = rB2s32[i];
++
++    asm volatile ("evmwsmiaa %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++    // Verify that regD always contains the sum (j : (0 <= j and j < i) : (regA[j] * regB[j]))
++    sum += (uint64_t) ((uint64_t) regA[1] * (uint64_t) regB[1]);
++    VERIFY(__ev_convert_u64 (regD) == sum);
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmwsmiaa_asm, "evmwsmiaa");
++
++int evmwsmian_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_s32__ regA asm ("30");
++  register __ev64_s32__ regB asm ("29");
++  register __ev64_s32__ regD asm ("28");
++  uint64_t i, sum;
++
++  // Initialize the ACC.
++  regA = (__ev64_s32__) { 0, 0 };
++  asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++  VERIFY(regD[0] == 0 && regD[1] == 0);
++
++  for (i = 0, sum = 0; i < NELTS(rA2s32); i++) {
++
++    regA = rA2s32[i];
++    regB = rB2s32[i];
++
++    asm volatile ("evmwsmian %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++    // Verify that regD always contains the negative of the sum (j : (0 <= j and j < i) : (regA[j] * regB[j]))
++    sum -= (uint64_t) ((uint64_t) regA[1] * (uint64_t) regB[1]);
++    VERIFY(__ev_convert_u64 (regD) == sum);
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmwsmian_asm, "evmwsmian");
++
++int evmwlumianw_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_u32__ regA asm ("30");
++  register __ev64_u32__ regB asm ("29");
++  register __ev64_u32__ regD asm ("28");
++  uint32_t i, upper_sum, lower_sum;
++
++  // Initialize the ACC.
++  regA = (__ev64_u32__) { 0, 0 };
++  asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++  VERIFY(regD[0] == 0 && regD[1] == 0);
++
++  for (i = 0, upper_sum = 0, lower_sum = 0; i < NELTS(rA2u32); i++) {
++
++    regA = rA2u32[i];
++    regB = rB2u32[i];
++
++    asm volatile ("evmwlumianw %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++    upper_sum -= (uint32_t) ((uint64_t) regA[0] * (uint64_t) regB[0]);
++    VERIFY(regD[0] == upper_sum);
++    lower_sum -= (uint32_t) ((uint64_t) regA[1] * (uint64_t) regB[1]);
++    VERIFY(regD[1] == lower_sum);
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmwlumianw_asm, "evmwlumianw");
++
++int evmwlumiaaw_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_u32__ regA asm ("30");
++  register __ev64_u32__ regB asm ("29");
++  register __ev64_u32__ regD asm ("28");
++  uint32_t i, upper_sum, lower_sum;
++
++  // Initialize the ACC.
++  regA = (__ev64_u32__) { 0, 0 };
++  asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++  VERIFY(regD[0] == 0 && regD[1] == 0);
++
++  for (i = 0, upper_sum = 0, lower_sum = 0; i < NELTS(rA2u32); i++) {
++
++    regA = rA2u32[i];
++    regB = rB2u32[i];
++
++    asm volatile ("evmwlumiaaw %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++    upper_sum += (uint32_t) ((uint64_t) regA[0] * (uint64_t) regB[0]);
++    VERIFY(regD[0] == upper_sum);
++    lower_sum += (uint32_t) ((uint64_t) regA[1] * (uint64_t) regB[1]);
++    VERIFY(regD[1] == lower_sum);
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmwlumiaaw_asm, "evmwlumiaaw");
++
++int evmwlumi_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_opaque__ regA asm ("30");
++  register __ev64_opaque__ regB asm ("29");
++  register __ev64_opaque__ regD asm ("28");
++  uint32_t i, j;
++
++  // Unsigned test:
++  for (i = 0; i < NELTS(rA2u32); i++) {
++    for (j = 0; j < NELTS(rB2u32); j++) {
++
++      regA = rA2u32[i];
++      regB = rB2u32[j];
++
++      asm volatile ("evmwlumi %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++      VERIFY(regD[0] == ((uint32_t) ((uint64_t) regA[0] * (uint64_t) regB[0])));
++      VERIFY(regD[1] == ((uint32_t) ((uint64_t) regA[1] * (uint64_t) regB[1])));
++    }
++  }
++
++  // Signed test:
++  for (i = 0; i < NELTS(rA2s32); i++) {
++    for (j = 0; j < NELTS(rB2u32); j++) {
++
++      regA = rA2s32[i];
++      regB = rB2s32[j];
++
++      asm volatile ("evmwlumi %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++      VERIFY(regD[0] == ((uint32_t) ((uint64_t) regA[0] * (uint64_t) regB[0])));
++      VERIFY(regD[1] == ((uint32_t) ((uint64_t) regA[1] * (uint64_t) regB[1])));
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmwlumi_asm, "evmwlumi");
++
++int evmwlumia_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_opaque__ regA asm ("30");
++  register __ev64_opaque__ regB asm ("29");
++  register __ev64_opaque__ regD asm ("28");
++  uint32_t i, j;
++
++  // Unsigned test:
++  for (i = 0; i < NELTS(rA2u32); i++) {
++    for (j = 0; j < NELTS(rB2u32); j++) {
++
++      // Initialize the ACC.
++      regA = (__ev64_u32__) { 0, 0 };
++      asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++      VERIFY(regD[0] == 0 && regD[1] == 0);
++
++      regA = rA2u32[i];
++      regB = rB2u32[j];
++
++      asm volatile ("evmwlumia %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++      VERIFY(regD[0] == ((uint32_t) ((uint64_t) regA[0] * (uint64_t) regB[0])));
++      VERIFY(regD[1] == ((uint32_t) ((uint64_t) regA[1] * (uint64_t) regB[1])));
++
++      // (Indirectly) Verify that the product of the multiplication is also recorded in the ACC.
++      regA = (__ev64_u32__) { 0x0, 0x0 };
++      asm volatile ("evaddsmiaaw %[b], %[a]" : [b] "=r" (regB) : [a] "r" (regA));
++      VERIFY(regB[0] == regD[0] && regB[1] == regD[1]);
++    }
++  }
++
++  // Signed test:
++  for (i = 0; i < NELTS(rA2s32); i++) {
++    for (j = 0; j < NELTS(rB2u32); j++) {
++
++      // Initialize the ACC.
++      regA = (__ev64_s32__) { 0, 0 };
++      asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++      VERIFY(regD[0] == 0 && regD[1] == 0);
++
++      regA = rA2s32[i];
++      regB = rB2s32[j];
++
++      asm volatile ("evmwlumia %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++      VERIFY(regD[0] == ((uint32_t) ((uint64_t) regA[0] * (uint64_t) regB[0])));
++      VERIFY(regD[1] == ((uint32_t) ((uint64_t) regA[1] * (uint64_t) regB[1])));
++
++      // (Indirectly) Verify that the product of the multiplication is also recorded in the ACC.
++      regA = (__ev64_s32__) { 0x0, 0x0 };
++      asm volatile ("evaddsmiaaw %[b], %[a]" : [b] "=r" (regB) : [a] "r" (regA));
++      VERIFY(regB[0] == regD[0] && regB[1] == regD[1]);
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmwlumia_asm, "evmwlumia");
++
++int evmwlsmianw_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_s32__ regA asm ("30");
++  register __ev64_s32__ regB asm ("29");
++  register __ev64_s32__ regD asm ("28");
++  int32_t i, upper_sum, lower_sum;
++
++  // Initialize the ACC.
++  regA = (__ev64_s32__) { 0, 0 };
++  asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++  VERIFY(regD[0] == 0 && regD[1] == 0);
++
++  for (i = 0, upper_sum = 0, lower_sum = 0; i < NELTS(rA2s32); i++) {
++
++    regA = rA2s32[i];
++    regB = rB2s32[i];
++
++    asm volatile ("evmwlsmianw %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++    upper_sum -= (int32_t) ((int64_t) regA[0] * (int64_t) regB[0]);
++    VERIFY(regD[0] == upper_sum);
++    lower_sum -= (int32_t) ((int64_t) regA[1] * (int64_t) regB[1]);
++    VERIFY(regD[1] == lower_sum);
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmwlsmianw_asm, "evmwlsmianw");
++
++int evmwlsmiaaw_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_s32__ regA asm ("30");
++  register __ev64_s32__ regB asm ("29");
++  register __ev64_s32__ regD asm ("28");
++  int32_t i, upper_sum, lower_sum;
++
++  // Initialize the ACC.
++  regA = (__ev64_s32__) { 0, 0 };
++  asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++  VERIFY(regD[0] == 0 && regD[1] == 0);
++
++  for (i = 0, upper_sum = 0, lower_sum = 0; i < NELTS(rA2s32); i++) {
++
++    regA = rA2s32[i];
++    regB = rB2s32[i];
++
++    asm volatile ("evmwlsmiaaw %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++    upper_sum += (int32_t) ((int64_t) regA[0] * (int64_t) regB[0]);
++    VERIFY(regD[0] == upper_sum);
++    lower_sum += (int32_t) ((int64_t) regA[1] * (int64_t) regB[1]);
++    VERIFY(regD[1] == lower_sum);
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmwlsmiaaw_asm, "evmwlsmiaaw");
++
++int evmwhumi_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_u32__ regA asm ("30");
++  register __ev64_u32__ regB asm ("29");
++  register __ev64_u32__ regD asm ("28");
++  int64_t i, j;
++
++  for (i = 0; i < NELTS(rA2u32); i++) {
++    for (j = 0; j < NELTS(rB2u32); j++) {
++      regA = rA2u32[i];
++      regB = rB2u32[j];
++      asm volatile ("evmwhumi %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++      VERIFY(regD[0] == (((uint64_t) ((uint64_t) regA[0] * (uint64_t) regB[0])) >> (sizeof (uint32_t) * 8)));
++      VERIFY(regD[1] == (((uint64_t) ((uint64_t) regA[1] * (uint64_t) regB[1])) >> (sizeof (uint32_t) * 8)));
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmwhumi_asm, "evmwhumi");
++
++int evmwhumia_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_u32__ regA asm ("30");
++  register __ev64_u32__ regB asm ("29");
++  register __ev64_u32__ regD asm ("28");
++  int64_t i, j;
++
++  for (i = 0; i < NELTS(rA2u32); i++) {
++    for (j = 0; j < NELTS(rB2u32); j++) {
++
++      // Initialize the ACC.
++      regA = (__ev64_u32__) { 0, 0 };
++      asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++      VERIFY(regD[0] == 0 && regD[1] == 0);
++
++      // Verify the multiplication.
++      regA = rA2u32[i];
++      regB = rB2u32[j];
++      asm volatile ("evmwhumia %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++      VERIFY(regD[0] == (((uint64_t) ((uint64_t) regA[0] * (uint64_t) regB[0])) >> (sizeof (uint32_t) * 8)));
++      VERIFY(regD[1] == (((uint64_t) ((uint64_t) regA[1] * (uint64_t) regB[1])) >> (sizeof (uint32_t) * 8)));
++
++      // (Indirectly) Verify that the product of the multiplication is also recorded in the ACC.
++      regA = (__ev64_u32__) { 0, 0 };
++      asm volatile ("evaddumiaaw %[b], %[a]" : [b] "=r" (regB) : [a] "r" (regA));
++      VERIFY(regB[0] == regD[0] && regB[1] == regD[1]);
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmwhumia_asm, "evmwhumia");
++
++int evmwhsmi_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_s32__ regA asm ("30");
++  register __ev64_s32__ regB asm ("29");
++  register __ev64_s32__ regD asm ("28");
++  int64_t i, j;
++
++  for (i = 0; i < NELTS(rA2s32); i++) {
++    for (j = 0; j < NELTS(rB2s32); j++) {
++      regA = rA2s32[i];
++      regB = rB2s32[j];
++      asm volatile ("evmwhsmi %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++      VERIFY(regD[0] == (((int64_t) ((int64_t) regA[0] * (int64_t) regB[0])) >> (sizeof (int32_t) * 8)));
++      VERIFY(regD[1] == (((int64_t) ((int64_t) regA[1] * (int64_t) regB[1])) >> (sizeof (int32_t) * 8)));
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmwhsmi_asm, "evmwhsmi");
++
++int evmwhsmia_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_s32__ regA asm ("30");
++  register __ev64_s32__ regB asm ("29");
++  register __ev64_s32__ regD asm ("28");
++  int64_t i, j;
++
++  for (i = 0; i < NELTS(rA2s32); i++) {
++    for (j = 0; j < NELTS(rB2s32); j++) {
++
++      // Initialize the ACC.
++      regA = (__ev64_s32__) { 0, 0 };
++      asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++      VERIFY(regD[0] == 0 && regD[1] == 0);
++
++      // Verify the multiplication.
++      regA = rA2s32[i];
++      regB = rB2s32[j];
++      asm volatile ("evmwhsmia %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++      VERIFY(regD[0] == (((int64_t) ((int64_t) regA[0] * (int64_t) regB[0])) >> (sizeof (int32_t) * 8)));
++      VERIFY(regD[1] == (((int64_t) ((int64_t) regA[1] * (int64_t) regB[1])) >> (sizeof (int32_t) * 8)));
++
++      // (Indirectly) Verify that the product of the multiplication is also recorded in the ACC.
++      regA = (__ev64_s32__) { 0, 0 };
++      asm volatile ("evaddsmiaaw %[b], %[a]" : [b] "=r" (regB) : [a] "r" (regA));
++      VERIFY(regB[0] == regD[0] && regB[1] == regD[1]);
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmwhsmia_asm, "evmwhsmia");
++
++int evmhoumianw_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_u16__ regA asm ("30");
++  register __ev64_u16__ regB asm ("29");
++  register __ev64_u32__ regD asm ("28");
++  uint32_t i, upper_sum, lower_sum;
++
++  // Initialize the ACC.
++  regA = (__ev64_u16__) { 0, 0, 0, 0 };
++  asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++  VERIFY(regD[0] == 0 && regD[1] == 0);
++
++  for (i = 0, upper_sum = 0, lower_sum = 0; i < NELTS(rA4u16); i++) {
++
++    regA = rA4u16[i];
++    regB = rB4u16[i];
++
++    asm volatile ("evmhoumianw %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++    upper_sum -= (uint32_t) ((uint32_t) regA[1] * (uint32_t) regB[1]);
++    VERIFY(regD[0] == upper_sum);
++    lower_sum -= (uint32_t) ((uint32_t) regA[3] * (uint32_t) regB[3]);
++    VERIFY(regD[1] == lower_sum);
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmhoumianw_asm, "evmhoumianw");
++
++int evmhoumiaaw_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_u16__ regA asm ("30");
++  register __ev64_u16__ regB asm ("29");
++  register __ev64_u32__ regD asm ("28");
++  uint32_t i, upper_sum, lower_sum;
++
++  // Initialize the ACC.
++  regA = (__ev64_u16__) { 0, 0, 0, 0 };
++  asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++  VERIFY(regD[0] == 0 && regD[1] == 0);
++
++  for (i = 0, upper_sum = 0, lower_sum = 0; i < NELTS(rA4u16); i++) {
++
++    regA = rA4u16[i];
++    regB = rB4u16[i];
++
++    asm volatile ("evmhoumiaaw %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++    upper_sum += (uint32_t) ((uint32_t) regA[1] * (uint32_t) regB[1]);
++    VERIFY(regD[0] == upper_sum);
++    lower_sum += (uint32_t) ((uint32_t) regA[3] * (uint32_t) regB[3]);
++    VERIFY(regD[1] == lower_sum);
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmhoumiaaw_asm, "evmhoumiaaw");
++
++int evmhoumi_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_u16__ regA asm ("30");
++  register __ev64_u16__ regB asm ("29");
++  register __ev64_u32__ regD asm ("28");
++  uint32_t i, j;
++
++  // Initialize the ACC.
++  regA = (__ev64_u16__) { 0, 0, 0, 0 };
++  asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++  VERIFY(regD[0] == 0 && regD[1] == 0);
++
++  for (i = 0; i < NELTS(rA4u16); i++) {
++    for (j = 0; j < NELTS(rB4u16); j++) {
++
++      regA = rA4u16[i];
++      regB = rB4u16[j];
++
++      asm volatile ("evmhoumi %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++      VERIFY(regD[0] == ((uint32_t) ((uint32_t) regA[1] * (uint32_t) regB[1])));
++      VERIFY(regD[1] == ((uint32_t) ((uint32_t) regA[3] * (uint32_t) regB[3])));
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmhoumi_asm, "evmhoumi");
++
++int evmhoumia_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_u16__ regA asm ("30");
++  register __ev64_u16__ regB asm ("29");
++  register __ev64_u32__ regC asm ("28");
++  register __ev64_u32__ regD asm ("28");
++  uint32_t i, j;
++
++  // Initialize the ACC.
++  regA = (__ev64_u16__) { 0, 0, 0, 0 };
++  asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++  VERIFY(regD[0] == 0 && regD[1] == 0);
++
++  for (i = 0; i < NELTS(rA4u16); i++) {
++    for (j = 0; j < NELTS(rB4u16); j++) {
++
++      // Initialize the ACC.
++      regA = (__ev64_u16__) { 0, 0, 0, 0 };
++      asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++      VERIFY(regD[0] == 0 && regD[1] == 0);
++
++      regA = rA4u16[i];
++      regB = rB4u16[j];
++
++      asm volatile ("evmhoumia %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++      VERIFY(regD[0] == ((uint32_t) ((uint32_t) regA[1] * (uint32_t) regB[1])));
++      VERIFY(regD[1] == ((uint32_t) ((uint32_t) regA[3] * (uint32_t) regB[3])));
++
++      // (Indirectly) Verify that the product of the multiplication is also recorded in the ACC.
++      regA = (__ev64_u16__) { 0, 0, 0, 0 };
++      asm volatile ("evaddsmiaaw %[b], %[a]" : [b] "=r" (regC) : [a] "r" (regA));
++      VERIFY(regC[0] == regD[0] && regC[1] == regD[1]);
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmhoumia_asm, "evmhoumia");
++
++int evmhosmianw_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_s16__ regA asm ("30");
++  register __ev64_s16__ regB asm ("29");
++  register __ev64_s32__ regD asm ("28");
++  int32_t i, upper_sum, lower_sum;
++
++  // Initialize the ACC.
++  regA = (__ev64_s16__) { 0, 0, 0, 0 };
++  asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++  VERIFY(regD[0] == 0 && regD[1] == 0);
++
++  for (i = 0, upper_sum = 0, lower_sum = 0; i < NELTS(rA4s16); i++) {
++
++    regA = rA4s16[i];
++    regB = rB4s16[i];
++
++    asm volatile ("evmhosmianw %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++    upper_sum -= (int32_t) ((int32_t) regA[1] * (int32_t) regB[1]);
++    VERIFY(regD[0] == upper_sum);
++    lower_sum -= (int32_t) ((int32_t) regA[3] * (int32_t) regB[3]);
++    VERIFY(regD[1] == lower_sum);
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmhosmianw_asm, "evmhosmianw");
++
++int evmhosmiaaw_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_s16__ regA asm ("30");
++  register __ev64_s16__ regB asm ("29");
++  register __ev64_s32__ regD asm ("28");
++  int32_t i, upper_sum, lower_sum;
++
++  // Initialize the ACC.
++  regA = (__ev64_s16__) { 0, 0, 0, 0 };
++  asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++  VERIFY(regD[0] == 0 && regD[1] == 0);
++
++  for (i = 0, upper_sum = 0, lower_sum = 0; i < NELTS(rA4s16); i++) {
++
++    regA = rA4s16[i];
++    regB = rB4s16[i];
++
++    asm volatile ("evmhosmiaaw %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++    upper_sum += (int32_t) ((int32_t) regA[1] * (int32_t) regB[1]);
++    VERIFY(regD[0] == upper_sum);
++    lower_sum += (int32_t) ((int32_t) regA[3] * (int32_t) regB[3]);
++    VERIFY(regD[1] == lower_sum);
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmhosmiaaw_asm, "evmhosmiaaw");
++
++int evmhosmi_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_s16__ regA asm ("30");
++  register __ev64_s16__ regB asm ("29");
++  register __ev64_s32__ regD asm ("28");
++  int32_t i, j;
++
++  // Initialize the ACC.
++  regA = (__ev64_s16__) { 0, 0, 0, 0 };
++  asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++  VERIFY(regD[0] == 0 && regD[1] == 0);
++
++  for (i = 0; i < NELTS(rA4s16); i++) {
++    for (j = 0; j < NELTS(rB4s16); j++) {
++
++      regA = rA4s16[i];
++      regB = rB4s16[j];
++
++      asm volatile ("evmhosmi %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++      VERIFY(regD[0] == ((int32_t) ((int32_t) regA[1] * (int32_t) regB[1])));
++      VERIFY(regD[1] == ((int32_t) ((int32_t) regA[3] * (int32_t) regB[3])));
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmhosmi_asm, "evmhosmi");
++
++int evmhosmia_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_s16__ regA asm ("30");
++  register __ev64_s16__ regB asm ("29");
++  register __ev64_s32__ regC asm ("28");
++  register __ev64_s32__ regD asm ("28");
++  int32_t i, j;
++
++  // Initialize the ACC.
++  regA = (__ev64_s16__) { 0, 0, 0, 0 };
++  asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++  VERIFY(regD[0] == 0 && regD[1] == 0);
++
++  for (i = 0; i < NELTS(rA4s16); i++) {
++    for (j = 0; j < NELTS(rB4s16); j++) {
++
++      // Initialize the ACC.
++      regA = (__ev64_s16__) { 0, 0, 0, 0 };
++      asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++      VERIFY(regD[0] == 0 && regD[1] == 0);
++
++      regA = rA4s16[i];
++      regB = rB4s16[j];
++
++      asm volatile ("evmhosmia %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++      VERIFY(regD[0] == ((int32_t) ((int32_t) regA[1] * (int32_t) regB[1])));
++      VERIFY(regD[1] == ((int32_t) ((int32_t) regA[3] * (int32_t) regB[3])));
++
++      // (Indirectly) Verify that the product of the multiplication is also recorded in the ACC.
++      regA = (__ev64_s16__) { 0, 0, 0, 0 };
++      asm volatile ("evaddsmiaaw %[b], %[a]" : [b] "=r" (regC) : [a] "r" (regA));
++      VERIFY(regC[0] == regD[0] && regC[1] == regD[1]);
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmhosmia_asm, "evmhosmia");
++
++int evmheumianw_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_u16__ regA asm ("30");
++  register __ev64_u16__ regB asm ("29");
++  register __ev64_u32__ regD asm ("28");
++  uint32_t i, upper_sum, lower_sum;
++
++  // Initialize the ACC.
++  regA = (__ev64_u16__) { 0, 0, 0, 0 };
++  asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++  VERIFY(regD[0] == 0 && regD[1] == 0);
++
++  for (i = 0, upper_sum = 0, lower_sum = 0; i < NELTS(rA4u16); i++) {
++
++    regA = rA4u16[i];
++    regB = rB4u16[i];
++
++    asm volatile ("evmheumianw %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++    upper_sum -= (uint32_t) ((uint32_t) regA[0] * (uint32_t) regB[0]);
++    VERIFY(regD[0] == upper_sum);
++    lower_sum -= (uint32_t) ((uint32_t) regA[2] * (uint32_t) regB[2]);
++    VERIFY(regD[1] == lower_sum);
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmheumianw_asm, "evmheumianw");
++
++int evmheumiaaw_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_u16__ regA asm ("30");
++  register __ev64_u16__ regB asm ("29");
++  register __ev64_u32__ regD asm ("28");
++  uint32_t i, upper_sum, lower_sum;
++
++  // Initialize the ACC.
++  regA = (__ev64_u16__) { 0, 0, 0, 0 };
++  asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++  VERIFY(regD[0] == 0 && regD[1] == 0);
++
++  for (i = 0, upper_sum = 0, lower_sum = 0; i < NELTS(rA4u16); i++) {
++
++    regA = rA4u16[i];
++    regB = rB4u16[i];
++
++    asm volatile ("evmheumiaaw %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++    upper_sum += (uint32_t) ((uint32_t) regA[0] * (uint32_t) regB[0]);
++    VERIFY(regD[0] == upper_sum);
++    lower_sum += (uint32_t) ((uint32_t) regA[2] * (uint32_t) regB[2]);
++    VERIFY(regD[1] == lower_sum);
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmheumiaaw_asm, "evmheumiaaw");
++
++int evmheumi_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_u16__ regA asm ("30");
++  register __ev64_u16__ regB asm ("29");
++  register __ev64_u32__ regD asm ("28");
++  uint32_t i, j;
++
++  // Initialize the ACC.
++  regA = (__ev64_u16__) { 0, 0, 0, 0 };
++  asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++  VERIFY(regD[0] == 0 && regD[1] == 0);
++
++  for (i = 0; i < NELTS(rA4u16); i++) {
++    for (j = 0; j < NELTS(rB4u16); j++) {
++
++      regA = rA4u16[i];
++      regB = rB4u16[j];
++
++      asm volatile ("evmheumi %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++      VERIFY(regD[0] == ((uint32_t) ((uint32_t) regA[0] * (uint32_t) regB[0])));
++      VERIFY(regD[1] == ((uint32_t) ((uint32_t) regA[2] * (uint32_t) regB[2])));
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmheumi_asm, "evmheumi");
++
++int evmheumia_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_u16__ regA asm ("30");
++  register __ev64_u16__ regB asm ("29");
++  register __ev64_u32__ regC asm ("28");
++  register __ev64_u32__ regD asm ("28");
++  uint32_t i, j;
++
++  // Initialize the ACC.
++  regA = (__ev64_u16__) { 0, 0, 0, 0 };
++  asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++  VERIFY(regD[0] == 0 && regD[1] == 0);
++
++  for (i = 0; i < NELTS(rA4u16); i++) {
++    for (j = 0; j < NELTS(rB4u16); j++) {
++
++      // Initialize the ACC.
++      regA = (__ev64_u16__) { 0, 0, 0, 0 };
++      asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++      VERIFY(regD[0] == 0 && regD[1] == 0);
++
++      regA = rA4u16[i];
++      regB = rB4u16[j];
++
++      asm volatile ("evmheumia %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++      VERIFY(regD[0] == ((uint32_t) ((uint32_t) regA[0] * (uint32_t) regB[0])));
++      VERIFY(regD[1] == ((uint32_t) ((uint32_t) regA[2] * (uint32_t) regB[2])));
++
++      // (Indirectly) Verify that the product of the multiplication is also recorded in the ACC.
++      regA = (__ev64_u16__) { 0, 0, 0, 0 };
++      asm volatile ("evaddsmiaaw %[b], %[a]" : [b] "=r" (regC) : [a] "r" (regA));
++      VERIFY(regC[0] == regD[0] && regC[1] == regD[1]);
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmheumia_asm, "evmheumia");
++
++int evmhesmianw_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_s16__ regA asm ("30");
++  register __ev64_s16__ regB asm ("29");
++  register __ev64_s32__ regD asm ("28");
++  int32_t i, upper_sum, lower_sum;
++
++  // Initialize the ACC.
++  regA = (__ev64_s16__) { 0, 0, 0, 0 };
++  asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++  VERIFY(regD[0] == 0 && regD[1] == 0);
++
++  for (i = 0, upper_sum = 0, lower_sum = 0; i < NELTS(rA4s16); i++) {
++
++    regA = rA4s16[i];
++    regB = rB4s16[i];
++
++    asm volatile ("evmhesmianw %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++    upper_sum -= (int32_t) ((int32_t) regA[0] * (int32_t) regB[0]);
++    VERIFY(regD[0] == upper_sum);
++    lower_sum -= (int32_t) ((int32_t) regA[2] * (int32_t) regB[2]);
++    VERIFY(regD[1] == lower_sum);
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmhesmianw_asm, "evmhesmianw");
++
++int evmhesmiaaw_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_s16__ regA asm ("30");
++  register __ev64_s16__ regB asm ("29");
++  register __ev64_s32__ regD asm ("28");
++  int32_t i, upper_sum, lower_sum;
++
++  // Initialize the ACC.
++  regA = (__ev64_s16__) { 0, 0, 0, 0 };
++  asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++  VERIFY(regD[0] == 0 && regD[1] == 0);
++
++  for (i = 0, upper_sum = 0, lower_sum = 0; i < NELTS(rA4s16); i++) {
++
++    regA = rA4s16[i];
++    regB = rB4s16[i];
++
++    asm volatile ("evmhesmiaaw %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++    upper_sum += (int32_t) ((int32_t) regA[0] * (int32_t) regB[0]);
++    VERIFY(regD[0] == upper_sum);
++    lower_sum += (int32_t) ((int32_t) regA[2] * (int32_t) regB[2]);
++    VERIFY(regD[1] == lower_sum);
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmhesmiaaw_asm, "evmhesmiaaw");
++
++int evmhesmi_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_s16__ regA asm ("30");
++  register __ev64_s16__ regB asm ("29");
++  register __ev64_s32__ regD asm ("28");
++  int32_t i, j;
++
++  // Initialize the ACC.
++  regA = (__ev64_s16__) { 0, 0, 0, 0 };
++  asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++  VERIFY(regD[0] == 0 && regD[1] == 0);
++
++  for (i = 0; i < NELTS(rA4s16); i++) {
++    for (j = 0; j < NELTS(rB4s16); j++) {
++
++      regA = rA4s16[i];
++      regB = rB4s16[j];
++
++      asm volatile ("evmhesmi %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++      VERIFY(regD[0] == ((int32_t) ((int32_t) regA[0] * (int32_t) regB[0])));
++      VERIFY(regD[1] == ((int32_t) ((int32_t) regA[2] * (int32_t) regB[2])));
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmhesmi_asm, "evmhesmi");
++
++int evmhesmia_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_s16__ regA asm ("30");
++  register __ev64_s16__ regB asm ("29");
++  register __ev64_s32__ regC asm ("28");
++  register __ev64_s32__ regD asm ("28");
++  int32_t i, j;
++
++  // Initialize the ACC.
++  regA = (__ev64_s16__) { 0, 0, 0, 0 };
++  asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++  VERIFY(regD[0] == 0 && regD[1] == 0);
++
++  for (i = 0; i < NELTS(rA4s16); i++) {
++    for (j = 0; j < NELTS(rB4s16); j++) {
++
++      // Initialize the ACC.
++      regA = (__ev64_s16__) { 0, 0, 0, 0 };
++      asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++      VERIFY(regD[0] == 0 && regD[1] == 0);
++
++      regA = rA4s16[i];
++      regB = rB4s16[j];
++
++      asm volatile ("evmhesmia %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
++      VERIFY(regD[0] == ((int32_t) ((int32_t) regA[0] * (int32_t) regB[0])));
++      VERIFY(regD[1] == ((int32_t) ((int32_t) regA[2] * (int32_t) regB[2])));
++
++      // (Indirectly) Verify that the product of the multiplication is also recorded in the ACC.
++      regA = (__ev64_s16__) { 0, 0, 0, 0 };
++      asm volatile ("evaddsmiaaw %[b], %[a]" : [b] "=r" (regC) : [a] "r" (regA));
++      VERIFY(regC[0] == regD[0] && regC[1] == regD[1]);
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evmhesmia_asm, "evmhesmia");
++
+ /* NOTE: To avoid having to remaster the .exp files entirely, add
+  *       new test functions /just above/ this comment.
+  *       That way, you only need to worry about the test that you
+@@ -8146,6 +9232,49 @@ test_t spe_isa_ACC_based_add_insns_test_table = {
+   }
+ };
+ 
++test_t spe_isa_ACC_based_multiply_insns_test_table = {
++
++  .type = table,
++  .description = "SPE ISA ACC Based Multiply Instructions Tests",
++  .table = {
++    F(evmwsmi_asm),
++    F(evmwsmia_asm),
++    F(evmwumi_asm),
++    F(evmwumia_asm),
++    F(evmwumiaa_asm),
++    F(evmwumian_asm),
++    F(evmwsmiaa_asm),
++    F(evmwsmian_asm),
++    F(evmwlumianw_asm),
++    F(evmwlumiaaw_asm),
++    F(evmwlumi_asm),
++    F(evmwlumia_asm),
++    F(evmwlsmianw_asm),
++    F(evmwlsmiaaw_asm),
++    F(evmwhumi_asm),
++    F(evmwhumia_asm),
++    F(evmwhsmi_asm),
++    F(evmwhsmia_asm),
++    F(evmhoumianw_asm),
++    F(evmhoumiaaw_asm),
++    F(evmhoumi_asm),
++    F(evmhoumia_asm),
++    F(evmhosmianw_asm),
++    F(evmhosmiaaw_asm),
++    F(evmhosmi_asm),
++    F(evmhosmia_asm),
++    F(evmheumianw_asm),
++    F(evmheumiaaw_asm),
++    F(evmheumi_asm),
++    F(evmheumia_asm),
++    F(evmhesmianw_asm),
++    F(evmhesmiaaw_asm),
++    F(evmhesmi_asm),
++    F(evmhesmia_asm),
++    NULL
++  }
++};
++
+ test_t spe_isa_add_insns_test_table = {
+ 
+   .type = table,
+@@ -8172,6 +9301,7 @@ test_t spe_isa_insn_test_table = {
+     &spe_isa_select_insns_test_table,
+     &spe_isa_ACC_based_add_insns_test_table,
+     &spe_isa_add_insns_test_table,
++    &spe_isa_ACC_based_multiply_insns_test_table,
+     NULL
+   }
+ };
+diff --git a/memcheck/tests/ppc32/test_spe.stderr.exp b/memcheck/tests/ppc32/test_spe.stderr.exp
+index ab92040..391eac1 100644
+--- a/memcheck/tests/ppc32/test_spe.stderr.exp
++++ b/memcheck/tests/ppc32/test_spe.stderr.exp
+@@ -5,7 +5,7 @@ Invalid write of size 4
+    by 0x........: run (test_spe.h:43)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:8365)
++   by 0x........: main (test_spe.c:9495)
+  Address 0x........ is 0 bytes after a block of size 40 alloc'd
+    at 0x........: malloc (vg_replace_malloc.c:...)
+    by 0x........: vg_quick_start_guide_aux (test_spe.c:26)
+@@ -13,7 +13,7 @@ Invalid write of size 4
+    by 0x........: run (test_spe.h:43)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:8365)
++   by 0x........: main (test_spe.c:9495)
+ 
+ 
+ HEAP SUMMARY:
+@@ -27,7 +27,7 @@ HEAP SUMMARY:
+    by 0x........: run (test_spe.h:43)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:8365)
++   by 0x........: main (test_spe.c:9495)
+ 
+ LEAK SUMMARY:
+    definitely lost: 40 bytes in 1 blocks
+diff --git a/memcheck/tests/ppc32/test_spe.stdout.exp b/memcheck/tests/ppc32/test_spe.stdout.exp
+index a04fb12..3f086f2 100644
+--- a/memcheck/tests/ppc32/test_spe.stdout.exp
++++ b/memcheck/tests/ppc32/test_spe.stdout.exp
+@@ -103,6 +103,41 @@ SPE Regression Tests: PASS
+ ....evaddw: PASS
+ ....evsubifw: PASS
+ ....evsubfw: PASS
++...SPE ISA ACC Based Multiply Instructions Tests: PASS
++....evmwsmi: PASS
++....evmwsmia: PASS
++....evmwumi: PASS
++....evmwumia: PASS
++....evmwumiaa: PASS
++....evmwumian: PASS
++....evmwsmiaa: PASS
++....evmwsmian: PASS
++....evmwlumianw: PASS
++....evmwlumiaaw: PASS
++....evmwlumi: PASS
++....evmwlumia: PASS
++....evmwlsmianw: PASS
++....evmwlsmiaaw: PASS
++....evmwhumi: PASS
++....evmwhumia: PASS
++....evmwhsmi: PASS
++....evmwhsmia: PASS
++....evmhoumianw: PASS
++....evmhoumiaaw: PASS
++....evmhoumi: PASS
++....evmhoumia: PASS
++....evmhosmianw: PASS
++....evmhosmiaaw: PASS
++....evmhosmi: PASS
++....evmhosmia: PASS
++....evmheumianw: PASS
++....evmheumiaaw: PASS
++....evmheumi: PASS
++....evmheumia: PASS
++....evmhesmianw: PASS
++....evmhesmiaaw: PASS
++....evmhesmi: PASS
++....evmhesmia: PASS
+ ..SPE2PIM Tests: PASS
+ ...Chapter 2: High-Level Language Interface: PASS
+ ...Chapter 5: Programming Interface Examples: PASS
+diff --git a/regtest-power7-64.log b/regtest-power7-64.log
+index fb51db2..9af0548 100644
+--- a/regtest-power7-64.log
++++ b/regtest-power7-64.log
+@@ -461,7 +461,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -gdwarf-4 -fdebug-types-section -Wno-long-lo
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests'
+-make[5]: Warning: File `.deps/xml1.Po' has modification time 72 s in the future
++make[5]: Warning: File `.deps/xml1.Po' has modification time 73 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -484,7 +484,7 @@ gcc -Winline -Wall -Wshadow -g -Wno-long-long  -Wno-pointer-sign -fno-stack-prot
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/ppc32'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/ppc32'
+-make[5]: Warning: File `.deps/test_spe.Po' has modification time 76 s in the future
++make[5]: Warning: File `.deps/test_spe.Po' has modification time 77 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -504,7 +504,7 @@ gcc -Winline -Wall -Wshadow -g  -Winline -Wall -Wshadow -g -I../../../include -m
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/ppc64'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/ppc64'
+-make[5]: Warning: File `.deps/power_ISA2_05-power_ISA2_05.Po' has modification time 76 s in the future
++make[5]: Warning: File `.deps/power_ISA2_05-power_ISA2_05.Po' has modification time 77 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -551,7 +551,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/linux'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/linux'
+-make[5]: Warning: File `.deps/timerfd-syscall.Po' has modification time 76 s in the future
++make[5]: Warning: File `.deps/timerfd-syscall.Po' has modification time 77 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -605,7 +605,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -fPIC -Wno-long-long  -Wno-pointer-sign -fno
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/cachegrind/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/cachegrind/tests'
+-make[5]: Warning: File `.deps/myprint_so-myprint.Po' has modification time 76 s in the future
++make[5]: Warning: File `.deps/myprint_so-myprint.Po' has modification time 77 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -656,7 +656,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/callgrind/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/callgrind/tests'
+-make[5]: Warning: File `.deps/threads.Po' has modification time 76 s in the future
++make[5]: Warning: File `.deps/threads.Po' has modification time 77 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -764,7 +764,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/massif/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/massif/tests'
+-make[4]: Warning: File `.deps/zero.Po' has modification time 76 s in the future
++make[4]: Warning: File `.deps/zero.Po' has modification time 77 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1066,7 +1066,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests'
+-make[5]: Warning: File `.deps/vgprintf.Po' has modification time 75 s in the future
++make[5]: Warning: File `.deps/vgprintf.Po' has modification time 76 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1226,7 +1226,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Winline -Wall -O -lm -g -mregnames -DHAS_DF
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc64'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc64'
+-make[5]: Warning: File `.deps/twi_tdi.Po' has modification time 73 s in the future
++make[5]: Warning: File `.deps/twi_tdi.Po' has modification time 74 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1255,7 +1255,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/linux'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/linux'
+-make[5]: Warning: File `.deps/mremap3.Po' has modification time 76 s in the future
++make[5]: Warning: File `.deps/mremap3.Po' has modification time 77 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1418,7 +1418,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/helgrind/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/helgrind/tests'
+-make[4]: Warning: File `.deps/tc24_nonzero_sem.Po' has modification time 75 s in the future
++make[4]: Warning: File `.deps/tc24_nonzero_sem.Po' has modification time 76 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1628,7 +1628,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wextra -Wno-inline -Wno-unused-parameter -W
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/drd/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/drd/tests'
+-make[4]: Warning: File `.deps/unit_vc-unit_vc.Po' has modification time 70 s in the future
++make[4]: Warning: File `.deps/unit_vc-unit_vc.Po' has modification time 71 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1689,7 +1689,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-sgcheck/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-sgcheck/tests'
+-make[4]: Warning: File `.deps/stackerr.Po' has modification time 76 s in the future
++make[4]: Warning: File `.deps/stackerr.Po' has modification time 77 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1759,7 +1759,7 @@ gcc -Winline -Wall -Wshadow -g -Wno-long-long  -Wno-pointer-sign -fno-stack-prot
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-bbv/tests/ppc32-linux'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-bbv/tests/ppc32-linux'
+-make[5]: Warning: File `.deps/million.Po' has modification time 76 s in the future
++make[5]: Warning: File `.deps/million.Po' has modification time 77 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1819,7 +1819,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[3]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/tests'
+ make  check-local
+ make[3]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/tests'
+-make[3]: Warning: File `.deps/x86_amd64_features-x86_amd64_features.Po' has modification time 76 s in the future
++make[3]: Warning: File `.deps/x86_amd64_features-x86_amd64_features.Po' has modification time 77 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1901,7 +1901,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[3]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/gdbserver_tests'
+ make  check-local
+ make[3]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/gdbserver_tests'
+-make[3]: Warning: File `.deps/watchpoints.Po' has modification time 76 s in the future
++make[3]: Warning: File `.deps/watchpoints.Po' has modification time 77 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1980,7 +1980,7 @@ badfree-2trace:  valgrind   --num-callers=2 -q ./badfree
+ badfree:         valgrind   -q ./badfree 
+ badfree3:        valgrind   -q --fullpath-after=/proj/ppc/DT/labhome/anmol/valgrind-3.8.1/ ./badfree 
+ badjump:         valgrind   ./badjump 
+-sh: line 1:  7218 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
++sh: line 1: 17113 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
+ badjump2:        valgrind   -q ./badjump2 
+ badloop:         valgrind   -q ./badloop 
+ badpoll:         valgrind   -q ./badpoll 
+@@ -1997,7 +1997,7 @@ clo_redzone_default: valgrind   --leak-check=no -q ./clo_redzone
+ custom-overlap:  valgrind   --leak-check=summary -q ./custom-overlap 
+ custom_alloc:    valgrind   -q ./custom_alloc 
+ deep-backtrace:  valgrind   -q --num-callers=500 ./deep-backtrace 
+-sh: line 1:  7776 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
++sh: line 1: 17676 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
+ deep_templates:  valgrind   -q ./deep_templates 
+ describe-block:  valgrind   ./describe-block 
+ doublefree:      valgrind   -q ./doublefree 
+@@ -2110,7 +2110,7 @@ supp-dir:        valgrind   --suppressions=x86/ ./../../tests/true
+ supp1:           valgrind   --suppressions=supp.supp -q ./supp1 
+ supp2:           valgrind   --suppressions=supp.supp -q ./supp2 
+ supp_unknown:    valgrind   -q --suppressions=supp_unknown.supp ./badjump 
+-sh: line 1: 12471 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
++sh: line 1: 22376 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
+ *** supp_unknown failed (stderr) ***
+ suppfree:        valgrind   --suppressions=suppfree.supp -q ./suppfree 
+ test-plo-no:     valgrind   -q ./test-plo 
+@@ -2246,7 +2246,7 @@ gxx304:          valgrind   ./gxx304
+ ifunc:           (skipping, prereq failed: test -e ifunc)
+ -- Running  tests in none/tests/linux ----------------------------------
+ blockfault:      valgrind   ./blockfault 
+-sh: line 1: 16939 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
++sh: line 1: 26880 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
+ mremap:          valgrind   ./mremap 
+ mremap2:         valgrind   ./mremap2 
+ mremap3:         valgrind   ./mremap3 
+@@ -2412,7 +2412,7 @@ tc20_verifywrap: valgrind   --read-var-info=yes ./tc20_verifywrap
+ *** tc20_verifywrap failed (stderr) ***
+ tc21_pthonce:    valgrind   --read-var-info=yes ./tc21_pthonce 
+ tc22_exit_w_lock: valgrind   ./tc22_exit_w_lock 
+-sh: line 1:  2090 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1: 12027 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   ./tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --hg-sanity-flags=111111 ./tc24_nonzero_sem 
+ -- Finished tests in helgrind/tests ------------------------------------
+@@ -2531,7 +2531,7 @@ tc18_semabuse:   valgrind   ./../../helgrind/tests/tc18_semabuse
+ tc19_shadowmem:  valgrind   --error-limit=no --read-var-info=yes --show-confl-seg=no --num-callers=3 ./../../helgrind/tests/tc19_shadowmem 
+ tc21_pthonce:    valgrind   --num-callers=3 ./../../helgrind/tests/tc21_pthonce 
+ tc22_exit_w_lock: valgrind   --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock 
+-sh: line 1:  7427 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1: 17365 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   --num-callers=3 ./../../helgrind/tests/tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --read-var-info=yes ./../../helgrind/tests/tc24_nonzero_sem 
+ thread_name:     valgrind   --read-var-info=yes --check-stack-var=yes --num-callers=3 ./thread_name 
+-- 
+1.7.3.4
+

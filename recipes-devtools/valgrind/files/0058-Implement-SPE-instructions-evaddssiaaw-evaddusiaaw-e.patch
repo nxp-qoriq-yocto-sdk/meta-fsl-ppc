@@ -1,0 +1,766 @@
+From 34663ad651dc98dd17f5e6996eacd2781e0b1d0f Mon Sep 17 00:00:00 2001
+From: Anmol P. Paralkar <anmol@freescale.com>
+Date: Sat, 11 May 2013 11:11:28 -0700
+Subject: [PATCH 58/65] Implement SPE instructions: { evaddssiaaw, evaddusiaaw, evdivws, evdivwu }.
+
+---
+ FSL-SPE-README.txt                       |   40 +++--
+ VEX/priv/guest_ppc_defs.h                |    4 +
+ VEX/priv/guest_ppc_helpers.c             |    4 +
+ VEX/priv/guest_ppc_toIR.c                |  320 ++++++++++++++++--------------
+ memcheck/tests/ppc32/test_spe.c          |   88 ++++++++
+ memcheck/tests/ppc32/test_spe.stderr.exp |    6 +-
+ memcheck/tests/ppc32/test_spe.stdout.exp |    4 +
+ regtest-power7-64.default-build.log      |   12 +-
+ regtest-power7-64.log                    |   12 +-
+ 9 files changed, 310 insertions(+), 180 deletions(-)
+
+diff --git a/FSL-SPE-README.txt b/FSL-SPE-README.txt
+index 2cf77a8..851f814 100644
+--- a/FSL-SPE-README.txt
++++ b/FSL-SPE-README.txt
+@@ -69,9 +69,8 @@
+ 
+  New instructions implemented in version 3.8.1-FSL-Mon-Apr--8-110008-PDT-2013:
+ 
+- evmhegsmfaa, evmhegsmfan, evmhogsmfaa, evmhogsmfan,
+- evmhegsmiaa, evmhegsmian, evmhegumiaa, evmhegumian,
+- evmhogsmiaa, evmhogsmian, evmhogumiaa, evmhogumian,
++ evmhegsmfaa, evmhegsmfan, evmhogsmfaa, evmhogsmfan, evmhegsmiaa, evmhegsmian,
++ evmhegumiaa, evmhegumian, evmhogsmiaa, evmhogsmian, evmhogumiaa, evmhogumian,
+ 
+  New instructions implemented since last release:
+ 
+@@ -92,26 +91,37 @@
+  evmhousiaaw, evmhousianw, evmwhssf, evmwhssfa, evmwlssiaaw, evmwlssianw, evmwlusiaaw,
+  evmwlusianw, evmwssf, evmwssfa, evmwssfaa, evmwssfan, evsubfssiaaw, evsubfusiaaw,
+ 
++ evaddssiaaw, evaddusiaaw, evdivws, evdivwu,
++
+  brinc
+ 
+- Note: Synthetic instructions appear prefixed with a leading underscore in the
+-       above list. All synthetic instructions are tested as working under
+-       Valgrind even though, strictly speaking, such an instruction is not
+-       explicitly implemented, but works as a result of some other instruction
+-       being implemented.
++ Notes:
++
++ 0. The following instructions are not SPE instructions:
++
++    eciwx, ecowx, ehpriv, eqv, eqv., extsb, extsb., extsh, extsh
++
++    TODO: Verify that Valgrind implements these.
++
++ 1. The instructions:
+ 
+- The following instructions have not been implemented yet:
++    evmwhusiaaw, evmwhusianw
+ 
+- Note: Non SPE instructions are indicated by suffixing them with a '?' sign.
++    are listed by Appendix B of the SPEPEM Rev. 0, 01/2008, however, they are
++    not described in Chapter 5 of the SPEPEM, and the GNU assembler 2.21.1 does
++    not recognize their opcode's either.
+ 
+- eciwx?, ecowx?, ehpriv?, eqv?, eqv.?, extsb?, extsb.?, extsh?, extsh.?
++ 2. Per the SPEPEM, the instructions:
+ 
+- evaddssiaaw, evaddusiaaw, evdivws, evdivwu, evmwhusiaaw, evmwhusianw,
++    efdcfsid, efdcfuid, efdctsidz, efdctuidz
+ 
+- The following instructions may only be implemented for 64-bit implementations,
+- and are hence out of scope for this porting effort:
++    may only be implemented for 64-bit implementations, and are hence out of
++    scope for this porting effort.
+ 
+- efdcfsid, efdcfuid, efdctsidz, efdctuidz.
++ 3. Synthetic instructions appear prefixed with a leading underscore in the list
++    above. All synthetic instructions are tested as working under Valgrind even
++    though, strictly speaking, such an instruction is not explicitly implemented
++    but works as a result of some other instruction being implemented.
+ 
+  Simple UNIX Utilities running under Valgrind on a p1022ds Linux system
+  ----------------------------------------------------------------------
+diff --git a/VEX/priv/guest_ppc_defs.h b/VEX/priv/guest_ppc_defs.h
+index 96734c6..b21c49f 100644
+--- a/VEX/priv/guest_ppc_defs.h
++++ b/VEX/priv/guest_ppc_defs.h
+@@ -406,6 +406,10 @@ SPE_DIRTY_HELPER_DECL_ACCrDrArB(evmwssfan);
+ SPE_DIRTY_HELPER_DECL_ACCrDrA(evsubfusiaaw);
+ SPE_DIRTY_HELPER_DECL_ACCrDrA(evsubfssiaaw);
+ SPE_DIRTY_HELPER_DECL_rDrArB(brinc);
++SPE_DIRTY_HELPER_DECL_ACCrDrA(evaddssiaaw);
++SPE_DIRTY_HELPER_DECL_ACCrDrA(evaddusiaaw);
++SPE_DIRTY_HELPER_DECL_rDrArB(evdivws);
++SPE_DIRTY_HELPER_DECL_rDrArB(evdivwu);
+ 
+ #endif /* ndef __VEX_GUEST_PPC_DEFS_H */
+ 
+diff --git a/VEX/priv/guest_ppc_helpers.c b/VEX/priv/guest_ppc_helpers.c
+index de207c1..59924fb 100644
+--- a/VEX/priv/guest_ppc_helpers.c
++++ b/VEX/priv/guest_ppc_helpers.c
+@@ -1715,6 +1715,10 @@ void spe_dirtyhelper_##insn ( VexGuestPPC32State* gst, UInt ACC_off, UInt rD_off
+ 
+ SPE_DIRTY_HELPER_DEFN_ACCrDrA(evsubfssiaaw,  __ev64_opaque__, __ev64_opaque__, 1, 1)
+ SPE_DIRTY_HELPER_DEFN_ACCrDrA(evsubfusiaaw,  __ev64_opaque__, __ev64_opaque__, 1, 1)
++SPE_DIRTY_HELPER_DEFN_ACCrDrA(evaddssiaaw,   __ev64_opaque__, __ev64_opaque__, 1, 1)
++SPE_DIRTY_HELPER_DEFN_ACCrDrA(evaddusiaaw,   __ev64_opaque__, __ev64_opaque__, 1, 1)
++SPE_DIRTY_HELPER_DEFN_rDrArB(evdivws,        __ev64_opaque__, __ev64_opaque__, __ev64_opaque__)
++SPE_DIRTY_HELPER_DEFN_rDrArB(evdivwu,        __ev64_opaque__, __ev64_opaque__, __ev64_opaque__)
+ 
+ SPE_DIRTY_HELPER_DEFN_rDrArB(brinc, __ev64_opaque__, __ev64_opaque__, __ev64_opaque__)
+ 
+diff --git a/VEX/priv/guest_ppc_toIR.c b/VEX/priv/guest_ppc_toIR.c
+index 2b111a7..f28be19 100644
+--- a/VEX/priv/guest_ppc_toIR.c
++++ b/VEX/priv/guest_ppc_toIR.c
+@@ -11727,6 +11727,156 @@ static Bool dis_dfp_significant_digits( UInt theInstr )
+ /*--- Freescale Semiconductor, Inc.                                   ---*/
+ /*-----------------------------------------------------------------------*/
+ 
++#define PREPARE_DIRTY_HELPER_CALL_rDrArB(insn)                   \
++     args = mkIRExprVec_3 ( mkU32( rD_off ),                     \
++                            mkU32( rA_off ),                     \
++                            mkU32( rB_off ) );                   \
++     d = unsafeIRDirty_0_N (0 /* regparms */,                    \
++                            "spe_dirtyhelper_" #insn,            \
++                            &spe_dirtyhelper_##insn,             \
++                            args);                               \
++     DIP( #insn " r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr ); \
++     /* declare guest state effects */                           \
++     d->needsBBP = True;                                         \
++     d->nFxState = 3;                                            \
++     vex_bzero(&d->fxState, sizeof(d->fxState));                 \
++     d->fxState[0].fx     = Ifx_Write;                           \
++     d->fxState[0].offset = rD_off;                              \
++     d->fxState[0].size   = sizeof(ULong);                       \
++     d->fxState[1].fx     = Ifx_Read;                            \
++     d->fxState[1].offset = rA_off;                              \
++     d->fxState[1].size   = sizeof(ULong);                       \
++     d->fxState[2].fx     = Ifx_Read;                            \
++     d->fxState[2].offset = rB_off;                              \
++     d->fxState[2].size   = sizeof(ULong);                       \
++                                                                 \
++     /* execute the dirty call, side-effecting guest state */    \
++     stmt( IRStmt_Dirty(d) );
++
++#define PREPARE_DIRTY_HELPER_CALL_ACCrDrArB(insn, ACC_IREffect)  \
++     args = mkIRExprVec_4 ( mkU32( ACC_off ),                    \
++                            mkU32( rD_off ),                     \
++                            mkU32( rA_off ),                     \
++                            mkU32( rB_off ) );                   \
++     d = unsafeIRDirty_0_N (0 /* regparms */,                    \
++                            "spe_dirtyhelper_" #insn,            \
++                            &spe_dirtyhelper_##insn,             \
++                            args);                               \
++     DIP( #insn " r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr ); \
++     /* declare guest state effects */                           \
++     d->needsBBP = True;                                         \
++     d->nFxState = 4;                                            \
++     vex_bzero(&d->fxState, sizeof(d->fxState));                 \
++     d->fxState[0].fx     = ACC_IREffect;                        \
++     d->fxState[0].offset = ACC_off;                             \
++     d->fxState[0].size   = sizeof(ULong);                       \
++     d->fxState[1].fx     = Ifx_Write;                           \
++     d->fxState[1].offset = rD_off;                              \
++     d->fxState[1].size   = 2 * sizeof(UInt);                    \
++     d->fxState[2].fx     = Ifx_Read;                            \
++     d->fxState[2].offset = rA_off;                              \
++     d->fxState[2].size   = 2 * sizeof(UInt);                    \
++     d->fxState[3].fx     = Ifx_Read;                            \
++     d->fxState[3].offset = rB_off;                              \
++     d->fxState[3].size   = 2 * sizeof(UInt);                    \
++                                                                 \
++     /* execute the dirty call, side-effecting guest state */    \
++     stmt( IRStmt_Dirty(d) );
++
++#define PREPARE_DIRTY_HELPER_CALL_crfDrArB(insn)                   \
++     args = mkIRExprVec_2 ( mkU32( rA_off ),                       \
++                            mkU32( rB_off ) );                     \
++     d = unsafeIRDirty_1_N (val,                                   \
++                            0 /* regparms */,                      \
++                            "spe_dirtyhelper_" #insn,              \
++                            &spe_dirtyhelper_##insn,               \
++                            args);                                 \
++     DIP( #insn " CR%d, r%d, r%d\n", CR_field, rA_addr, rB_addr ); \
++     /* declare guest state effects */                             \
++     d->needsBBP = True;                                           \
++     d->nFxState = 2;                                              \
++     vex_bzero(&d->fxState, sizeof(d->fxState));                   \
++     d->fxState[0].fx     = Ifx_Read;                              \
++     d->fxState[0].offset = rA_off;                                \
++     d->fxState[0].size   = sizeof(ULong);                         \
++     d->fxState[1].fx     = Ifx_Read;                              \
++     d->fxState[1].offset = rB_off;                                \
++     d->fxState[1].size   = sizeof(ULong);                         \
++                                                                   \
++     /* execute the dirty call, side-effecting guest state */      \
++     stmt( IRStmt_Dirty(d) );                                      \
++     UPDATE_CR(val);
++
++#define PREPARE_DIRTY_HELPER_CALL_rDrB(insn)                  \
++     args = mkIRExprVec_2 ( mkU32( rD_off ),                  \
++                            mkU32( rB_off ) );                \
++     d = unsafeIRDirty_0_N (0 /* regparms */,                 \
++                            "spe_dirtyhelper_" #insn,         \
++                            &spe_dirtyhelper_##insn,          \
++                            args);                            \
++     DIP( #insn " r%d, r%d\n", rD_addr, rB_addr );            \
++     /* declare guest state effects */                        \
++     d->needsBBP = True;                                      \
++     d->nFxState = 2;                                         \
++     vex_bzero(&d->fxState, sizeof(d->fxState));              \
++     d->fxState[0].fx     = Ifx_Write;                        \
++     d->fxState[0].offset = rD_off;                           \
++     d->fxState[0].size   = sizeof(ULong);                    \
++     d->fxState[1].fx     = Ifx_Read;                         \
++     d->fxState[1].offset = rB_off;                           \
++     d->fxState[1].size   = sizeof(ULong);                    \
++                                                              \
++     /* execute the dirty call, side-effecting guest state */ \
++     stmt( IRStmt_Dirty(d) );
++
++#define PREPARE_DIRTY_HELPER_CALL_rDrA(insn)                  \
++     args = mkIRExprVec_2 ( mkU32( rD_off ),                  \
++                            mkU32( rA_off ) );                \
++     d = unsafeIRDirty_0_N (0 /* regparms */,                 \
++                            "spe_dirtyhelper_" #insn,         \
++                            &spe_dirtyhelper_##insn,          \
++                            args);                            \
++     DIP( #insn " r%d, r%d\n", rD_addr, rA_addr );            \
++     /* declare guest state effects */                        \
++     d->needsBBP = True;                                      \
++     d->nFxState = 2;                                         \
++     vex_bzero(&d->fxState, sizeof(d->fxState));              \
++     d->fxState[0].fx     = Ifx_Write;                        \
++     d->fxState[0].offset = rD_off;                           \
++     d->fxState[0].size   = sizeof(ULong);                    \
++     d->fxState[1].fx     = Ifx_Read;                         \
++     d->fxState[1].offset = rA_off;                           \
++     d->fxState[1].size   = sizeof(ULong);                    \
++                                                              \
++     /* execute the dirty call, side-effecting guest state */ \
++     stmt( IRStmt_Dirty(d) );
++
++#define PREPARE_DIRTY_HELPER_CALL_ACCrDrA(insn, ACC_IREffect) \
++     args = mkIRExprVec_3 ( mkU32( ACC_off ),                 \
++                            mkU32( rD_off ),                  \
++                            mkU32( rA_off ) );                \
++     d = unsafeIRDirty_0_N (0 /* regparms */,                 \
++                            "spe_dirtyhelper_" #insn,         \
++                            &spe_dirtyhelper_##insn,          \
++                            args);                            \
++     DIP( #insn " r%d, r%d\n", rD_addr, rA_addr );            \
++     /* declare guest state effects */                        \
++     d->needsBBP = True;                                      \
++     d->nFxState = 3;                                         \
++     vex_bzero(&d->fxState, sizeof(d->fxState));              \
++     d->fxState[0].fx     = ACC_IREffect;                     \
++     d->fxState[0].offset = ACC_off;                          \
++     d->fxState[0].size   = sizeof(ULong);                    \
++     d->fxState[1].fx     = Ifx_Write;                        \
++     d->fxState[1].offset = rD_off;                           \
++     d->fxState[1].size   = 2 * sizeof(UInt);                 \
++     d->fxState[2].fx     = Ifx_Read;                         \
++     d->fxState[2].offset = rA_off;                           \
++     d->fxState[2].size   = 2 * sizeof(UInt);                 \
++                                                              \
++     /* execute the dirty call, side-effecting guest state */ \
++     stmt( IRStmt_Dirty(d) );
++
+ /*
+  * SPE Load Instructions
+  */
+@@ -12396,32 +12546,6 @@ static IRExpr* spe_round_word ( IRExpr* src )
+                 mkU32 ( 0xFFFF0000 ) );
+ }
+ 
+-#define PREPARE_DIRTY_HELPER_CALL_rDrArB(insn)                   \
+-     args = mkIRExprVec_3 ( mkU32( rD_off ),                     \
+-                            mkU32( rA_off ),                     \
+-                            mkU32( rB_off ) );                   \
+-     d = unsafeIRDirty_0_N (0 /* regparms */,                    \
+-                            "spe_dirtyhelper_" #insn,            \
+-                            &spe_dirtyhelper_##insn,             \
+-                            args);                               \
+-     DIP( #insn " r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr ); \
+-     /* declare guest state effects */                           \
+-     d->needsBBP = True;                                         \
+-     d->nFxState = 3;                                            \
+-     vex_bzero(&d->fxState, sizeof(d->fxState));                 \
+-     d->fxState[0].fx     = Ifx_Write;                           \
+-     d->fxState[0].offset = rD_off;                              \
+-     d->fxState[0].size   = sizeof(ULong);                       \
+-     d->fxState[1].fx     = Ifx_Read;                            \
+-     d->fxState[1].offset = rA_off;                              \
+-     d->fxState[1].size   = sizeof(ULong);                       \
+-     d->fxState[2].fx     = Ifx_Read;                            \
+-     d->fxState[2].offset = rB_off;                              \
+-     d->fxState[2].size   = sizeof(ULong);                       \
+-                                                                 \
+-     /* execute the dirty call, side-effecting guest state */    \
+-     stmt( IRStmt_Dirty(d) );
+-
+ static Bool dis_spe_bitwise ( UInt theInstr )
+ {
+    /* EVX-Form */
+@@ -13223,32 +13347,6 @@ static Bool dis_spe_initialize_ACC ( UInt theInstr )
+   return True;
+ }
+ 
+-#define PREPARE_DIRTY_HELPER_CALL_ACCrDrA(insn, ACC_IREffect) \
+-     args = mkIRExprVec_3 ( mkU32( ACC_off ),                 \
+-                            mkU32( rD_off ),                  \
+-                            mkU32( rA_off ) );                \
+-     d = unsafeIRDirty_0_N (0 /* regparms */,                 \
+-                            "spe_dirtyhelper_" #insn,         \
+-                            &spe_dirtyhelper_##insn,          \
+-                            args);                            \
+-     DIP( #insn " r%d, r%d\n", rD_addr, rA_addr );            \
+-     /* declare guest state effects */                        \
+-     d->needsBBP = True;                                      \
+-     d->nFxState = 3;                                         \
+-     vex_bzero(&d->fxState, sizeof(d->fxState));              \
+-     d->fxState[0].fx     = ACC_IREffect;                     \
+-     d->fxState[0].offset = ACC_off;                          \
+-     d->fxState[0].size   = sizeof(ULong);                    \
+-     d->fxState[1].fx     = Ifx_Write;                        \
+-     d->fxState[1].offset = rD_off;                           \
+-     d->fxState[1].size   = 2 * sizeof(UInt);                 \
+-     d->fxState[2].fx     = Ifx_Read;                         \
+-     d->fxState[2].offset = rA_off;                           \
+-     d->fxState[2].size   = 2 * sizeof(UInt);                 \
+-                                                              \
+-     /* execute the dirty call, side-effecting guest state */ \
+-     stmt( IRStmt_Dirty(d) );
+-
+ static Bool dis_spe_ACC_based_add_insns ( UInt theInstr )
+ {
+   /* EVX-Form */
+@@ -13288,6 +13386,14 @@ static Bool dis_spe_ACC_based_add_insns ( UInt theInstr )
+      return False;
+   }
+   switch (opc2) {
++  case 0x4c0:
++     // evaddusiaaw (Vector Add Unigned, Saturate, Integer to Accumulator Word, SPEPEM p5-73)
++     PREPARE_DIRTY_HELPER_CALL_ACCrDrA(evaddusiaaw, Ifx_Modify);
++     return True;
++  case 0x4c1:
++     // evaddssiaaw (Vector Add Signed, Saturate, Integer to Accumulator Word, SPEPEM p5-71)
++     PREPARE_DIRTY_HELPER_CALL_ACCrDrA(evaddssiaaw, Ifx_Modify);
++     return True;
+   case 0x4c2:
+      // evsubfusiaaw (Vector Subtract Unsigned, Saturate, Integer to Accumulator Word, SPEPEM p5-245)
+      PREPARE_DIRTY_HELPER_CALL_ACCrDrA(evsubfusiaaw, Ifx_Modify);
+@@ -13296,6 +13402,14 @@ static Bool dis_spe_ACC_based_add_insns ( UInt theInstr )
+      // evsubfssiaaw (Vector Subtract Signed, Saturate, Integer to Accumulator Word, SPEPEM p5-243)
+      PREPARE_DIRTY_HELPER_CALL_ACCrDrA(evsubfssiaaw, Ifx_Modify);
+      return True;
++  case 0x4c6:
++     // evdivws (Vector Divide Word Signed, SPEPEM p5-84)
++     PREPARE_DIRTY_HELPER_CALL_rDrArB(evdivws);
++     return True;
++  case 0x4c7:
++     // evdivwu (Vector Divide Word Unsigned, SPEPEM p5-85)
++     PREPARE_DIRTY_HELPER_CALL_rDrArB(evdivwu);
++     return True;
+   case 0x4c8:
+      // evaddumiaaw (Vector Add Unsigned, Modulo, Integer to Accumulator Word, SPEPEM p5-72)
+      DIP( "evaddumiaaw r%d, r%d\n", rD_addr, rA_addr );
+@@ -14285,104 +14399,6 @@ static Bool dis_spe_ACC_based_multiply_insns ( UInt theInstr )
+   return True;
+ }
+ 
+-#define PREPARE_DIRTY_HELPER_CALL_ACCrDrArB(insn, ACC_IREffect) \
+-     args = mkIRExprVec_4 ( mkU32( ACC_off ),                   \
+-                            mkU32( rD_off ),                    \
+-                            mkU32( rA_off ),                    \
+-                            mkU32( rB_off ) );                  \
+-     d = unsafeIRDirty_0_N (0 /* regparms */,                   \
+-                            "spe_dirtyhelper_" #insn,           \
+-                            &spe_dirtyhelper_##insn,            \
+-                            args);                              \
+-     DIP( #insn " r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );     \
+-     /* declare guest state effects */                          \
+-     d->needsBBP = True;                                        \
+-     d->nFxState = 4;                                           \
+-     vex_bzero(&d->fxState, sizeof(d->fxState));                \
+-     d->fxState[0].fx     = ACC_IREffect;                       \
+-     d->fxState[0].offset = ACC_off;                            \
+-     d->fxState[0].size   = sizeof(ULong);                      \
+-     d->fxState[1].fx     = Ifx_Write;                          \
+-     d->fxState[1].offset = rD_off;                             \
+-     d->fxState[1].size   = 2 * sizeof(UInt);                   \
+-     d->fxState[2].fx     = Ifx_Read;                           \
+-     d->fxState[2].offset = rA_off;                             \
+-     d->fxState[2].size   = 2 * sizeof(UInt);                   \
+-     d->fxState[3].fx     = Ifx_Read;                           \
+-     d->fxState[3].offset = rB_off;                             \
+-     d->fxState[3].size   = 2 * sizeof(UInt);                   \
+-                                                                \
+-     /* execute the dirty call, side-effecting guest state */   \
+-     stmt( IRStmt_Dirty(d) );
+-
+-#define PREPARE_DIRTY_HELPER_CALL_crfDrArB(insn)                   \
+-     args = mkIRExprVec_2 ( mkU32( rA_off ),                       \
+-                            mkU32( rB_off ) );                     \
+-     d = unsafeIRDirty_1_N (val,                                   \
+-                            0 /* regparms */,                      \
+-                            "spe_dirtyhelper_" #insn,              \
+-                            &spe_dirtyhelper_##insn,               \
+-                            args);                                 \
+-     DIP( #insn " CR%d, r%d, r%d\n", CR_field, rA_addr, rB_addr ); \
+-     /* declare guest state effects */                             \
+-     d->needsBBP = True;                                           \
+-     d->nFxState = 2;                                              \
+-     vex_bzero(&d->fxState, sizeof(d->fxState));                   \
+-     d->fxState[0].fx     = Ifx_Read;                              \
+-     d->fxState[0].offset = rA_off;                                \
+-     d->fxState[0].size   = sizeof(ULong);                         \
+-     d->fxState[1].fx     = Ifx_Read;                              \
+-     d->fxState[1].offset = rB_off;                                \
+-     d->fxState[1].size   = sizeof(ULong);                         \
+-                                                                   \
+-     /* execute the dirty call, side-effecting guest state */      \
+-     stmt( IRStmt_Dirty(d) );                                      \
+-     UPDATE_CR(val);
+-
+-#define PREPARE_DIRTY_HELPER_CALL_rDrB(insn)                  \
+-     args = mkIRExprVec_2 ( mkU32( rD_off ),                  \
+-                            mkU32( rB_off ) );                \
+-     d = unsafeIRDirty_0_N (0 /* regparms */,                 \
+-                            "spe_dirtyhelper_" #insn,         \
+-                            &spe_dirtyhelper_##insn,          \
+-                            args);                            \
+-     DIP( #insn " r%d, r%d\n", rD_addr, rB_addr );            \
+-     /* declare guest state effects */                        \
+-     d->needsBBP = True;                                      \
+-     d->nFxState = 2;                                         \
+-     vex_bzero(&d->fxState, sizeof(d->fxState));              \
+-     d->fxState[0].fx     = Ifx_Write;                        \
+-     d->fxState[0].offset = rD_off;                           \
+-     d->fxState[0].size   = sizeof(ULong);                    \
+-     d->fxState[1].fx     = Ifx_Read;                         \
+-     d->fxState[1].offset = rB_off;                           \
+-     d->fxState[1].size   = sizeof(ULong);                    \
+-                                                              \
+-     /* execute the dirty call, side-effecting guest state */ \
+-     stmt( IRStmt_Dirty(d) );
+-
+-#define PREPARE_DIRTY_HELPER_CALL_rDrA(insn)                  \
+-     args = mkIRExprVec_2 ( mkU32( rD_off ),                  \
+-                            mkU32( rA_off ) );                \
+-     d = unsafeIRDirty_0_N (0 /* regparms */,                 \
+-                            "spe_dirtyhelper_" #insn,         \
+-                            &spe_dirtyhelper_##insn,          \
+-                            args);                            \
+-     DIP( #insn " r%d, r%d\n", rD_addr, rA_addr );            \
+-     /* declare guest state effects */                        \
+-     d->needsBBP = True;                                      \
+-     d->nFxState = 2;                                         \
+-     vex_bzero(&d->fxState, sizeof(d->fxState));              \
+-     d->fxState[0].fx     = Ifx_Write;                        \
+-     d->fxState[0].offset = rD_off;                           \
+-     d->fxState[0].size   = sizeof(ULong);                    \
+-     d->fxState[1].fx     = Ifx_Read;                         \
+-     d->fxState[1].offset = rA_off;                           \
+-     d->fxState[1].size   = sizeof(ULong);                    \
+-                                                              \
+-     /* execute the dirty call, side-effecting guest state */ \
+-     stmt( IRStmt_Dirty(d) );
+-
+ static Bool dis_spe_ACC_based_multiply_insns_via_dirty_helpers ( UInt theInstr )
+ {
+   /* EVX-Form */
+@@ -21983,8 +21999,12 @@ DisResult disInstr_PPC_WRK (
+          if (!allow_SPE) goto decode_noSPE;
+          if (dis_spe_initialize_ACC( theInstr )) goto decode_success;
+          goto decode_failure;
++      case 0x4c0: // evaddusiaaw
++      case 0x4c1: // evaddssiaaw
+       case 0x4c2: // evsubfusiaaw
+       case 0x4c3: // evsubfssiaaw
++      case 0x4c6: // evdivws
++      case 0x4c7: // evdivwu
+       case 0x4c8: // evaddumiaaw
+       case 0x4c9: // evaddsmiaaw
+       case 0x4ca: // evsubfumiaaw
+diff --git a/memcheck/tests/ppc32/test_spe.c b/memcheck/tests/ppc32/test_spe.c
+index ca0b05c..2a73ec3 100644
+--- a/memcheck/tests/ppc32/test_spe.c
++++ b/memcheck/tests/ppc32/test_spe.c
+@@ -19545,6 +19545,86 @@ SPE_DEFN_rDrArB(brinc, __ev64_u64__, __ev64_u64__, __ev64_u64__, 0, "0x%llx\n",
+  { { 0xdead001f }, { 0xdeadbeefdeadbeef }, { 0x1f } },
+  { { 0xdead001f }, { 0xdeadbeefdeadbeef }, { 0x3f } })
+ 
++#ifdef __SPE__
++__ev64_s32__ evaddssiaaw_baseline[] = {
++
++  (__ev64_s32__) { 0x1, 0xd },
++  (__ev64_s32__) { 0xe, 0x1a },
++  (__ev64_s32__) { 0x17, 0x1f },
++  (__ev64_s32__) { 0x1f, 0x29 },
++  (__ev64_s32__) { 0x23, 0x35 },
++  (__ev64_s32__) { 0x23, 0x38 },
++  (__ev64_s32__) { 0x26, 0x3c },
++  (__ev64_s32__) { 0x26, 0x4b },
++
++};
++#endif // __SPE__
++evsubrDrA(evaddssiaaw, __ev64_s32__, __ev64_s32__, rA2s32_sd, 0, 1)
++
++#undef  rA_type_ZERO
++#define rA_type_ZERO ((__ev64_u32__) { 0x0, 0x0 })
++#undef  rD_type_ZERO
++#define rD_type_ZERO ((__ev64_u32__) { 0x0, 0x0 })
++
++#ifdef __SPE__
++__ev64_u32__ evaddusiaaw_baseline[] = {
++
++  (__ev64_u32__) { 0x2, 0xd },
++  (__ev64_u32__) { 0x6, 0x1b },
++  (__ev64_u32__) { 0x10, 0x1f },
++  (__ev64_u32__) { 0x1c, 0x2b },
++  (__ev64_u32__) { 0x1f, 0x30 },
++  (__ev64_u32__) { 0x20, 0x36 },
++  (__ev64_u32__) { 0x24, 0x42 },
++  (__ev64_u32__) { 0x2a, 0x46 },
++
++};
++#endif // __SPE__
++evsubrDrA(evaddusiaaw, __ev64_u32__, __ev64_u32__, rA2u32_sd, 0, 1)
++
++#undef UEXTRACTOR
++#undef LEXTRACTOR
++#undef EXTRACTOR
++#undef FSCHECK
++#define UEXTRACTOR(v) __ev_get_upper_s32(v)
++#define LEXTRACTOR(v) __ev_get_lower_s32(v)
++#define EXTRACTOR(v) UEXTRACTOR(v), LEXTRACTOR(v)
++#define FSCHECK(result_val, test_val) \
++ ((UEXTRACTOR(result_val) == UEXTRACTOR(test_val)) && \
++  (LEXTRACTOR(result_val) == LEXTRACTOR(test_val)))
++
++#undef EVFS_FORMAT
++#define EVFS_FORMAT "{ %d, %d }\n"
++
++SPE_DEFN_rDrArB(evdivws, __ev64_s32__, __ev64_s32__, __ev64_s32__, 0, EVFS_FORMAT,
++ { { 3, -3 }, { 12, -18 }, { 4, 6 } },
++ { { 1,  0 }, {  7,   0 }, { 7, 5 } })
++
++SPE_DEFN_rDrArB(evdivwu, __ev64_u32__, __ev64_u32__, __ev64_u32__, 0, EVFS_FORMAT,
++ { { 3, +3 }, { 12, +18 }, { 4, 6 } },
++ { { 1,  0 }, {  7,   0 }, { 7, 5 } })
++
++#undef  rA_type_ZERO
++#define rA_type_ZERO ((__ev64_u32__) { 0x0, 0x0 })
++#undef  rD_type_ZERO
++#define rD_type_ZERO ((__ev64_u32__) { 0x0, 0x0 })
++
++#if 0
++/* /tmp/ccu8GSti.s:201161: Error: Unrecognized opcode: `evmwhusiaaw' */
++#ifdef __SPE__
++__ev64_u32__ evmwhusiaaw_baseline[] = {
++};
++#endif // __SPE__
++evmrDrArB(evmwhusiaaw, __ev64_u32__, __ev64_u32__, __ev64_u32__, rA2u32_sd, rB2u32_sd, 1, 1)
++
++/* /tmp/cc7JcGLS.s:201313: Error: Unrecognized opcode: `evmwhusianw' */
++#ifdef __SPE__
++__ev64_u32__ evmwhusianw_baseline[] = {
++};
++#endif // __SPE__
++evmrDrArB(evmwhusianw, __ev64_u32__, __ev64_u32__, __ev64_u32__, rA2u32_sd, rB2u32_sd, 1, 1)
++#endif
++
+ /* NOTE: To avoid having to remaster the .exp files entirely, add
+  *       new test functions /just above/ this comment.
+  *       That way, you only need to worry about the test that you
+@@ -19723,6 +19803,10 @@ test_t spe_isa_ACC_based_add_insns_test_table = {
+     F(evsubfumiaaw_asm),
+     F(evsubfusiaaw_asm),
+     F(evsubfssiaaw_asm),
++    F(evaddssiaaw_asm),
++    F(evaddusiaaw_asm),
++    F(evdivws_asm),
++    F(evdivwu_asm),
+     NULL
+   }
+ };
+@@ -19840,6 +19924,10 @@ test_t spe_isa_ACC_based_fractional_multiply_insns_test_table = {
+     F(evmwssfa_asm),
+     F(evmwssfaa_asm),
+     F(evmwssfan_asm),
++#if 0
++    F(evmwhusiaaw_asm),
++    F(evmwhusianw_asm),
++#endif
+     NULL
+   }
+ };
+diff --git a/memcheck/tests/ppc32/test_spe.stderr.exp b/memcheck/tests/ppc32/test_spe.stderr.exp
+index 8694bab..394d303 100644
+--- a/memcheck/tests/ppc32/test_spe.stderr.exp
++++ b/memcheck/tests/ppc32/test_spe.stderr.exp
+@@ -5,7 +5,7 @@ Invalid write of size 4
+    by 0x........: run (test_spe.h:44)
+    by 0x........: run (test_spe.h:50)
+    by 0x........: run (test_spe.h:50)
+-   by 0x........: main (test_spe.c:20175)
++   by 0x........: main (test_spe.c:20263)
+  Address 0x........ is 0 bytes after a block of size 40 alloc'd
+    at 0x........: malloc (vg_replace_malloc.c:...)
+    by 0x........: vg_quick_start_guide_aux (test_spe.c:26)
+@@ -13,7 +13,7 @@ Invalid write of size 4
+    by 0x........: run (test_spe.h:44)
+    by 0x........: run (test_spe.h:50)
+    by 0x........: run (test_spe.h:50)
+-   by 0x........: main (test_spe.c:20175)
++   by 0x........: main (test_spe.c:20263)
+ 
+ 
+ HEAP SUMMARY:
+@@ -27,7 +27,7 @@ HEAP SUMMARY:
+    by 0x........: run (test_spe.h:44)
+    by 0x........: run (test_spe.h:50)
+    by 0x........: run (test_spe.h:50)
+-   by 0x........: main (test_spe.c:20175)
++   by 0x........: main (test_spe.c:20263)
+ 
+ LEAK SUMMARY:
+    definitely lost: 40 bytes in 1 blocks
+diff --git a/memcheck/tests/ppc32/test_spe.stdout.exp b/memcheck/tests/ppc32/test_spe.stdout.exp
+index 3c46459..1513a8d 100644
+--- a/memcheck/tests/ppc32/test_spe.stdout.exp
++++ b/memcheck/tests/ppc32/test_spe.stdout.exp
+@@ -101,6 +101,10 @@ SPE Regression Tests: PASS
+ ....evsubfumiaaw: PASS
+ ....evsubfusiaaw: PASS
+ ....evsubfssiaaw: PASS
++....evaddssiaaw: PASS
++....evaddusiaaw: PASS
++....evdivws: PASS
++....evdivwu: PASS
+ ...SPE ISA Add/Subtract Instructions Tests: PASS
+ ....evaddiw: PASS
+ ....evaddw: PASS
+diff --git a/regtest-power7-64.default-build.log b/regtest-power7-64.default-build.log
+index 0bf994f..112b3e7 100644
+--- a/regtest-power7-64.default-build.log
++++ b/regtest-power7-64.default-build.log
+@@ -1944,7 +1944,7 @@ badfree-2trace:  valgrind   --num-callers=2 -q ./badfree
+ badfree:         valgrind   -q ./badfree 
+ badfree3:        valgrind   -q --fullpath-after=/proj/ppc/DT/labhome/anmol/valgrind-3.8.1/ ./badfree 
+ badjump:         valgrind   ./badjump 
+-sh: line 1: 19552 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
++sh: line 1: 21368 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
+ badjump2:        valgrind   -q ./badjump2 
+ badloop:         valgrind   -q ./badloop 
+ badpoll:         valgrind   -q ./badpoll 
+@@ -1961,7 +1961,7 @@ clo_redzone_default: valgrind   --leak-check=no -q ./clo_redzone
+ custom-overlap:  valgrind   --leak-check=summary -q ./custom-overlap 
+ custom_alloc:    valgrind   -q ./custom_alloc 
+ deep-backtrace:  valgrind   -q --num-callers=500 ./deep-backtrace 
+-sh: line 1: 20112 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
++sh: line 1: 21930 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
+ deep_templates:  valgrind   -q ./deep_templates 
+ describe-block:  valgrind   ./describe-block 
+ doublefree:      valgrind   -q ./doublefree 
+@@ -2073,7 +2073,7 @@ supp-dir:        valgrind   --suppressions=x86/ ./../../tests/true
+ supp1:           valgrind   --suppressions=supp.supp -q ./supp1 
+ supp2:           valgrind   --suppressions=supp.supp -q ./supp2 
+ supp_unknown:    valgrind   -q --suppressions=supp_unknown.supp ./badjump 
+-sh: line 1: 25504 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
++sh: line 1: 26620 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
+ *** supp_unknown failed (stderr) ***
+ suppfree:        valgrind   --suppressions=suppfree.supp -q ./suppfree 
+ test-plo-no:     valgrind   -q ./test-plo 
+@@ -2210,7 +2210,7 @@ gxx304:          valgrind   ./gxx304
+ ifunc:           (skipping, prereq failed: test -e ifunc)
+ -- Running  tests in none/tests/linux ----------------------------------
+ blockfault:      valgrind   ./blockfault 
+-sh: line 1: 30667 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
++sh: line 1: 31099 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
+ mremap:          valgrind   ./mremap 
+ mremap2:         valgrind   ./mremap2 
+ mremap3:         valgrind   ./mremap3 
+@@ -2376,7 +2376,7 @@ tc20_verifywrap: valgrind   --read-var-info=yes ./tc20_verifywrap
+ *** tc20_verifywrap failed (stderr) ***
+ tc21_pthonce:    valgrind   --read-var-info=yes ./tc21_pthonce 
+ tc22_exit_w_lock: valgrind   ./tc22_exit_w_lock 
+-sh: line 1: 16289 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1: 16278 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   ./tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --hg-sanity-flags=111111 ./tc24_nonzero_sem 
+ -- Finished tests in helgrind/tests ------------------------------------
+@@ -2493,7 +2493,7 @@ tc18_semabuse:   valgrind   ./../../helgrind/tests/tc18_semabuse
+ tc19_shadowmem:  valgrind   --error-limit=no --read-var-info=yes --show-confl-seg=no --num-callers=3 ./../../helgrind/tests/tc19_shadowmem 
+ tc21_pthonce:    valgrind   --num-callers=3 ./../../helgrind/tests/tc21_pthonce 
+ tc22_exit_w_lock: valgrind   --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock 
+-sh: line 1: 21648 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1: 21622 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   --num-callers=3 ./../../helgrind/tests/tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --read-var-info=yes ./../../helgrind/tests/tc24_nonzero_sem 
+ thread_name:     valgrind   --read-var-info=yes --check-stack-var=yes --num-callers=3 ./thread_name 
+diff --git a/regtest-power7-64.log b/regtest-power7-64.log
+index bb4e9e6..a2a10a4 100644
+--- a/regtest-power7-64.log
++++ b/regtest-power7-64.log
+@@ -1944,7 +1944,7 @@ badfree-2trace:  valgrind   --num-callers=2 -q ./badfree
+ badfree:         valgrind   -q ./badfree 
+ badfree3:        valgrind   -q --fullpath-after=/proj/ppc/DT/labhome/anmol/valgrind-3.8.1/ ./badfree 
+ badjump:         valgrind   ./badjump 
+-sh: line 1: 21277 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
++sh: line 1:  7068 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
+ badjump2:        valgrind   -q ./badjump2 
+ badloop:         valgrind   -q ./badloop 
+ badpoll:         valgrind   -q ./badpoll 
+@@ -1961,7 +1961,7 @@ clo_redzone_default: valgrind   --leak-check=no -q ./clo_redzone
+ custom-overlap:  valgrind   --leak-check=summary -q ./custom-overlap 
+ custom_alloc:    valgrind   -q ./custom_alloc 
+ deep-backtrace:  valgrind   -q --num-callers=500 ./deep-backtrace 
+-sh: line 1: 21838 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
++sh: line 1: 29193 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
+ deep_templates:  valgrind   -q ./deep_templates 
+ describe-block:  valgrind   ./describe-block 
+ doublefree:      valgrind   -q ./doublefree 
+@@ -2074,7 +2074,7 @@ supp-dir:        valgrind   --suppressions=x86/ ./../../tests/true
+ supp1:           valgrind   --suppressions=supp.supp -q ./supp1 
+ supp2:           valgrind   --suppressions=supp.supp -q ./supp2 
+ supp_unknown:    valgrind   -q --suppressions=supp_unknown.supp ./badjump 
+-sh: line 1: 26559 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
++sh: line 1: 25709 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
+ *** supp_unknown failed (stderr) ***
+ suppfree:        valgrind   --suppressions=suppfree.supp -q ./suppfree 
+ test-plo-no:     valgrind   -q ./test-plo 
+@@ -2210,7 +2210,7 @@ gxx304:          valgrind   ./gxx304
+ ifunc:           (skipping, prereq failed: test -e ifunc)
+ -- Running  tests in none/tests/linux ----------------------------------
+ blockfault:      valgrind   ./blockfault 
+-sh: line 1: 31043 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
++sh: line 1:  8371 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
+ mremap:          valgrind   ./mremap 
+ mremap2:         valgrind   ./mremap2 
+ mremap3:         valgrind   ./mremap3 
+@@ -2376,7 +2376,7 @@ tc20_verifywrap: valgrind   --read-var-info=yes ./tc20_verifywrap
+ *** tc20_verifywrap failed (stderr) ***
+ tc21_pthonce:    valgrind   --read-var-info=yes ./tc21_pthonce 
+ tc22_exit_w_lock: valgrind   ./tc22_exit_w_lock 
+-sh: line 1: 16751 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1: 31694 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   ./tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --hg-sanity-flags=111111 ./tc24_nonzero_sem 
+ -- Finished tests in helgrind/tests ------------------------------------
+@@ -2495,7 +2495,7 @@ tc18_semabuse:   valgrind   ./../../helgrind/tests/tc18_semabuse
+ tc19_shadowmem:  valgrind   --error-limit=no --read-var-info=yes --show-confl-seg=no --num-callers=3 ./../../helgrind/tests/tc19_shadowmem 
+ tc21_pthonce:    valgrind   --num-callers=3 ./../../helgrind/tests/tc21_pthonce 
+ tc22_exit_w_lock: valgrind   --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock 
+-sh: line 1: 22438 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1: 25715 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   --num-callers=3 ./../../helgrind/tests/tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --read-var-info=yes ./../../helgrind/tests/tc24_nonzero_sem 
+ thread_name:     valgrind   --read-var-info=yes --check-stack-var=yes --num-callers=3 ./thread_name 
+-- 
+1.7.3.4
+

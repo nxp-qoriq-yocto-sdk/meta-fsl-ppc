@@ -1,0 +1,699 @@
+From 958c0a1f751290c431aa7a385c9f12cdec6e32bf Mon Sep 17 00:00:00 2001
+From: Anmol P. Paralkar <anmol@freescale.com>
+Date: Fri, 1 Feb 2013 08:26:15 -0800
+Subject: [PATCH 15/65] Implement SPE Instructions: { evlwhe, evstwhe, evlwhex, evstwhex }.
+
+---
+ VEX/priv/guest_ppc_toIR.c                |  219 +++++++++++++++++++++---------
+ memcheck/tests/ppc32/test_spe.c          |  184 +++++++++++++++++++++++++
+ memcheck/tests/ppc32/test_spe.stderr.exp |    6 +-
+ memcheck/tests/ppc32/test_spe.stdout.exp |    4 +
+ regtest-power7-64.log                    |   18 ++--
+ 5 files changed, 357 insertions(+), 74 deletions(-)
+
+diff --git a/VEX/priv/guest_ppc_toIR.c b/VEX/priv/guest_ppc_toIR.c
+index 86e1961..a7942f3 100644
+--- a/VEX/priv/guest_ppc_toIR.c
++++ b/VEX/priv/guest_ppc_toIR.c
+@@ -11677,6 +11677,7 @@ static Bool dis_spe_load ( VexAbiInfo* vbi, UInt theInstr )
+    IRTemp wl  = newTemp( Ity_I32 );
+ 
+    char *insn;
++   UChar alignment = 0;
+ 
+    if (opc1 != 0x4) {
+       vex_printf( "dis_spe_load(ppc)(opc1 != 0x4)\n" );
+@@ -11685,42 +11686,62 @@ static Bool dis_spe_load ( VexAbiInfo* vbi, UInt theInstr )
+ 
+    switch (opc2) {
+    case 0x300 ... 0x305:
+-      if (opc2 == 0x300 || opc2 == 0x302 || opc2 == 0x304) {
++   case 0x310 ... 0x311:
++      if (opc2 == 0x300 || opc2 == 0x302 || opc2 == 0x304 || opc2 == 0x310) {
+         switch (opc2) {
+         case 0x300:
+            // evlddx (Vector Load Double Word into Double Word Indexed, SPEPEM p5-113)
++           alignment = 8;
+            insn = "evlddx";
+            break;
+         case 0x302:
+            // evldwx (Vector Load Double into Two Words Indexed, SPEPEM p5-117)
++           alignment = 8;
+            insn = "evldwx";
+            break;
+         case 0x304:
+            // evldhx (Vector Load Double into Four Half Words Indexed, SPEPEM p5-115)
++           alignment = 8;
+            insn = "evldhx";
+            break;
++        case 0x310:
++           // evlwhex (Vector Load Word into Two Half Words Even Indexed, SPEPEM p5-125)
++           alignment = 4;
++           insn = "evlwhex";
++           break;
+         }
+         DIP( "%s r%d, r%d, r%d\n", insn, rD_addr, rA_addr, rB_addr );
+-        assign( EA, addr_align( ea_rAor0_idxd( rA_addr, rB_addr ), 8 ) );
++        assign( EA, addr_align( ea_rAor0_idxd( rA_addr, rB_addr ), alignment ) );
+       }
+-      if (opc2 == 0x301 || opc2 == 0x303 || opc2 == 0x305) {
+-        disp = 8 * uimm;
++      if (opc2 == 0x301 || opc2 == 0x303 || opc2 == 0x305 || opc2 == 0x311) {
+         switch (opc2) {
+         case 0x301:
+            // evldd (Vector Load Double of Double, SPEPEM p5-112)
++           disp = 8 * uimm;
++           alignment = 8;
+            insn = "evldd";
+            break;
+         case 0x303:
+            // evldw (Vector Load Double into Two Words, SPEPEM p5-116)
++           disp = 8 * uimm;
++           alignment = 8;
+            insn = "evldw";
+            break;
+         case 0x305:
+            // evldh (Vector Load Double into Four Half Words, SPEPEM p5-114)
++           disp = 8 * uimm;
++           alignment = 8;
+            insn = "evldh";
+            break;
++        case 0x311:
++           // evlwhe (Vector Load Word into Two Half Words Even, SPEPEM p5-124)
++           disp = 4 * uimm;
++           alignment = 4;
++           insn = "evlwhe";
++           break;
+         }
+         DIP( "%s r%d, %u(r%u)\n", insn, rD_addr, disp, rA_addr );
+-        assign( EA, addr_align( ea_rAor0_disp( rA_addr, disp ), 8 ) );
++        assign( EA, addr_align( ea_rAor0_disp( rA_addr, disp ), alignment ) );
+       }
+ 
+       assign( ea0, (binop( mkSzOp( Ity_I32, Iop_Add8 ), mkexpr( EA ), mkU32 ( 0 ) ) ) );
+@@ -11728,35 +11749,57 @@ static Bool dis_spe_load ( VexAbiInfo* vbi, UInt theInstr )
+       assign( ea4, (binop( mkSzOp( Ity_I32, Iop_Add8 ), mkexpr( EA ), mkU32 ( 4 ) ) ) );
+       assign( ea6, (binop( mkSzOp( Ity_I32, Iop_Add8 ), mkexpr( EA ), mkU32 ( 6 ) ) ) );
+ 
+-      if (opc2 == 0x304 /* evldhx */ ||
+-          opc2 == 0x305 /* evldh  */) {
++      switch (opc2) {
++      case 0x300: /* evlddx */
++      case 0x301: /* evldd  */
++         assign (rD, loadBE( Ity_I64, mkexpr ( ea0 ) ) );
++         break;
++      case 0x302: /* evldwx */
++      case 0x303: /* evldw */
++         assign( wu, loadBE( Ity_I32, mkexpr ( ea0 ) ) );
++         assign( wl, loadBE( Ity_I32, mkexpr ( ea4 ) ) );
++         assign( rD, binop( Iop_32HLto64, mkexpr ( wu ), mkexpr ( wl ) ) );
++         break;
++      case 0x304: /* evldhx */
++      case 0x305: /* evldh  */
++
++         assign( ehwu, loadBE( Ity_I16, mkexpr ( ea0 ) ) );
++         assign( ohwu, loadBE( Ity_I16, mkexpr ( ea2 ) ) );
++         assign( ehwl, loadBE( Ity_I16, mkexpr ( ea4 ) ) );
++         assign( ohwl, loadBE( Ity_I16, mkexpr ( ea6 ) ) );
+ 
+-        assign( ehwu, loadBE( Ity_I16, mkexpr ( ea0 ) ) );
+-        assign( ohwu, loadBE( Ity_I16, mkexpr ( ea2 ) ) );
+-        assign( ehwl, loadBE( Ity_I16, mkexpr ( ea4 ) ) );
+-        assign( ohwl, loadBE( Ity_I16, mkexpr ( ea6 ) ) );
++         assign( u0, unop ( Iop_16Uto32, mkexpr ( ehwu ) ) );
++         assign( u1, binop( Iop_Shl32,   mkexpr ( u0 ), mkU8( 16 ) ) );
++         assign( u2, unop ( Iop_16Uto32, mkexpr ( ohwu ) ) );
++         assign( wu, binop( Iop_Or32,    mkexpr ( u1 ), mkexpr ( u2 ) ) );
+ 
+-        assign( u0, unop ( Iop_16Uto32, mkexpr ( ehwu ) ) );
+-        assign( u1, binop( Iop_Shl32,   mkexpr ( u0 ), mkU8( 16 ) ) );
+-        assign( u2, unop ( Iop_16Uto32, mkexpr ( ohwu ) ) );
+-        assign( wu, binop( Iop_Or32,    mkexpr ( u1 ), mkexpr ( u2 ) ) );
++         assign( l0, unop ( Iop_16Uto32, mkexpr ( ehwl ) ) );
++         assign( l1, binop( Iop_Shl32,   mkexpr ( l0 ), mkU8( 16 ) ) );
++         assign( l2, unop ( Iop_16Uto32, mkexpr ( ohwl ) ) );
++         assign( wl, binop( Iop_Or32,    mkexpr ( l1 ), mkexpr ( l2 ) ) );
+ 
+-        assign( l0, unop ( Iop_16Uto32, mkexpr ( ehwl ) ) );
+-        assign( l1, binop( Iop_Shl32,   mkexpr ( l0 ), mkU8( 16 ) ) );
+-        assign( l2, unop ( Iop_16Uto32, mkexpr ( ohwl ) ) );
+-        assign( wl, binop( Iop_Or32,    mkexpr ( l1 ), mkexpr ( l2 ) ) );
++         assign( rD, binop( Iop_32HLto64, mkexpr ( wu ), mkexpr ( wl ) ) );
++         break;
++       case 0x310: /* evlwhex */
++       case 0x311: /* evlwhe */
+ 
+-      }
+-      if (opc2 == 0x302 /* evldwx */ ||
+-          opc2 == 0x303 /* evldw */) {
+-        assign( wu, loadBE( Ity_I32, mkexpr ( ea0 ) ) );
+-        assign( wl, loadBE( Ity_I32, mkexpr ( ea4 ) ) );
+-      }
+-      if (opc2 == 0x300 /* evlddx */ ||
+-          opc2 == 0x301 /* evldd  */) {
+-        assign (rD, loadBE( Ity_I64, mkexpr ( ea0 ) ) );
+-      } else {
+-        assign( rD, binop( Iop_32HLto64, mkexpr ( wu ), mkexpr ( wl ) ) );
++         assign( ehwu, loadBE( Ity_I16, mkexpr ( ea0 ) ) );
++         assign( ohwu, mkU16( 0x0 ) );
++         assign( ehwl, loadBE( Ity_I16, mkexpr ( ea2 ) ) );
++         assign( ohwl, mkU16( 0x0 ) );
++
++         assign( u0, unop ( Iop_16Uto32, mkexpr ( ehwu ) ) );
++         assign( u1, binop( Iop_Shl32,   mkexpr ( u0 ), mkU8( 16 ) ) );
++         assign( u2, unop ( Iop_16Uto32, mkexpr ( ohwu ) ) );
++         assign( wu, binop( Iop_Or32,    mkexpr ( u1 ), mkexpr ( u2 ) ) );
++
++         assign( l0, unop ( Iop_16Uto32, mkexpr ( ehwl ) ) );
++         assign( l1, binop( Iop_Shl32,   mkexpr ( l0 ), mkU8( 16 ) ) );
++         assign( l2, unop ( Iop_16Uto32, mkexpr ( ohwl ) ) );
++         assign( wl, binop( Iop_Or32,    mkexpr ( l1 ), mkexpr ( l2 ) ) );
++
++         assign( rD, binop( Iop_32HLto64, mkexpr ( wu ), mkexpr ( wl ) ) );
++         break;
+       }
+ 
+       putSPEReg( rD_addr, mkexpr ( rD ) );
+@@ -11797,6 +11840,7 @@ static Bool dis_spe_store ( UInt theInstr )
+    IRTemp rSLL = newTemp( Ity_I16 );
+ 
+    char *insn;
++   UChar alignment = 0;
+ 
+    if (opc1 != 0x4) {
+       vex_printf( "dis_spe_store(ppc)(opc1 != 0x4)\n" );
+@@ -11807,77 +11851,124 @@ static Bool dis_spe_store ( UInt theInstr )
+ 
+    switch (opc2) {
+    case 0x320 ... 0x325:
+-      if (opc2 == 0x320 || opc2 == 0x322 || opc2 == 0x324) {
++   case 0x330 ... 0x331:
++      if (opc2 == 0x320 || opc2 == 0x322 || opc2 == 0x324 || opc2 == 0x330) {
+         switch (opc2) {
+         case 0x320:
+            // evstddx (Vector Store Double of Double Indexed, SPEPEM p5-229)
++           alignment = 8;
+            insn = "evstddx";
+            break;
+         case 0x322:
+            // evstdwx (Vector Store Double of Two Words Indexed, SPEPEM p5-233)
++           alignment = 8;
+            insn = "evstdwx";
+            break;
+         case 0x324:
+            // evstdhx (Vector Store Double of Four Half Words Indexed, SPEPEM p5-231)
++           alignment = 8;
+            insn = "evstdhx";
+            break;
++        case 0x330:
++           // evstwhex (Vector Store Word of Two Half Words from Even Indexed, SPEPEM p5-235)
++           alignment = 4;
++           insn = "evstwhex";
++           break;
+         }
+         DIP( "%s r%d, r%d, r%d\n", insn, rS_addr, rA_addr, rB_addr );
+-        assign( EA, ea_rAor0_idxd( rA_addr, rB_addr ) );
++        assign( EA, addr_align( ea_rAor0_idxd( rA_addr, rB_addr ), alignment ) );
+       }
+-      if (opc2 == 0x321 || opc2 == 0x323 || opc2 == 0x325) {
+-        disp = 8 * uimm;
++      if (opc2 == 0x321 || opc2 == 0x323 || opc2 == 0x325 || opc2 == 0x331) {
+         switch (opc2) {
+         case 0x321:
+            // evstdd (Vector Store Double of Double, SPEPEM p5-228)
++           disp = 8 * uimm;
++           alignment = 8;
+            insn = "evstdd";
+            break;
+         case 0x323:
+            // evstdw (Vector Store Double of Two Words, SPEPEM p5-232)
++           disp = 8 * uimm;
++           alignment = 8;
+            insn = "evstdw";
+            break;
+         case 0x325:
+            // evstdh (Vector Store Double of Four Half Words, SPEPEM p5-230)
++           disp = 8 * uimm;
++           alignment = 8;
+            insn = "evstdh";
+            break;
++        case 0x331:
++           // evstwhe (Vector Store Word of Two Half Words from Even, SPEPEM p5-234)
++           disp = 4 * uimm;
++           alignment = 4;
++           insn = "evstwhe";
++           break;
+         }
+         DIP( "%s r%d, %u(r%u)\n", insn, rS_addr, disp, rA_addr );
+-        assign( EA, addr_align( ea_rAor0_disp( rA_addr, disp ), 8 ) );
++        assign( EA, addr_align( ea_rAor0_disp( rA_addr, disp ), alignment ) );
+       }
+ 
+-      assign( ea0, (binop( mkSzOp( Ity_I32, Iop_Add8 ), mkexpr( EA ), mkU32 ( 0 ) ) ) );
+-      assign( ea2, (binop( mkSzOp( Ity_I32, Iop_Add8 ), mkexpr( EA ), mkU32 ( 2 ) ) ) );
+-      assign( ea4, (binop( mkSzOp( Ity_I32, Iop_Add8 ), mkexpr( EA ), mkU32 ( 4 ) ) ) );
+-      assign( ea6, (binop( mkSzOp( Ity_I32, Iop_Add8 ), mkexpr( EA ), mkU32 ( 6 ) ) ) );
++      switch (opc2) {
++      case 0x320: /* evstddx */
++      case 0x321: /* evstdd  */
+ 
+-      assign ( rSU, unop( Iop_64HIto32, mkexpr ( rS ) ) );
+-      assign ( rSL, unop( Iop_64to32,   mkexpr ( rS ) ) );
++         assign( ea0, (binop( mkSzOp( Ity_I32, Iop_Add8 ), mkexpr( EA ), mkU32 ( 0 ) ) ) );
++         storeBE( mkexpr( ea0 ), mkexpr( rS ) );
++         break;
+ 
+-      if (opc2 == 0x324 /* evstdhx */ ||
+-          opc2 == 0x325 /* evstdh  */) {
++      case 0x322: /* evstdwx */
++      case 0x323: /* evstdw  */
+ 
+-        assign ( rSUU, unop( Iop_32HIto16, mkexpr ( rSU ) ) );
+-        assign ( rSUL, unop( Iop_32to16,   mkexpr ( rSU ) ) );
+-        assign ( rSLU, unop( Iop_32HIto16, mkexpr ( rSL ) ) );
+-        assign ( rSLL, unop( Iop_32to16,   mkexpr ( rSL ) ) );
++         assign( ea0, (binop( mkSzOp( Ity_I32, Iop_Add8 ), mkexpr( EA ), mkU32 ( 0 ) ) ) );
++         assign( ea4, (binop( mkSzOp( Ity_I32, Iop_Add8 ), mkexpr( EA ), mkU32 ( 4 ) ) ) );
+ 
+-        storeBE( mkexpr( ea0 ), mkexpr( rSUU ) );
+-        storeBE( mkexpr( ea2 ), mkexpr( rSUL ) );
+-        storeBE( mkexpr( ea4 ), mkexpr( rSLU ) );
+-        storeBE( mkexpr( ea6 ), mkexpr( rSLL ) );
+-      }
+-      if (opc2 == 0x322 /* evstdwx */ ||
+-          opc2 == 0x323 /* evstdw  */) {
+-        storeBE( mkexpr( ea0 ), mkexpr( rSU ) );
+-        storeBE( mkexpr( ea4 ), mkexpr( rSL ) );
+-      }
+-      if (opc2 == 0x320 /* evstddx */ ||
+-          opc2 == 0x321 /* evstdd  */) {
+-        storeBE( mkexpr( ea0 ), mkexpr( rS ) );
++         assign ( rSU, unop( Iop_64HIto32, mkexpr ( rS ) ) );
++         assign ( rSL, unop( Iop_64to32,   mkexpr ( rS ) ) );
++
++         storeBE( mkexpr( ea0 ), mkexpr( rSU ) );
++         storeBE( mkexpr( ea4 ), mkexpr( rSL ) );
++         break;
++
++      case 0x324: /* evstdhx */
++      case 0x325: /* evstdh  */
++
++         assign( ea0, (binop( mkSzOp( Ity_I32, Iop_Add8 ), mkexpr( EA ), mkU32 ( 0 ) ) ) );
++         assign( ea2, (binop( mkSzOp( Ity_I32, Iop_Add8 ), mkexpr( EA ), mkU32 ( 2 ) ) ) );
++         assign( ea4, (binop( mkSzOp( Ity_I32, Iop_Add8 ), mkexpr( EA ), mkU32 ( 4 ) ) ) );
++         assign( ea6, (binop( mkSzOp( Ity_I32, Iop_Add8 ), mkexpr( EA ), mkU32 ( 6 ) ) ) );
++
++         assign ( rSU, unop( Iop_64HIto32, mkexpr ( rS ) ) );
++         assign ( rSL, unop( Iop_64to32,   mkexpr ( rS ) ) );
++
++         assign ( rSUU, unop( Iop_32HIto16, mkexpr ( rSU ) ) );
++         assign ( rSUL, unop( Iop_32to16,   mkexpr ( rSU ) ) );
++         assign ( rSLU, unop( Iop_32HIto16, mkexpr ( rSL ) ) );
++         assign ( rSLL, unop( Iop_32to16,   mkexpr ( rSL ) ) );
++
++         storeBE( mkexpr( ea0 ), mkexpr( rSUU ) );
++         storeBE( mkexpr( ea2 ), mkexpr( rSUL ) );
++         storeBE( mkexpr( ea4 ), mkexpr( rSLU ) );
++         storeBE( mkexpr( ea6 ), mkexpr( rSLL ) );
++         break;
++
++      case 0x330: /* evstwhex */
++      case 0x331: /* evstwhe */
++
++         assign( ea0, (binop( mkSzOp( Ity_I32, Iop_Add8 ), mkexpr( EA ), mkU32 ( 0 ) ) ) );
++         assign( ea2, (binop( mkSzOp( Ity_I32, Iop_Add8 ), mkexpr( EA ), mkU32 ( 2 ) ) ) );
++
++         assign ( rSU, unop( Iop_64HIto32, mkexpr ( rS ) ) );
++         assign ( rSL, unop( Iop_64to32,   mkexpr ( rS ) ) );
++
++         assign ( rSUU, unop( Iop_32HIto16, mkexpr ( rSU ) ) );
++         assign ( rSLU, unop( Iop_32HIto16, mkexpr ( rSL ) ) );
++
++         storeBE( mkexpr( ea0 ), mkexpr( rSUU ) );
++         storeBE( mkexpr( ea2 ), mkexpr( rSLU ) );
++         break;
+       }
+-      break;
+    }
+-
+    return True;
+ }
+ 
+@@ -17929,6 +18020,8 @@ DisResult disInstr_PPC_WRK (
+       case 0x303: // evldw
+       case 0x304: // evldhx
+       case 0x305: // evldh
++      case 0x310: // evlwhex
++      case 0x311: // evlwhe
+          if (!allow_SPE) goto decode_noSPE;
+          if (dis_spe_load( abiinfo, theInstr )) goto decode_success;
+          goto decode_failure;
+@@ -17938,6 +18031,8 @@ DisResult disInstr_PPC_WRK (
+       case 0x323: // evstdw
+       case 0x324: // evstdhx
+       case 0x325: // evstdh
++      case 0x330: // evstwhex
++      case 0x331: // evstwhe
+          if (!allow_SPE) goto decode_noSPE;
+          if (dis_spe_store( theInstr )) goto decode_success;
+          goto decode_failure;
+diff --git a/memcheck/tests/ppc32/test_spe.c b/memcheck/tests/ppc32/test_spe.c
+index 8b86951..537f47e 100644
+--- a/memcheck/tests/ppc32/test_spe.c
++++ b/memcheck/tests/ppc32/test_spe.c
+@@ -1926,6 +1926,185 @@ int evstdwx_asm(void)
+ }
+ TEST_SPE_DECL(evstdwx_asm, "evstdwx");
+ 
++int evlwhe_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register void *src_base   asm ("30");
++  register __ev64_u16__ vec asm ("29");
++
++  asm volatile ("lis %[b], rA1u32@ha"          : [b]  "=r" (src_base));
++  asm volatile ("addic %[bd], %[bs], rA1u32@l" : [bd] "=r" (src_base) : [bs] "r" (src_base));
++  VERIFY(src_base == rA1u32);
++
++#define EVLWHE(index)                                                                      \
++  asm volatile ("evlwhe %[v], " #index " *4(%[b])" : [v] "=r" (vec) : [b] "r" (src_base)); \
++  VERIFY(vec[0] == EHW(rA1u32[index]));                                                    \
++  VERIFY(vec[1] == 0x0);                                                                   \
++  VERIFY(vec[2] == OHW(rA1u32[index]));                                                    \
++  VERIFY(vec[3] == 0x0);
++
++  EVLWHE(0);
++  EVLWHE(1);
++  EVLWHE(2);
++  EVLWHE(3);
++  EVLWHE(4);
++  EVLWHE(5);
++  EVLWHE(6);
++  EVLWHE(7);
++  EVLWHE(8);
++  EVLWHE(9);
++  EVLWHE(10);
++  EVLWHE(11);
++  EVLWHE(12);
++  EVLWHE(13);
++  EVLWHE(14);
++  EVLWHE(15);
++  EVLWHE(16);
++  EVLWHE(17);
++  EVLWHE(18);
++  EVLWHE(19);
++  EVLWHE(20);
++  EVLWHE(21);
++  EVLWHE(22);
++  EVLWHE(23);
++  EVLWHE(24);
++  EVLWHE(25);
++  EVLWHE(26);
++  EVLWHE(27);
++  EVLWHE(28);
++  EVLWHE(29);
++  EVLWHE(30);
++  EVLWHE(31);
++
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evlwhe_asm, "evlwhe");
++
++int evstwhe_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++
++  register void *dst_base   asm ("29");
++  register __ev64_u16__ vec asm ("30");
++
++  int i;
++
++  asm volatile ("lis %[b], rD1u32@ha"          : [b]  "=r" (dst_base));
++  asm volatile ("addic %[bd], %[bs], rD1u32@l" : [bd] "=r" (dst_base) : [bs] "r" (dst_base));
++  VERIFY(dst_base == rD1u32);
++
++#define EVSTWHE(index, hw0, hw1, hw2, hw3)                                                 \
++  vec = (__ev64_u16__) { (hw0), (hw1), (hw2), (hw3) };                                     \
++  asm volatile ("evstwhe %[v], " #index "*4(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base)); \
++  VERIFY(vec[0] == EHW(rD1u32[index]));                                                     \
++  VERIFY(vec[2] == OHW(rD1u32[index]));
++
++  EVSTWHE(0,  0x3692, 0x6563, 0xad67, 0x6afe);
++  EVSTWHE(1,  0x5d8a, 0xccc1, 0xf781, 0x0917);
++  EVSTWHE(2,  0x3876, 0x5237, 0x6cc8, 0xbf80);
++  EVSTWHE(3,  0x6b15, 0x70dd, 0x7a01, 0x77a9);
++  EVSTWHE(4,  0xb60d, 0x2246, 0xe3aa, 0xa25d);
++  EVSTWHE(5,  0x972e, 0x2fbe, 0xafb0, 0x92bc);
++  EVSTWHE(6,  0xc1d0, 0x36ed, 0x7aa2, 0xf138);
++  EVSTWHE(7,  0x224d, 0xa786, 0x4235, 0x2245);
++  EVSTWHE(8,  0x124a, 0x7cac, 0x2c93, 0x557d);
++  EVSTWHE(9,  0x1bf2, 0x16ac, 0xf2d7, 0x767e);
++  EVSTWHE(10, 0x46af, 0xfb4c, 0x9cc7, 0x5953);
++  EVSTWHE(11, 0xa929, 0xf136, 0x6d4f, 0x2418);
++  EVSTWHE(12, 0x15bf, 0x1b92, 0xfd43, 0xcfa2);
++  EVSTWHE(13, 0x91df, 0xdbf8, 0x05fb, 0x8ca1);
++  EVSTWHE(14, 0x16ff, 0x716e, 0xbf32, 0x836a);
++  EVSTWHE(15, 0x4383, 0x54b4, 0x3a6f, 0x6bf1);
++  EVSTWHE(16, 0xee79, 0x798c, 0x62a8, 0xaf96);
++  EVSTWHE(17, 0x061b, 0x5b9a, 0x7082, 0x4a1a);
++  EVSTWHE(18, 0x2cb5, 0x753f, 0x923a, 0x18ec);
++  EVSTWHE(19, 0xd8b2, 0xf1f4, 0x8228, 0x45fb);
++  EVSTWHE(20, 0x9ad2, 0x6ca5, 0x495a, 0x51fe);
++  EVSTWHE(21, 0x5e8c, 0xde1f, 0xcb0d, 0x326d);
++  EVSTWHE(22, 0xf141, 0x4d2e, 0x4df6, 0x17db);
++  EVSTWHE(23, 0xb4e7, 0x7fda, 0xfad9, 0x943a);
++  EVSTWHE(24, 0x1f50, 0xf115, 0x049c, 0xee4c);
++  EVSTWHE(25, 0x7416, 0x6f0e, 0x6dbf, 0xdca7);
++  EVSTWHE(26, 0x9ba0, 0x983c, 0x27a7, 0xb4a4);
++  EVSTWHE(27, 0x2d60, 0x532e, 0x1a82, 0xd6c9);
++  EVSTWHE(28, 0x049c, 0x6b9e, 0xad8d, 0x2a67);
++  EVSTWHE(29, 0x6651, 0x624d, 0xbad5, 0xb223);
++  EVSTWHE(30, 0xd66f, 0x735a, 0x44f8, 0xeb48);
++  EVSTWHE(31, 0xb684, 0x56d2, 0x792d, 0x8048);
++  memset (rD1u32, 0x0, 32 * sizeof (unsigned int));
++  for (i = 0; i < 32; i++)
++    VERIFY(rD1u32[i] == 0x0);
++
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evstwhe_asm, "evstwhe");
++
++int evlwhex_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register void *src_base   asm ("30");
++  register __ev64_u16__ vec asm ("29");
++  register int idx          asm ("28");
++  register int i            asm ("27");
++
++  asm volatile ("lis %[b], rA1u32@ha"          : [b]  "=r" (src_base));
++  asm volatile ("addic %[bd], %[bs], rA1u32@l" : [bd] "=r" (src_base) : [bs] "r" (src_base));
++  VERIFY (src_base == rA1u32);
++
++  for (i = 0; i < 64; i++) {
++    idx = i * sizeof (typeof(rA1u32[0]));
++    asm volatile ("evlwhex %[v], %[b], %[i]" : [v] "=r" (vec) : [b] "r" (src_base), [i] "r" (idx));
++    VERIFY(vec[0] == EHW(rA1u32[i]));
++    VERIFY(vec[1] == 0x0);
++    VERIFY(vec[2] == OHW(rA1u32[i]));
++    VERIFY(vec[3] == 0x0);
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evlwhex_asm, "evlwhex");
++
++int evstwhex_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register void *src_base   asm ("30");
++  register void *dst_base   asm ("29");
++  register __ev64_u16__ vec asm ("28");
++  register int idx_src      asm ("27");
++  register int idx_dst      asm ("26");
++  register int i            asm ("25");
++
++  asm volatile ("lis %[b], rA4u16@ha"          : [b]  "=r" (src_base));
++  asm volatile ("addic %[bd], %[bs], rA4u16@l" : [bd] "=r" (src_base) : [bs] "r" (src_base));
++  VERIFY (src_base == rA4u16);
++
++  asm volatile ("lis %[b], rD1u32@ha"          : [b]  "=r" (dst_base));
++  asm volatile ("addic %[bd], %[bs], rD1u32@l" : [bd] "=r" (dst_base) : [bs] "r" (dst_base));
++  VERIFY (dst_base == rD1u32);
++
++  for (i = 0; i < 64; i++) {
++    idx_src = i * sizeof (typeof(rA4u16[0]));
++    idx_dst = i * sizeof (typeof(rD1u32[0]));
++    asm volatile ("evldhx   %[v], %[b], %[i]" : [v] "=r" (vec) : [b] "r" (src_base), [i] "r" (idx_src));
++    asm volatile ("evstwhex %[v], %[b], %[i]" : [v] "=r" (vec) : [b] "r" (dst_base), [i] "r" (idx_dst));
++    VERIFY(rA4u16[i][0] == EHW(rD1u32[i]));
++    VERIFY(rA4u16[i][2] == OHW(rD1u32[i]));
++  }
++  memset (rD1u32, 0x0, 64 * sizeof (typeof(rD1u32[0])));
++  for (i = 0; i < 64; i++)
++    VERIFY(rD1u32[i] == 0x0);
++
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evstwhex_asm, "evstwhex");
++
+ /* NOTE: To avoid having to remaster the .exp files entirely, add
+  *       new test functions /just above/ this comment.
+  *       That way, you only need to worry about the test that you
+@@ -1981,6 +2160,10 @@ test_t spe_isa_load_store_test_table = {
+     F(evstdw_asm),
+     F(evldwx_asm),
+     F(evstdwx_asm),
++    F(evlwhe_asm),
++    F(evstwhe_asm),
++    F(evlwhex_asm),
++    F(evstwhex_asm),
+     NULL
+   }
+ };
+@@ -2079,3 +2262,4 @@ int main(void)
+ // 7. Code entire algorithms using SPE insns.
+ // 8. Convert all tests to using the data pools.
+ // 9. Make all format uniform. Esp, where you have asm ()'s.
++// 10. The VERIFY()'s after memset () are redundant.
+diff --git a/memcheck/tests/ppc32/test_spe.stderr.exp b/memcheck/tests/ppc32/test_spe.stderr.exp
+index f035ea3..f292ca9 100644
+--- a/memcheck/tests/ppc32/test_spe.stderr.exp
++++ b/memcheck/tests/ppc32/test_spe.stderr.exp
+@@ -5,7 +5,7 @@ Invalid write of size 4
+    by 0x........: run (test_spe.h:42)
+    by 0x........: run (test_spe.h:48)
+    by 0x........: run (test_spe.h:48)
+-   by 0x........: main (test_spe.c:2066)
++   by 0x........: main (test_spe.c:2249)
+  Address 0x........ is 0 bytes after a block of size 40 alloc'd
+    at 0x........: malloc (vg_replace_malloc.c:...)
+    by 0x........: vg_quick_start_guide_aux (test_spe.c:26)
+@@ -13,7 +13,7 @@ Invalid write of size 4
+    by 0x........: run (test_spe.h:42)
+    by 0x........: run (test_spe.h:48)
+    by 0x........: run (test_spe.h:48)
+-   by 0x........: main (test_spe.c:2066)
++   by 0x........: main (test_spe.c:2249)
+ 
+ 
+ HEAP SUMMARY:
+@@ -27,7 +27,7 @@ HEAP SUMMARY:
+    by 0x........: run (test_spe.h:42)
+    by 0x........: run (test_spe.h:48)
+    by 0x........: run (test_spe.h:48)
+-   by 0x........: main (test_spe.c:2066)
++   by 0x........: main (test_spe.c:2249)
+ 
+ LEAK SUMMARY:
+    definitely lost: 40 bytes in 1 blocks
+diff --git a/memcheck/tests/ppc32/test_spe.stdout.exp b/memcheck/tests/ppc32/test_spe.stdout.exp
+index 7dab515..a9da258 100644
+--- a/memcheck/tests/ppc32/test_spe.stdout.exp
++++ b/memcheck/tests/ppc32/test_spe.stdout.exp
+@@ -26,6 +26,10 @@ SPE Regression Tests: PASS
+ ....evstdw: PASS
+ ....evldwx: PASS
+ ....evstdwx: PASS
++....evlwhe: PASS
++....evstwhe: PASS
++....evlwhex: PASS
++....evstwhex: PASS
+ ...SPE ISA Bitwise Operators Tests: PASS
+ ....evmr: PASS
+ ....evor: PASS
+diff --git a/regtest-power7-64.log b/regtest-power7-64.log
+index 6ac9209..282ab77 100644
+--- a/regtest-power7-64.log
++++ b/regtest-power7-64.log
+@@ -461,7 +461,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -gdwarf-4 -fdebug-types-section -Wno-long-lo
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests'
+-make[5]: Warning: File `.deps/xml1.Po' has modification time 66 s in the future
++make[5]: Warning: File `.deps/xml1.Po' has modification time 67 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1226,7 +1226,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Winline -Wall -O -lm -g -mregnames -DHAS_DF
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc64'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc64'
+-make[5]: Warning: File `.deps/twi_tdi.Po' has modification time 68 s in the future
++make[5]: Warning: File `.deps/twi_tdi.Po' has modification time 69 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1418,7 +1418,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/helgrind/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/helgrind/tests'
+-make[4]: Warning: File `.deps/tc24_nonzero_sem.Po' has modification time 70 s in the future
++make[4]: Warning: File `.deps/tc24_nonzero_sem.Po' has modification time 71 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1980,7 +1980,7 @@ badfree-2trace:  valgrind   --num-callers=2 -q ./badfree
+ badfree:         valgrind   -q ./badfree 
+ badfree3:        valgrind   -q --fullpath-after=/proj/ppc/DT/labhome/anmol/valgrind-3.8.1/ ./badfree 
+ badjump:         valgrind   ./badjump 
+-sh: line 1:  1717 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
++sh: line 1:  8421 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
+ badjump2:        valgrind   -q ./badjump2 
+ badloop:         valgrind   -q ./badloop 
+ badpoll:         valgrind   -q ./badpoll 
+@@ -1997,7 +1997,7 @@ clo_redzone_default: valgrind   --leak-check=no -q ./clo_redzone
+ custom-overlap:  valgrind   --leak-check=summary -q ./custom-overlap 
+ custom_alloc:    valgrind   -q ./custom_alloc 
+ deep-backtrace:  valgrind   -q --num-callers=500 ./deep-backtrace 
+-sh: line 1:  2276 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
++sh: line 1:  8979 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
+ deep_templates:  valgrind   -q ./deep_templates 
+ describe-block:  valgrind   ./describe-block 
+ doublefree:      valgrind   -q ./doublefree 
+@@ -2110,7 +2110,7 @@ supp-dir:        valgrind   --suppressions=x86/ ./../../tests/true
+ supp1:           valgrind   --suppressions=supp.supp -q ./supp1 
+ supp2:           valgrind   --suppressions=supp.supp -q ./supp2 
+ supp_unknown:    valgrind   -q --suppressions=supp_unknown.supp ./badjump 
+-sh: line 1:  6982 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
++sh: line 1: 13711 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
+ *** supp_unknown failed (stderr) ***
+ suppfree:        valgrind   --suppressions=suppfree.supp -q ./suppfree 
+ test-plo-no:     valgrind   -q ./test-plo 
+@@ -2246,7 +2246,7 @@ gxx304:          valgrind   ./gxx304
+ ifunc:           (skipping, prereq failed: test -e ifunc)
+ -- Running  tests in none/tests/linux ----------------------------------
+ blockfault:      valgrind   ./blockfault 
+-sh: line 1: 11520 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
++sh: line 1: 18187 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
+ mremap:          valgrind   ./mremap 
+ mremap2:         valgrind   ./mremap2 
+ mremap3:         valgrind   ./mremap3 
+@@ -2412,7 +2412,7 @@ tc20_verifywrap: valgrind   --read-var-info=yes ./tc20_verifywrap
+ *** tc20_verifywrap failed (stderr) ***
+ tc21_pthonce:    valgrind   --read-var-info=yes ./tc21_pthonce 
+ tc22_exit_w_lock: valgrind   ./tc22_exit_w_lock 
+-sh: line 1: 28955 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1:  3287 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   ./tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --hg-sanity-flags=111111 ./tc24_nonzero_sem 
+ -- Finished tests in helgrind/tests ------------------------------------
+@@ -2531,7 +2531,7 @@ tc18_semabuse:   valgrind   ./../../helgrind/tests/tc18_semabuse
+ tc19_shadowmem:  valgrind   --error-limit=no --read-var-info=yes --show-confl-seg=no --num-callers=3 ./../../helgrind/tests/tc19_shadowmem 
+ tc21_pthonce:    valgrind   --num-callers=3 ./../../helgrind/tests/tc21_pthonce 
+ tc22_exit_w_lock: valgrind   --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock 
+-sh: line 1:  1963 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1:  8650 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   --num-callers=3 ./../../helgrind/tests/tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --read-var-info=yes ./../../helgrind/tests/tc24_nonzero_sem 
+ thread_name:     valgrind   --read-var-info=yes --check-stack-var=yes --num-callers=3 ./thread_name 
+-- 
+1.7.3.4
+

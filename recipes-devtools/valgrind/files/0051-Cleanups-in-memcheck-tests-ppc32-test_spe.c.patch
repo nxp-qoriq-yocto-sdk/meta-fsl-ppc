@@ -1,0 +1,1427 @@
+From 49051805ebca0914972d5f580dd3cdf4b87ac2db Mon Sep 17 00:00:00 2001
+From: Anmol P. Paralkar <anmol@freescale.com>
+Date: Tue, 9 Apr 2013 14:12:21 -0700
+Subject: [PATCH 51/65] Cleanups in memcheck/tests/ppc32/test_spe.c
+
+- Removed the memory related tests in:
+  evmwsmfan_asm (), evmwsmfaa_asm (), evmwsmf_asm (), evmwsmfa_asm (), evmwhsmf_asm (), evmwhsmfa_asm ()
+  since it was getting to be a headache to get the same diagnostics on Power 7 and e500v2
+
+- evmhogsmian_baseline[] made global.
+
+- Needed to check lower word in evmwhsmfa_asm () tests.
+
+- test_spe now passes in the default build's regression test as well.
+---
+ memcheck/tests/ppc32/test_spe.c          |  578 +-----------------------------
+ memcheck/tests/ppc32/test_spe.stderr.exp |  240 +------------
+ regtest-power7-64.default-build.log      |   24 +-
+ regtest-power7-64.log                    |   44 ++--
+ 4 files changed, 56 insertions(+), 830 deletions(-)
+
+diff --git a/memcheck/tests/ppc32/test_spe.c b/memcheck/tests/ppc32/test_spe.c
+index 06b10db..4113103 100644
+--- a/memcheck/tests/ppc32/test_spe.c
++++ b/memcheck/tests/ppc32/test_spe.c
+@@ -9320,72 +9320,31 @@ int evmwsmfan_asm(void)
+ {
+   int failures = 0;
+ 
+-  // Be sure to verify that in addition to executing the emulated instruction,
+-  // unfreed memory and incorrect (r&w) accesses around that instruction are
+-  // detected too.
+-
+ #ifdef __SPE__
+   register __ev64_u64__ regA asm ("30");
+   register __ev64_u64__ regB asm ("29");
+   register __ev64_u64__ regD asm ("28");
+-  __ev64_u64__ *ops;
+ 
+   // Initialize the ACC.
+   regA = (__ev64_u64__) { 0x0 };
+   asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
+   VERIFY(regD[0] == 0x0);
+-#else
+-  uint64_t *ops;
+-#endif // __SPE__
+ 
+   int32_t i;
+ 
+   for (i = 0; i < NELTS(rA1u64); i++) {
+ 
+-    // We get one kind of diagnostics by allocating 3 __ev64_u64__'s and another kind
+-    // by allocating 4 __ev64_u64__'s - not sure, why so?
+-    // (For now, go with allocating 8 __ev64_u64__'s - to get consistent results on
+-    // e500v2 and Classic Power).
+-    ops = calloc(8,
+-#ifdef __SPE__
+-          sizeof (__ev64_u64__));
+-#else
+-          sizeof (uint64_t));
+-#endif //  __SPE__
+-
+-    ops[1] = rA1u64[i];
+-    ops[2] = rB1u64[i];
++    regA = rA1u64[i];
++    regB = rB1u64[i];
+ 
+-#ifdef __SPE__
+-    regA = ops[1];
+-    regB = ops[2];
+     asm volatile ("evmwsmfan %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
+ #ifdef GEN_BASELINE
+     printf ("  (__ev64_u64__) { 0x%llx },\n", regD[0]);
+ #else
+     VERIFY(regD[0] == evmwsmfan_baseline[i][0]);
+ #endif
+-#else
+-    // NOP;
+-#endif //  __SPE__
+-
+-#ifdef __SPE__
+-    ops[0] = regD;
+-#endif //  __SPE__
+-
+-    ops[17] =
+-#ifdef __SPE__
+-             (__ev64_u64__) { 0xdeadbeef };  // Invalid write detected?
+-#else
+-             0xdeadbeef;                     // Invalid write detected?
+-#endif //  __SPE__
+-    ops[3] = ops[-17];                       // Invalid read detected?
+-#if 0                                        // Unfreed memory detected?
+-    free (ops);
+-#endif
+   }
+ 
+-#ifdef __SPE__
+   //////////////////////////////////////////////////////////////////////////////
+   // While, we have a test above to verify that what we compute on the real CPU
+   // with this instruction, is what we compute on the 'synthetic' CPU, let us
+@@ -9693,73 +9652,32 @@ __ev64_u64__ evmwsmfaa_baseline[] = {
+ int evmwsmfaa_asm(void)
+ {
+   int failures = 0;
+-
+-  // Be sure to verify that in addition to executing the emulated instruction,
+-  // unfreed memory and incorrect (r&w) accesses around that instruction are
+-  // detected too.
+-
+ #ifdef __SPE__
+   register __ev64_u64__ regA asm ("30");
+   register __ev64_u64__ regB asm ("29");
+   register __ev64_u64__ regD asm ("28");
+-  __ev64_u64__ *ops;
+ 
+   // Initialize the ACC.
+   regA = (__ev64_u64__) { 0x0 };
+   asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
+   VERIFY(regD[0] == 0x0);
+-#else
+-  uint64_t *ops;
+-#endif // __SPE__
+ 
+   int32_t i;
+ 
+   for (i = 0; i < NELTS(rA1u64); i++) {
+ 
+-    // We get one kind of diagnostics by allocating 3 __ev64_u64__'s and another kind
+-    // by allocating 4 __ev64_u64__'s - not sure, why so?
+-    // (For now, go with allocating 8 __ev64_u64__'s - to get consistent results on
+-    // e500v2 and Classic Power).
+-    ops = calloc(8,
+-#ifdef __SPE__
+-          sizeof (__ev64_u64__));
+-#else
+-          sizeof (uint64_t));
+-#endif //  __SPE__
+-
+-    ops[1] = rA1u64[i];
+-    ops[2] = rB1u64[i];
++    regA = rA1u64[i];
++    regB = rB1u64[i];
+ 
+-#ifdef __SPE__
+-    regA = ops[1];
+-    regB = ops[2];
+     asm volatile ("evmwsmfaa %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
+ #ifdef GEN_BASELINE
+     printf ("  (__ev64_u64__) { 0x%llx },\n", regD[0]);
+ #else
+     VERIFY(regD[0] == evmwsmfaa_baseline[i][0]);
+ #endif
+-#else
+-    // NOP;
+-#endif //  __SPE__
+ 
+-#ifdef __SPE__
+-    ops[0] = regD;
+-#endif //  __SPE__
+-
+-    ops[17] =
+-#ifdef __SPE__
+-             (__ev64_u64__) { 0xdeadbeef };  // Invalid write detected?
+-#else
+-             0xdeadbeef;                     // Invalid write detected?
+-#endif //  __SPE__
+-    ops[3] = ops[-17];                       // Invalid read detected?
+-#if 0                                        // Unfreed memory detected?
+-    free (ops);
+-#endif
+   }
+ 
+-#ifdef __SPE__
+   //////////////////////////////////////////////////////////////////////////////
+   // While, we have a test above to verify that what we compute on the real CPU
+   // with this instruction, is what we compute on the 'synthetic' CPU, let us
+@@ -10065,16 +9983,10 @@ __ev64_u64__ evmwsmf_baseline[] = {
+ int evmwsmf_asm(void)
+ {
+   int failures = 0;
+-
+-  // Be sure to verify that in addition to executing the emulated instruction,
+-  // unfreed memory and incorrect (r&w) accesses around that instruction are
+-  // detected too.
+-
+ #ifdef __SPE__
+   register __ev64_u64__ regA asm ("30");
+   register __ev64_u64__ regB asm ("29");
+   register __ev64_u64__ regD asm ("28");
+-  __ev64_u64__ *ops;
+   __ev64_u64__ res[] = {
+ 
+     (__ev64_u64__) { 0xe000000000000000 }, // -(1/2^2)
+@@ -10094,59 +10006,22 @@ int evmwsmf_asm(void)
+     (__ev64_u64__) { 0xffffffe200000000 }, // -(1/32768^2)
+ 
+   };
+-#else
+-  uint64_t *ops;
+-#endif // __SPE__
+ 
+   int32_t i;
+ 
+   for (i = 0; i < NELTS(rA1u64); i++) {
+ 
+-    // We get one kind of diagnostics by allocating 3 __ev64_u64__'s and another kind
+-    // by allocating 4 __ev64_u64__'s - not sure, why so?
+-    // (For now, go with allocating 8 __ev64_u64__'s - to get consistent results on
+-    // e500v2 and Classic Power).
+-    ops = calloc(8,
+-#ifdef __SPE__
+-          sizeof (__ev64_u64__));
+-#else
+-          sizeof (uint64_t));
+-#endif //  __SPE__
++    regA = rA1u64[i];
++    regB = rB1u64[i];
+ 
+-    ops[1] = rA1u64[i];
+-    ops[2] = rB1u64[i];
+-
+-#ifdef __SPE__
+-    regA = ops[1];
+-    regB = ops[2];
+     asm volatile ("evmwsmf %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
+ #ifdef GEN_BASELINE
+     printf ("  (__ev64_u64__) { 0x%llx },\n", regD[0]);
+ #else
+     VERIFY(regD[0] == evmwsmf_baseline[i][0]);
+ #endif
+-#else
+-    // NOP;
+-#endif //  __SPE__
+-
+-#ifdef __SPE__
+-    ops[0] = regD;
+-#endif //  __SPE__
+-
+-    ops[17] =
+-#ifdef __SPE__
+-             (__ev64_u64__) { 0xdeadbeef };  // Invalid write detected?
+-#else
+-             0xdeadbeef;                     // Invalid write detected?
+-#endif //  __SPE__
+-    ops[3] = ops[-17];                       // Invalid read detected?
+-#if 0                                        // Unfreed memory detected?
+-    free (ops);
+-#endif
+   }
+ 
+-#ifdef __SPE__
+-
+   //////////////////////////////////////////////////////////////////////////////
+   // While, we have a test above to verify that what we compute on the real CPU
+   // with this instruction, is what we compute on the 'synthetic' CPU, let us
+@@ -10185,16 +10060,10 @@ __ev64_u64__ *evmwsmfa_baseline = evmwsmf_baseline;
+ int evmwsmfa_asm(void)
+ {
+   int failures = 0;
+-
+-  // Be sure to verify that in addition to executing the emulated instruction,
+-  // unfreed memory and incorrect (r&w) accesses around that instruction are
+-  // detected too.
+-
+ #ifdef __SPE__
+   register __ev64_u64__ regA asm ("30");
+   register __ev64_u64__ regB asm ("29");
+   register __ev64_u64__ regD asm ("28");
+-  __ev64_u64__ *ops;
+   __ev64_u64__ res[] = {
+ 
+     (__ev64_u64__) { 0xe000000000000000 }, // -(1/2^2)
+@@ -10214,36 +10083,18 @@ int evmwsmfa_asm(void)
+     (__ev64_u64__) { 0xffffffe200000000 }, // -(1/32768^2)
+ 
+   };
+-#else
+-  uint64_t *ops;
+-#endif // __SPE__
+-
+   int32_t i;
+ 
+   for (i = 0; i < NELTS(rA1u64); i++) {
+ 
+-    // We get one kind of diagnostics by allocating 3 __ev64_u64__'s and another kind
+-    // by allocating 4 __ev64_u64__'s - not sure, why so?
+-    // (For now, go with allocating 8 __ev64_u64__'s - to get consistent results on
+-    // e500v2 and Classic Power).
+-    ops = calloc(8,
+-#ifdef __SPE__
+-          sizeof (__ev64_u64__));
+-#else
+-          sizeof (uint64_t));
+-#endif //  __SPE__
+-
+-    ops[1] = rA1u64[i];
+-    ops[2] = rB1u64[i];
+-
+-#ifdef __SPE__
+     // Initialize the ACC.
+     regA = (__ev64_u64__) { 0x0 };
+     asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
+     VERIFY(regD[0] == 0x0);
+ 
+-    regA = ops[1];
+-    regB = ops[2];
++    regA = rA1u64[i];
++    regB = rB1u64[i];
++
+     asm volatile ("evmwsmfa %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
+ #ifdef GEN_BASELINE
+     printf ("  (__ev64_u64__) { 0x%llx },\n", regD[0]);
+@@ -10256,27 +10107,8 @@ int evmwsmfa_asm(void)
+ #ifndef GEN_BASELINE
+     VERIFY(regD[0] == evmwsmfa_baseline[i][0]);
+ #endif
+-#else
+-    // NOP;
+-#endif //  __SPE__
+-
+-#ifdef __SPE__
+-    ops[0] = regD;
+-#endif //  __SPE__
+-
+-    ops[17] =
+-#ifdef __SPE__
+-             (__ev64_u64__) { 0xdeadbeef };  // Invalid write detected?
+-#else
+-             0xdeadbeef;                     // Invalid write detected?
+-#endif //  __SPE__
+-    ops[3] = ops[-17];                       // Invalid read detected?
+-#if 0                                        // Unfreed memory detected?
+-    free (ops);
+-#endif
+   }
+ 
+-#ifdef __SPE__
+   //////////////////////////////////////////////////////////////////////////////
+   // While, we have a test above to verify that what we compute on the real CPU
+   // with this instruction, is what we compute on the 'synthetic' CPU, let us
+@@ -10588,16 +10420,10 @@ __ev64_u32__ evmwhsmf_baseline[] = {
+ int evmwhsmf_asm(void)
+ {
+   int failures = 0;
+-
+-  // Be sure to verify that in addition to executing the emulated instruction,
+-  // unfreed memory and incorrect (r&w) accesses around that instruction are
+-  // detected too.
+-
+ #ifdef __SPE__
+   register __ev64_u32__ regA asm ("30");
+   register __ev64_u32__ regB asm ("29");
+   register __ev64_u32__ regD asm ("28");
+-  __ev64_u32__ *ops;
+   __ev64_u32__ res[] = {
+ 
+     (__ev64_u32__) { 0xe0000000, 0xe0000000 }, // -(1/2^2)
+@@ -10617,27 +10443,14 @@ int evmwhsmf_asm(void)
+     (__ev64_u32__) { 0xffffffe2, 0xffffffe2 }, // -(1/32768^2)
+ 
+   };
+-#else
+-  uint64_t *ops;
+-#endif // __SPE__
+ 
+   int32_t i;
+ 
+   for (i = 0; i < NELTS(rA2u32); i++) {
+ 
+-    ops = calloc(8,
+-#ifdef __SPE__
+-          sizeof (__ev64_u32__));
+-#else
+-          sizeof (uint64_t));
+-#endif //  __SPE__
+-
+-    ops[1] = rA2u32[i];
+-    ops[2] = rB2u32[i];
++    regA = rA2u32[i];
++    regB = rB2u32[i];
+ 
+-#ifdef __SPE__
+-    regA = ops[1];
+-    regB = ops[2];
+     asm volatile ("evmwhsmf %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
+ #ifdef GEN_BASELINE
+     printf ("  (__ev64_u32__) { 0x%x, 0x%x },\n", regD[0], regD[1]);
+@@ -10645,28 +10458,8 @@ int evmwhsmf_asm(void)
+     VERIFY(regD[0] == evmwhsmf_baseline[i][0]);
+     VERIFY(regD[1] == evmwhsmf_baseline[i][1]);
+ #endif
+-#else
+-    // NOP;
+-#endif //  __SPE__
+-
+-#ifdef __SPE__
+-    ops[0] = regD;
+-#endif //  __SPE__
+-
+-    ops[17] =
+-#ifdef __SPE__
+-             (__ev64_u32__) { 0xdeadbeef, 0xdeadbeef };  // Invalid write detected?
+-#else
+-             0xdeadbeefdeadbeef;                         // Invalid write detected?
+-#endif //  __SPE__
+-    ops[3] = ops[-17];                                   // Invalid read detected?
+-#if 0                                                    // Unfreed memory detected?
+-    free (ops);
+-#endif
+   }
+ 
+-#ifdef __SPE__
+-
+   //////////////////////////////////////////////////////////////////////////////
+   // While, we have a test above to verify that what we compute on the real CPU
+   // with this instruction, is what we compute on the 'synthetic' CPU, let us
+@@ -10706,16 +10499,10 @@ __ev64_u32__ *evmwhsmfa_baseline = evmwhsmf_baseline;
+ int evmwhsmfa_asm(void)
+ {
+   int failures = 0;
+-
+-  // Be sure to verify that in addition to executing the emulated instruction,
+-  // unfreed memory and incorrect (r&w) accesses around that instruction are
+-  // detected too.
+-
+ #ifdef __SPE__
+   register __ev64_u32__ regA asm ("30");
+   register __ev64_u32__ regB asm ("29");
+   register __ev64_u32__ regD asm ("28");
+-  __ev64_u32__ *ops;
+   __ev64_u32__ res[] = {
+ 
+     (__ev64_u32__) { 0xe0000000, 0xe0000000 }, // -(1/2^2)
+@@ -10735,37 +10522,25 @@ int evmwhsmfa_asm(void)
+     (__ev64_u32__) { 0xffffffe2, 0xffffffe2 }, // -(1/32768^2)
+ 
+   };
+-#else
+-  uint64_t *ops;
+-#endif // __SPE__
+ 
+   int32_t i;
+ 
+   for (i = 0; i < NELTS(rA2u32); i++) {
+ 
+-    ops = calloc(8,
+-#ifdef __SPE__
+-          sizeof (__ev64_u32__));
+-#else
+-          sizeof (uint64_t));
+-#endif //  __SPE__
+-
+-    ops[1] = rA2u32[i];
+-    ops[2] = rB2u32[i];
+-
+-#ifdef __SPE__
+     // Initialize the ACC.
+     regA = (__ev64_u32__) { 0x0 };
+     asm volatile ("evmra %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
+     VERIFY(regD[0] == 0x0);
+ 
+-    regA = ops[1];
+-    regB = ops[2];
++    regA = rA2u32[i];
++    regB = rB2u32[i];
++
+     asm volatile ("evmwhsmfa %[d], %[a], %[b]" : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB));
+ #ifdef GEN_BASELINE
+     printf ("  (__ev64_u32__) { 0x%x, 0x%x },\n", regD[0], regD[1]);
+ #else
+     VERIFY(regD[0] == evmwhsmfa_baseline[i][0]);
++    VERIFY(regD[1] == evmwhsmfa_baseline[i][1]);
+ #endif
+     // Verify that evmwhsmfa wrote into the ACC:
+     regD = (__ev64_u32__) { 0x0, 0x0 };
+@@ -10773,27 +10548,8 @@ int evmwhsmfa_asm(void)
+ #ifndef GEN_BASELINE
+     VERIFY(regD[0] == evmwhsmfa_baseline[i][0]);
+ #endif
+-#else
+-    // NOP;
+-#endif //  __SPE__
+-
+-#ifdef __SPE__
+-    ops[0] = regD;
+-#endif //  __SPE__
+-
+-    ops[17] =
+-#ifdef __SPE__
+-             (__ev64_u32__) { 0xdeadbeef };  // Invalid write detected?
+-#else
+-             0xdeadbeef;                     // Invalid write detected?
+-#endif //  __SPE__
+-    ops[3] = ops[-17];                       // Invalid read detected?
+-#if 0                                        // Unfreed memory detected?
+-    free (ops);
+-#endif
+   }
+ 
+-#ifdef __SPE__
+   //////////////////////////////////////////////////////////////////////////////
+   // While, we have a test above to verify that what we compute on the real CPU
+   // with this instruction, is what we compute on the 'synthetic' CPU, let us
+@@ -15442,45 +15198,6 @@ int evmhogsmiaa_asm(void)
+ }
+ TEST_SPE_DECL(evmhogsmiaa_asm, "evmhogsmiaa");
+ 
+-#if 0
+-/* TODO: MYSTERY!
+-   If we uncomment this and make evmhogsmian_baseline[] a global array,
+-   we get this weird situation where:
+-
+-16,384 bytes in 256 blocks are definitely lost in loss record ... of ...
+-   at 0x........: calloc (vg_replace_malloc.c:...)
+-   by 0x........: evmwhsmfa_asm (test_spe.c:10746)
+-   by 0x........: run (test_spe.h:43)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:14397)
+-
+-   changes to:
+-
+-64 bytes in 1 blocks are possibly lost in loss record ... of ...
+-   at 0x........: calloc (vg_replace_malloc.c:...)
+-   by 0x........: evmwhsmfa_asm (test_spe.c:10746)
+-   by 0x........: run (test_spe.h:43)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:17093)
+-
+-16,320 bytes in 255 blocks are definitely lost in loss record ... of ...
+-   at 0x........: calloc (vg_replace_malloc.c:...)
+-   by 0x........: evmwhsmfa_asm (test_spe.c:10746)
+-   by 0x........: run (test_spe.h:43)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:17093)
+-
+-   Why? we are not sure. Come back and debug this.
+-*/
+ #ifdef __SPE__
+ __ev64_s64__ evmhogsmian_baseline[] = {
+ 
+@@ -15743,276 +15460,11 @@ __ev64_s64__ evmhogsmian_baseline[] = {
+ 
+ };
+ #endif // __SPE__
+-#endif
+ 
+ int evmhogsmian_asm(void)
+ {
+   int failures = 0;
+-
+ #ifdef __SPE__
+-// TODO: This array is not intended to be local to this function, see note above.
+-#if 1
+-__ev64_s64__ evmhogsmian_baseline[] = {
+-
+-  (__ev64_s64__) { 0x2bd53dd },
+-  (__ev64_s64__) { 0xffffffffce0d49bc },
+-  (__ev64_s64__) { 0x495a02c },
+-  (__ev64_s64__) { 0xfffffffff01f253c },
+-  (__ev64_s64__) { 0x2292abb8 },
+-  (__ev64_s64__) { 0x82c7466 },
+-  (__ev64_s64__) { 0x54d4770 },
+-  (__ev64_s64__) { 0x357a320 },
+-  (__ev64_s64__) { 0xffffffffec607ead },
+-  (__ev64_s64__) { 0x1144343e },
+-  (__ev64_s64__) { 0xfffffffff085dbae },
+-  (__ev64_s64__) { 0x7c0967a },
+-  (__ev64_s64__) { 0xffffffffff4dd4b4 },
+-  (__ev64_s64__) { 0xfffffffffd10babe },
+-  (__ev64_s64__) { 0xfffffffffc9796b4 },
+-  (__ev64_s64__) { 0xfffffffff8bba612 },
+-  (__ev64_s64__) { 0xffffffffe0796574 },
+-  (__ev64_s64__) { 0xffffffffd93b6702 },
+-  (__ev64_s64__) { 0xffffffffe3249266 },
+-  (__ev64_s64__) { 0xfffffffff9f4840c },
+-  (__ev64_s64__) { 0xfffffffff60cb4a2 },
+-  (__ev64_s64__) { 0x52dc240 },
+-  (__ev64_s64__) { 0xffffffffff50dfb2 },
+-  (__ev64_s64__) { 0x25f32a3e },
+-  (__ev64_s64__) { 0xfffffffff616ed08 },
+-  (__ev64_s64__) { 0x20d2c60a },
+-  (__ev64_s64__) { 0xffffffffd3038670 },
+-  (__ev64_s64__) { 0x11c501fe },
+-  (__ev64_s64__) { 0xffffffffe973c5b0 },
+-  (__ev64_s64__) { 0x5d6d701 },
+-  (__ev64_s64__) { 0x2e5a1b80 },
+-  (__ev64_s64__) { 0x11eed3d9 },
+-  (__ev64_s64__) { 0x1a01de65 },
+-  (__ev64_s64__) { 0x19ad6ea },
+-  (__ev64_s64__) { 0x12cad738 },
+-  (__ev64_s64__) { 0xffffffffd18e75cc },
+-  (__ev64_s64__) { 0xffffffffd7c7183a },
+-  (__ev64_s64__) { 0x154542d6 },
+-  (__ev64_s64__) { 0xffffffffed9cd388 },
+-  (__ev64_s64__) { 0x1fb4bd0e },
+-  (__ev64_s64__) { 0x1d81ce80 },
+-  (__ev64_s64__) { 0xfffffffffba3e4ee },
+-  (__ev64_s64__) { 0x1a15cd48 },
+-  (__ev64_s64__) { 0x1100e278 },
+-  (__ev64_s64__) { 0xfffffffffdea81a0 },
+-  (__ev64_s64__) { 0xffffffffffd40e08 },
+-  (__ev64_s64__) { 0xffffffffefb3696e },
+-  (__ev64_s64__) { 0xffffffffe42da896 },
+-  (__ev64_s64__) { 0xffffffffef9e2ba1 },
+-  (__ev64_s64__) { 0xfffffffffde803a9 },
+-  (__ev64_s64__) { 0xffffffffe8cc473c },
+-  (__ev64_s64__) { 0xfffffffffca3758b },
+-  (__ev64_s64__) { 0x181bd8ca },
+-  (__ev64_s64__) { 0x6c8bf79 },
+-  (__ev64_s64__) { 0x46df678 },
+-  (__ev64_s64__) { 0xfffffffff5d70e82 },
+-  (__ev64_s64__) { 0x1ce084da },
+-  (__ev64_s64__) { 0x1a082014 },
+-  (__ev64_s64__) { 0x11b7aae8 },
+-  (__ev64_s64__) { 0x10661574 },
+-  (__ev64_s64__) { 0x5c6688 },
+-  (__ev64_s64__) { 0xf95bcac },
+-  (__ev64_s64__) { 0xe1e31c0 },
+-  (__ev64_s64__) { 0x345f1fbb },
+-  (__ev64_s64__) { 0xffffffffffee7275 },
+-  (__ev64_s64__) { 0x112cd556 },
+-  (__ev64_s64__) { 0xb304c0 },
+-  (__ev64_s64__) { 0xfffffffffd0250f6 },
+-  (__ev64_s64__) { 0xffffffffff66b566 },
+-  (__ev64_s64__) { 0xfffffffffefc5f9e },
+-  (__ev64_s64__) { 0x5ef30c8 },
+-  (__ev64_s64__) { 0x127f1538 },
+-  (__ev64_s64__) { 0xdb8eec5 },
+-  (__ev64_s64__) { 0xffffffffffbf2a3e },
+-  (__ev64_s64__) { 0xffffffffee2908c0 },
+-  (__ev64_s64__) { 0xffffffffe5944640 },
+-  (__ev64_s64__) { 0xb5eef20 },
+-  (__ev64_s64__) { 0xffffffffc9999040 },
+-  (__ev64_s64__) { 0x4602864 },
+-  (__ev64_s64__) { 0xfffffffff3fad040 },
+-  (__ev64_s64__) { 0x41aa3fb },
+-  (__ev64_s64__) { 0xfffffffff5e427b0 },
+-  (__ev64_s64__) { 0x4b0ff74 },
+-  (__ev64_s64__) { 0x6ab1917 },
+-  (__ev64_s64__) { 0x1114fb68 },
+-  (__ev64_s64__) { 0x32e038c },
+-  (__ev64_s64__) { 0xfffffffff6464e24 },
+-  (__ev64_s64__) { 0xfffffffff52b1b38 },
+-  (__ev64_s64__) { 0xffffffffe5b0ed7c },
+-  (__ev64_s64__) { 0xffffffffe3f2b228 },
+-  (__ev64_s64__) { 0xffffffffef326f60 },
+-  (__ev64_s64__) { 0x251507ca },
+-  (__ev64_s64__) { 0xffffffffd13f59c3 },
+-  (__ev64_s64__) { 0xffffffffdfde9dae },
+-  (__ev64_s64__) { 0x3465114 },
+-  (__ev64_s64__) { 0xfffffffff2027f8c },
+-  (__ev64_s64__) { 0xffffffffea913738 },
+-  (__ev64_s64__) { 0x499500 },
+-  (__ev64_s64__) { 0xffffffffeb95d438 },
+-  (__ev64_s64__) { 0xfffffffff61f584c },
+-  (__ev64_s64__) { 0xffffffffdee2891c },
+-  (__ev64_s64__) { 0xffffffffe130c36c },
+-  (__ev64_s64__) { 0xffffffffed6f67f0 },
+-  (__ev64_s64__) { 0xfffffffffebc3edf },
+-  (__ev64_s64__) { 0xfffffffffd3ae378 },
+-  (__ev64_s64__) { 0x339c2f6d },
+-  (__ev64_s64__) { 0xffffffffeff52038 },
+-  (__ev64_s64__) { 0xfffffffffff3709c },
+-  (__ev64_s64__) { 0xffffffffea232eec },
+-  (__ev64_s64__) { 0xfffffffffa4f52dc },
+-  (__ev64_s64__) { 0x3812bc6 },
+-  (__ev64_s64__) { 0x1965eeca },
+-  (__ev64_s64__) { 0x8013b5c },
+-  (__ev64_s64__) { 0xfffffffff88c11a0 },
+-  (__ev64_s64__) { 0xfffffffff81ed0ae },
+-  (__ev64_s64__) { 0x1fb50ca },
+-  (__ev64_s64__) { 0x1fd7b8 },
+-  (__ev64_s64__) { 0xffffffffeda92b00 },
+-  (__ev64_s64__) { 0x26bdaaa4 },
+-  (__ev64_s64__) { 0x77b3f8c },
+-  (__ev64_s64__) { 0xffffffffec9202d2 },
+-  (__ev64_s64__) { 0x14b4508c },
+-  (__ev64_s64__) { 0x27b32a7 },
+-  (__ev64_s64__) { 0xd1c8f50 },
+-  (__ev64_s64__) { 0x49506 },
+-  (__ev64_s64__) { 0x2279df18 },
+-  (__ev64_s64__) { 0xb013f41 },
+-  (__ev64_s64__) { 0x8fbb960 },
+-  (__ev64_s64__) { 0x78b06d1 },
+-  (__ev64_s64__) { 0x1d02e23e },
+-  (__ev64_s64__) { 0xfffffffff2054f24 },
+-  (__ev64_s64__) { 0xffffffffece3613e },
+-  (__ev64_s64__) { 0x7d2f930 },
+-  (__ev64_s64__) { 0x12b16753 },
+-  (__ev64_s64__) { 0x15628d4 },
+-  (__ev64_s64__) { 0xfffffffffd118ce8 },
+-  (__ev64_s64__) { 0x14f6d050 },
+-  (__ev64_s64__) { 0x2524a4b2 },
+-  (__ev64_s64__) { 0x1035401 },
+-  (__ev64_s64__) { 0x354c3a8 },
+-  (__ev64_s64__) { 0x31bd75b0 },
+-  (__ev64_s64__) { 0x17f4492a },
+-  (__ev64_s64__) { 0xfffffffffeeacbc0 },
+-  (__ev64_s64__) { 0x392b4a },
+-  (__ev64_s64__) { 0xffffffffef36d4c3 },
+-  (__ev64_s64__) { 0x3443a00 },
+-  (__ev64_s64__) { 0x8f5546e },
+-  (__ev64_s64__) { 0x10683cd0 },
+-  (__ev64_s64__) { 0xf8edc85 },
+-  (__ev64_s64__) { 0xffffffffffdea108 },
+-  (__ev64_s64__) { 0x2f33bf6 },
+-  (__ev64_s64__) { 0x1fd4690 },
+-  (__ev64_s64__) { 0xfffffffffa7382d3 },
+-  (__ev64_s64__) { 0x17847f54 },
+-  (__ev64_s64__) { 0xfffffffff867c058 },
+-  (__ev64_s64__) { 0xffffffffe5108a5e },
+-  (__ev64_s64__) { 0xfffffffffd26b47c },
+-  (__ev64_s64__) { 0xffffffffffadd0f4 },
+-  (__ev64_s64__) { 0x1a921088 },
+-  (__ev64_s64__) { 0xfffffffff942939d },
+-  (__ev64_s64__) { 0x28245fc },
+-  (__ev64_s64__) { 0xb9e8e4e },
+-  (__ev64_s64__) { 0xfffffffff1fab6f6 },
+-  (__ev64_s64__) { 0xffffffffee554084 },
+-  (__ev64_s64__) { 0xa30bda6 },
+-  (__ev64_s64__) { 0x8989b5a },
+-  (__ev64_s64__) { 0xfffffffffffd3bb8 },
+-  (__ev64_s64__) { 0xffffffffd3e28e50 },
+-  (__ev64_s64__) { 0xfffffffff495e1f0 },
+-  (__ev64_s64__) { 0x3e264b8 },
+-  (__ev64_s64__) { 0xffffffffffa6292a },
+-  (__ev64_s64__) { 0xfffffffffbba40eb },
+-  (__ev64_s64__) { 0x29fceca0 },
+-  (__ev64_s64__) { 0x16dec974 },
+-  (__ev64_s64__) { 0x1ddf289c },
+-  (__ev64_s64__) { 0x9bae2c0 },
+-  (__ev64_s64__) { 0xffffffffe6c04164 },
+-  (__ev64_s64__) { 0xffffffffec5d3414 },
+-  (__ev64_s64__) { 0x2ad953 },
+-  (__ev64_s64__) { 0xfffffffff81a4e10 },
+-  (__ev64_s64__) { 0xfffffffffd3aa935 },
+-  (__ev64_s64__) { 0x10ceef30 },
+-  (__ev64_s64__) { 0xfffffffffcab77bd },
+-  (__ev64_s64__) { 0xe4a7e08 },
+-  (__ev64_s64__) { 0xffffffffd657e6cc },
+-  (__ev64_s64__) { 0x20c9359c },
+-  (__ev64_s64__) { 0xfffffffff250389a },
+-  (__ev64_s64__) { 0x5b185b4 },
+-  (__ev64_s64__) { 0xffffffffdd6f51e4 },
+-  (__ev64_s64__) { 0xfffffffff34b4a4a },
+-  (__ev64_s64__) { 0xfffffffff847530a },
+-  (__ev64_s64__) { 0x243a4de },
+-  (__ev64_s64__) { 0xffffffffe4f3dcd3 },
+-  (__ev64_s64__) { 0xffffffffff0ae5e0 },
+-  (__ev64_s64__) { 0x387b57c },
+-  (__ev64_s64__) { 0xffffffffffcb5245 },
+-  (__ev64_s64__) { 0x24f97c },
+-  (__ev64_s64__) { 0x1277afa8 },
+-  (__ev64_s64__) { 0xffffffffd7c50c48 },
+-  (__ev64_s64__) { 0xffffffffff242281 },
+-  (__ev64_s64__) { 0xffffffffe8d6eccb },
+-  (__ev64_s64__) { 0xb9548d8 },
+-  (__ev64_s64__) { 0xff8948e },
+-  (__ev64_s64__) { 0xfffffffff7db0763 },
+-  (__ev64_s64__) { 0x6a80056 },
+-  (__ev64_s64__) { 0x90a37f2 },
+-  (__ev64_s64__) { 0x2db5914f },
+-  (__ev64_s64__) { 0xfffffffffa02a2fa },
+-  (__ev64_s64__) { 0x167eb450 },
+-  (__ev64_s64__) { 0xffffffffd9378f24 },
+-  (__ev64_s64__) { 0xfffffffff4f7a0eb },
+-  (__ev64_s64__) { 0xfffffffffec0ff1d },
+-  (__ev64_s64__) { 0xbc701fe },
+-  (__ev64_s64__) { 0xc2526a8 },
+-  (__ev64_s64__) { 0x1ca67b8e },
+-  (__ev64_s64__) { 0x5b2d938 },
+-  (__ev64_s64__) { 0x6ec7c3 },
+-  (__ev64_s64__) { 0x2fd630 },
+-  (__ev64_s64__) { 0x12271a6c },
+-  (__ev64_s64__) { 0xfffffffff262a732 },
+-  (__ev64_s64__) { 0xb570493 },
+-  (__ev64_s64__) { 0x2517f0a5 },
+-  (__ev64_s64__) { 0x2745558 },
+-  (__ev64_s64__) { 0x284ebfd1 },
+-  (__ev64_s64__) { 0xfffffffffa0d6844 },
+-  (__ev64_s64__) { 0x287c7ed },
+-  (__ev64_s64__) { 0xfffffffffe5417a6 },
+-  (__ev64_s64__) { 0x7cbb7c4 },
+-  (__ev64_s64__) { 0x10411d76 },
+-  (__ev64_s64__) { 0x216c241c },
+-  (__ev64_s64__) { 0xfffffffffc4f9a44 },
+-  (__ev64_s64__) { 0x209aced },
+-  (__ev64_s64__) { 0xfffffffff9c4bd2f },
+-  (__ev64_s64__) { 0xffffffffd99fd462 },
+-  (__ev64_s64__) { 0x175e0c0 },
+-  (__ev64_s64__) { 0xffffffffe82e17cf },
+-  (__ev64_s64__) { 0x1535594 },
+-  (__ev64_s64__) { 0x12a39eab },
+-  (__ev64_s64__) { 0xffffffffef24e8d1 },
+-  (__ev64_s64__) { 0xffffffffe63b2e47 },
+-  (__ev64_s64__) { 0xfffffffffd9418c3 },
+-  (__ev64_s64__) { 0xffffffffff1fdc14 },
+-  (__ev64_s64__) { 0xffffffffe2da1d6c },
+-  (__ev64_s64__) { 0xffffffffe724ffa0 },
+-  (__ev64_s64__) { 0xfffffffffb42ffad },
+-  (__ev64_s64__) { 0xffffffffeb32b0e0 },
+-  (__ev64_s64__) { 0x2d75ffa8 },
+-  (__ev64_s64__) { 0xffffffffffd394bf },
+-  (__ev64_s64__) { 0xffffffffffb2d54e },
+-  (__ev64_s64__) { 0xfffffffff4396fcc },
+-  (__ev64_s64__) { 0x2f4ca28 },
+-  (__ev64_s64__) { 0xfffffffffda28706 },
+-  (__ev64_s64__) { 0xffffffffeb05de21 },
+-  (__ev64_s64__) { 0xffffffffeeb6b0d7 },
+-  (__ev64_s64__) { 0x83b17b },
+-  (__ev64_s64__) { 0x117bd4fe },
+-
+-};
+-#endif
+   register __ev64_s16__ regA asm ("30");
+   register __ev64_s16__ regB asm ("29");
+   register __ev64_s64__ regD asm ("28");
+diff --git a/memcheck/tests/ppc32/test_spe.stderr.exp b/memcheck/tests/ppc32/test_spe.stderr.exp
+index 3a6df85..ae31f29 100644
+--- a/memcheck/tests/ppc32/test_spe.stderr.exp
++++ b/memcheck/tests/ppc32/test_spe.stderr.exp
+@@ -5,7 +5,7 @@ Invalid write of size 4
+    by 0x........: run (test_spe.h:43)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:17132)
++   by 0x........: main (test_spe.c:16584)
+  Address 0x........ is 0 bytes after a block of size 40 alloc'd
+    at 0x........: malloc (vg_replace_malloc.c:...)
+    by 0x........: vg_quick_start_guide_aux (test_spe.c:26)
+@@ -13,178 +13,12 @@ Invalid write of size 4
+    by 0x........: run (test_spe.h:43)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:17132)
+-
+-Invalid write of size 8
+-   at 0x........: evmwsmfan_asm (test_spe.c:9376)
+-   by 0x........: run (test_spe.h:43)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:17132)
+- Address 0x........ is not stack'd, malloc'd or (recently) free'd
+-
+-Invalid read of size 8
+-   at 0x........: evmwsmfan_asm (test_spe.c:9382)
+-   by 0x........: run (test_spe.h:43)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:17132)
+- Address 0x........ is 184 bytes inside a block of size 256 free'd
+-   at 0x........: free (vg_replace_malloc.c:...)
+-   by 0x........: simple_loop (test_spe.c:333)
+-   by 0x........: run (test_spe.h:43)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:17132)
+-
+-Invalid write of size 8
+-   at 0x........: evmwsmfaa_asm (test_spe.c:9750)
+-   by 0x........: run (test_spe.h:43)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:17132)
+- Address 0x........ is not stack'd, malloc'd or (recently) free'd
+-
+-Invalid read of size 8
+-   at 0x........: evmwsmfaa_asm (test_spe.c:9756)
+-   by 0x........: run (test_spe.h:43)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:17132)
+- Address 0x........ is 8 bytes before a block of size 64 alloc'd
+-   at 0x........: calloc (vg_replace_malloc.c:...)
+-   by 0x........: evmwsmfan_asm (test_spe.c:9349)
+-   by 0x........: run (test_spe.h:43)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:17132)
+-
+-Invalid write of size 8
+-   at 0x........: evmwsmf_asm (test_spe.c:10136)
+-   by 0x........: run (test_spe.h:43)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:17132)
+- Address 0x........ is not stack'd, malloc'd or (recently) free'd
+-
+-Invalid read of size 8
+-   at 0x........: evmwsmf_asm (test_spe.c:10142)
+-   by 0x........: run (test_spe.h:43)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:17132)
+- Address 0x........ is 8 bytes before a block of size 64 alloc'd
+-   at 0x........: calloc (vg_replace_malloc.c:...)
+-   by 0x........: evmwsmfaa_asm (test_spe.c:9723)
+-   by 0x........: run (test_spe.h:43)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:17132)
+-
+-Invalid write of size 8
+-   at 0x........: evmwsmfa_asm (test_spe.c:10267)
+-   by 0x........: run (test_spe.h:43)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:17132)
+- Address 0x........ is not stack'd, malloc'd or (recently) free'd
+-
+-Invalid read of size 8
+-   at 0x........: evmwsmfa_asm (test_spe.c:10273)
+-   by 0x........: run (test_spe.h:43)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:17132)
+- Address 0x........ is 8 bytes before a block of size 64 alloc'd
+-   at 0x........: calloc (vg_replace_malloc.c:...)
+-   by 0x........: evmwsmf_asm (test_spe.c:10109)
+-   by 0x........: run (test_spe.h:43)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:17132)
+-
+-Invalid write of size 8
+-   at 0x........: evmwhsmf_asm (test_spe.c:10656)
+-   by 0x........: run (test_spe.h:43)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:17132)
+- Address 0x........ is not stack'd, malloc'd or (recently) free'd
+-
+-Invalid read of size 8
+-   at 0x........: evmwhsmf_asm (test_spe.c:10662)
+-   by 0x........: run (test_spe.h:43)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:17132)
+- Address 0x........ is 8 bytes before a block of size 64 alloc'd
+-   at 0x........: calloc (vg_replace_malloc.c:...)
+-   by 0x........: evmwsmfa_asm (test_spe.c:10229)
+-   by 0x........: run (test_spe.h:43)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:17132)
+-
+-Invalid write of size 8
+-   at 0x........: evmwhsmfa_asm (test_spe.c:10784)
+-   by 0x........: run (test_spe.h:43)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:17132)
+- Address 0x........ is not stack'd, malloc'd or (recently) free'd
+-
+-Invalid read of size 8
+-   at 0x........: evmwhsmfa_asm (test_spe.c:10790)
+-   by 0x........: run (test_spe.h:43)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:17132)
+- Address 0x........ is 8 bytes before a block of size 64 alloc'd
+-   at 0x........: calloc (vg_replace_malloc.c:...)
+-   by 0x........: evmwhsmf_asm (test_spe.c:10628)
+-   by 0x........: run (test_spe.h:43)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:17132)
++   by 0x........: main (test_spe.c:16584)
+ 
+ 
+ HEAP SUMMARY:
+-    in use at exit: 98,344 bytes in 1,537 blocks
+-  total heap usage: 1,538 allocs, 1 frees, 98,600 bytes allocated
++    in use at exit: 40 bytes in 1 blocks
++  total heap usage: 2 allocs, 1 frees, 296 bytes allocated
+ 
+ 40 bytes in 1 blocks are definitely lost in loss record ... of ...
+    at 0x........: malloc (vg_replace_malloc.c:...)
+@@ -193,74 +27,14 @@ HEAP SUMMARY:
+    by 0x........: run (test_spe.h:43)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:17132)
+-
+-16,384 bytes in 256 blocks are definitely lost in loss record ... of ...
+-   at 0x........: calloc (vg_replace_malloc.c:...)
+-   by 0x........: evmwsmfan_asm (test_spe.c:9349)
+-   by 0x........: run (test_spe.h:43)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:17132)
+-
+-16,384 bytes in 256 blocks are definitely lost in loss record ... of ...
+-   at 0x........: calloc (vg_replace_malloc.c:...)
+-   by 0x........: evmwsmfaa_asm (test_spe.c:9723)
+-   by 0x........: run (test_spe.h:43)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:17132)
+-
+-16,384 bytes in 256 blocks are definitely lost in loss record ... of ...
+-   at 0x........: calloc (vg_replace_malloc.c:...)
+-   by 0x........: evmwsmf_asm (test_spe.c:10109)
+-   by 0x........: run (test_spe.h:43)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:17132)
+-
+-16,384 bytes in 256 blocks are definitely lost in loss record ... of ...
+-   at 0x........: calloc (vg_replace_malloc.c:...)
+-   by 0x........: evmwsmfa_asm (test_spe.c:10229)
+-   by 0x........: run (test_spe.h:43)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:17132)
+-
+-16,384 bytes in 256 blocks are definitely lost in loss record ... of ...
+-   at 0x........: calloc (vg_replace_malloc.c:...)
+-   by 0x........: evmwhsmf_asm (test_spe.c:10628)
+-   by 0x........: run (test_spe.h:43)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:17132)
+-
+-16,384 bytes in 256 blocks are definitely lost in loss record ... of ...
+-   at 0x........: calloc (vg_replace_malloc.c:...)
+-   by 0x........: evmwhsmfa_asm (test_spe.c:10746)
+-   by 0x........: run (test_spe.h:43)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:17132)
++   by 0x........: main (test_spe.c:16584)
+ 
+ LEAK SUMMARY:
+-   definitely lost: 98,344 bytes in 1,537 blocks
++   definitely lost: 40 bytes in 1 blocks
+    indirectly lost: 0 bytes in 0 blocks
+      possibly lost: 0 bytes in 0 blocks
+    still reachable: 0 bytes in 0 blocks
+         suppressed: 0 bytes in 0 blocks
+ 
+ For counts of detected and suppressed errors, rerun with: -v
+-ERROR SUMMARY: 3080 errors from 20 contexts (suppressed: 0 from 0)
++ERROR SUMMARY: 2 errors from 2 contexts (suppressed: 0 from 0)
+diff --git a/regtest-power7-64.default-build.log b/regtest-power7-64.default-build.log
+index 68c78fc..c94d8d7 100644
+--- a/regtest-power7-64.default-build.log
++++ b/regtest-power7-64.default-build.log
+@@ -461,7 +461,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -gdwarf-4 -fdebug-types-section -Wno-long-lo
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests'
+-make[5]: Warning: File `.deps/xml1.Po' has modification time 77 s in the future
++make[5]: Warning: File `.deps/xml1.Po' has modification time 78 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1066,7 +1066,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests'
+-make[5]: Warning: File `.deps/vgprintf.Po' has modification time 80 s in the future
++make[5]: Warning: File `.deps/vgprintf.Po' has modification time 81 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1628,7 +1628,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wextra -Wno-inline -Wno-unused-parameter -W
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/drd/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/drd/tests'
+-make[4]: Warning: File `.deps/unit_vc-unit_vc.Po' has modification time 75 s in the future
++make[4]: Warning: File `.deps/unit_vc-unit_vc.Po' has modification time 76 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1775,6 +1775,7 @@ Making check in exp-dhat
+ make[2]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-dhat'
+ Making check in .
+ make[3]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-dhat'
++make[3]: Warning: File `exp-dhat-ppc32-linux' has modification time 0.65 s in the future
+ mkdir -p ../.in_place; \
+ for f in exp-dhat-ppc64-linux exp-dhat-ppc32-linux vgpreload_exp-dhat-ppc64-linux.so vgpreload_exp-dhat-ppc32-linux.so ; do \
+   rm -f ../.in_place/$f; \
+@@ -1791,6 +1792,7 @@ for f in ; do \
+   rm -f ../.in_place/$f.dSYM; \
+   ln -f -s ../exp-dhat/$f.dSYM ../.in_place; \
+ done
++make[3]: warning:  Clock skew detected.  Your build may be incomplete.
+ make[3]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-dhat'
+ Making check in tests
+ make[3]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-dhat/tests'
+@@ -1980,7 +1982,7 @@ badfree-2trace:  valgrind   --num-callers=2 -q ./badfree
+ badfree:         valgrind   -q ./badfree 
+ badfree3:        valgrind   -q --fullpath-after=/proj/ppc/DT/labhome/anmol/valgrind-3.8.1/ ./badfree 
+ badjump:         valgrind   ./badjump 
+-sh: line 1: 28448 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
++sh: line 1:  4940 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
+ badjump2:        valgrind   -q ./badjump2 
+ badloop:         valgrind   -q ./badloop 
+ badpoll:         valgrind   -q ./badpoll 
+@@ -1997,7 +1999,7 @@ clo_redzone_default: valgrind   --leak-check=no -q ./clo_redzone
+ custom-overlap:  valgrind   --leak-check=summary -q ./custom-overlap 
+ custom_alloc:    valgrind   -q ./custom_alloc 
+ deep-backtrace:  valgrind   -q --num-callers=500 ./deep-backtrace 
+-sh: line 1: 30190 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
++sh: line 1:  5499 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
+ deep_templates:  valgrind   -q ./deep_templates 
+ describe-block:  valgrind   ./describe-block 
+ doublefree:      valgrind   -q ./doublefree 
+@@ -2088,7 +2090,6 @@ post-syscall:    valgrind   -q ./post-syscall
+ -- Running  tests in memcheck/tests/ppc32 ------------------------------
+ power_ISA2_05:   valgrind   ./power_ISA2_05 
+ test_spe:        valgrind   --leak-check=full ./test_spe 
+-*** test_spe failed (stderr) ***
+ -- Finished tests in memcheck/tests/ppc32 ------------------------------
+ -- Running  tests in memcheck/tests/ppc64 ------------------------------
+ power_ISA2_05:   valgrind   --workaround-gcc296-bugs=yes ./power_ISA2_05 
+@@ -2110,7 +2111,7 @@ supp-dir:        valgrind   --suppressions=x86/ ./../../tests/true
+ supp1:           valgrind   --suppressions=supp.supp -q ./supp1 
+ supp2:           valgrind   --suppressions=supp.supp -q ./supp2 
+ supp_unknown:    valgrind   -q --suppressions=supp_unknown.supp ./badjump 
+-sh: line 1: 14080 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
++sh: line 1: 10317 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
+ *** supp_unknown failed (stderr) ***
+ suppfree:        valgrind   --suppressions=suppfree.supp -q ./suppfree 
+ test-plo-no:     valgrind   -q ./test-plo 
+@@ -2247,7 +2248,7 @@ gxx304:          valgrind   ./gxx304
+ ifunc:           (skipping, prereq failed: test -e ifunc)
+ -- Running  tests in none/tests/linux ----------------------------------
+ blockfault:      valgrind   ./blockfault 
+-sh: line 1: 16801 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
++sh: line 1: 14955 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
+ mremap:          valgrind   ./mremap 
+ mremap2:         valgrind   ./mremap2 
+ mremap3:         valgrind   ./mremap3 
+@@ -2413,7 +2414,7 @@ tc20_verifywrap: valgrind   --read-var-info=yes ./tc20_verifywrap
+ *** tc20_verifywrap failed (stderr) ***
+ tc21_pthonce:    valgrind   --read-var-info=yes ./tc21_pthonce 
+ tc22_exit_w_lock: valgrind   ./tc22_exit_w_lock 
+-sh: line 1: 28063 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1: 32393 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   ./tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --hg-sanity-flags=111111 ./tc24_nonzero_sem 
+ -- Finished tests in helgrind/tests ------------------------------------
+@@ -2530,7 +2531,7 @@ tc18_semabuse:   valgrind   ./../../helgrind/tests/tc18_semabuse
+ tc19_shadowmem:  valgrind   --error-limit=no --read-var-info=yes --show-confl-seg=no --num-callers=3 ./../../helgrind/tests/tc19_shadowmem 
+ tc21_pthonce:    valgrind   --num-callers=3 ./../../helgrind/tests/tc21_pthonce 
+ tc22_exit_w_lock: valgrind   --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock 
+-sh: line 1: 24201 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1:  5457 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   --num-callers=3 ./../../helgrind/tests/tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --read-var-info=yes ./../../helgrind/tests/tc24_nonzero_sem 
+ thread_name:     valgrind   --read-var-info=yes --check-stack-var=yes --num-callers=3 ./thread_name 
+@@ -2553,12 +2554,11 @@ ll:              valgrind   --interval-size=1000 --bb-out-file=ll.out.bb ./ll
+ million:         valgrind   --interval-size=100000 --bb-out-file=million.out.bb ./million  
+ -- Finished tests in exp-bbv/tests/ppc32-linux -------------------------
+ 
+-== 530 tests, 9 stderr failures, 2 stdout failures, 1 stderrB failure, 1 stdoutB failure, 2 post failures ==
++== 530 tests, 8 stderr failures, 2 stdout failures, 1 stderrB failure, 1 stdoutB failure, 2 post failures ==
+ gdbserver_tests/mcmain_pic               (stdout)
+ gdbserver_tests/mcmain_pic               (stderr)
+ gdbserver_tests/mcmain_pic               (stdoutB)
+ gdbserver_tests/mcmain_pic               (stderrB)
+-memcheck/tests/ppc32/test_spe            (stderr)
+ memcheck/tests/supp_unknown              (stderr)
+ memcheck/tests/trivialleak               (stderr)
+ memcheck/tests/varinfo6                  (stderr)
+diff --git a/regtest-power7-64.log b/regtest-power7-64.log
+index 2356f17..1570041 100644
+--- a/regtest-power7-64.log
++++ b/regtest-power7-64.log
+@@ -461,7 +461,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -gdwarf-4 -fdebug-types-section -Wno-long-lo
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests'
+-make[5]: Warning: File `.deps/xml1.Po' has modification time 77 s in the future
++make[5]: Warning: File `.deps/xml1.Po' has modification time 78 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -484,7 +484,7 @@ gcc -Winline -Wall -Wshadow -g -Wno-long-long  -Wno-pointer-sign -fno-stack-prot
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/ppc32'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/ppc32'
+-make[5]: Warning: File `.deps/test_spe.Po' has modification time 81 s in the future
++make[5]: Warning: File `.deps/test_spe.Po' has modification time 82 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -504,7 +504,7 @@ gcc -Winline -Wall -Wshadow -g  -Winline -Wall -Wshadow -g -I../../../include -m
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/ppc64'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/ppc64'
+-make[5]: Warning: File `.deps/power_ISA2_05-power_ISA2_05.Po' has modification time 81 s in the future
++make[5]: Warning: File `.deps/power_ISA2_05-power_ISA2_05.Po' has modification time 82 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -551,7 +551,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/linux'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/linux'
+-make[5]: Warning: File `.deps/timerfd-syscall.Po' has modification time 81 s in the future
++make[5]: Warning: File `.deps/timerfd-syscall.Po' has modification time 82 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -605,7 +605,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -fPIC -Wno-long-long  -Wno-pointer-sign -fno
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/cachegrind/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/cachegrind/tests'
+-make[5]: Warning: File `.deps/myprint_so-myprint.Po' has modification time 81 s in the future
++make[5]: Warning: File `.deps/myprint_so-myprint.Po' has modification time 82 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -656,7 +656,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/callgrind/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/callgrind/tests'
+-make[5]: Warning: File `.deps/threads.Po' has modification time 81 s in the future
++make[5]: Warning: File `.deps/threads.Po' has modification time 82 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -764,7 +764,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/massif/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/massif/tests'
+-make[4]: Warning: File `.deps/zero.Po' has modification time 81 s in the future
++make[4]: Warning: File `.deps/zero.Po' has modification time 82 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1066,7 +1066,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests'
+-make[5]: Warning: File `.deps/vgprintf.Po' has modification time 80 s in the future
++make[5]: Warning: File `.deps/vgprintf.Po' has modification time 81 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1226,7 +1226,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Winline -Wall -O -lm -g -mregnames -DHAS_DF
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc64'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc64'
+-make[5]: Warning: File `.deps/twi_tdi.Po' has modification time 78 s in the future
++make[5]: Warning: File `.deps/twi_tdi.Po' has modification time 79 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1255,7 +1255,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/linux'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/linux'
+-make[5]: Warning: File `.deps/mremap3.Po' has modification time 81 s in the future
++make[5]: Warning: File `.deps/mremap3.Po' has modification time 82 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1418,7 +1418,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/helgrind/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/helgrind/tests'
+-make[4]: Warning: File `.deps/tc24_nonzero_sem.Po' has modification time 80 s in the future
++make[4]: Warning: File `.deps/tc24_nonzero_sem.Po' has modification time 81 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1628,7 +1628,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wextra -Wno-inline -Wno-unused-parameter -W
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/drd/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/drd/tests'
+-make[4]: Warning: File `.deps/unit_vc-unit_vc.Po' has modification time 75 s in the future
++make[4]: Warning: File `.deps/unit_vc-unit_vc.Po' has modification time 76 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1689,7 +1689,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-sgcheck/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-sgcheck/tests'
+-make[4]: Warning: File `.deps/stackerr.Po' has modification time 81 s in the future
++make[4]: Warning: File `.deps/stackerr.Po' has modification time 82 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1759,7 +1759,7 @@ gcc -Winline -Wall -Wshadow -g -Wno-long-long  -Wno-pointer-sign -fno-stack-prot
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-bbv/tests/ppc32-linux'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-bbv/tests/ppc32-linux'
+-make[5]: Warning: File `.deps/million.Po' has modification time 81 s in the future
++make[5]: Warning: File `.deps/million.Po' has modification time 82 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1819,7 +1819,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[3]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/tests'
+ make  check-local
+ make[3]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/tests'
+-make[3]: Warning: File `.deps/x86_amd64_features-x86_amd64_features.Po' has modification time 81 s in the future
++make[3]: Warning: File `.deps/x86_amd64_features-x86_amd64_features.Po' has modification time 82 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1901,7 +1901,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[3]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/gdbserver_tests'
+ make  check-local
+ make[3]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/gdbserver_tests'
+-make[3]: Warning: File `.deps/watchpoints.Po' has modification time 81 s in the future
++make[3]: Warning: File `.deps/watchpoints.Po' has modification time 82 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1980,7 +1980,7 @@ badfree-2trace:  valgrind   --num-callers=2 -q ./badfree
+ badfree:         valgrind   -q ./badfree 
+ badfree3:        valgrind   -q --fullpath-after=/proj/ppc/DT/labhome/anmol/valgrind-3.8.1/ ./badfree 
+ badjump:         valgrind   ./badjump 
+-sh: line 1:  7797 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
++sh: line 1:  7572 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
+ badjump2:        valgrind   -q ./badjump2 
+ badloop:         valgrind   -q ./badloop 
+ badpoll:         valgrind   -q ./badpoll 
+@@ -1997,7 +1997,7 @@ clo_redzone_default: valgrind   --leak-check=no -q ./clo_redzone
+ custom-overlap:  valgrind   --leak-check=summary -q ./custom-overlap 
+ custom_alloc:    valgrind   -q ./custom_alloc 
+ deep-backtrace:  valgrind   -q --num-callers=500 ./deep-backtrace 
+-sh: line 1:  8356 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
++sh: line 1:  8146 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
+ deep_templates:  valgrind   -q ./deep_templates 
+ describe-block:  valgrind   ./describe-block 
+ doublefree:      valgrind   -q ./doublefree 
+@@ -2110,7 +2110,7 @@ supp-dir:        valgrind   --suppressions=x86/ ./../../tests/true
+ supp1:           valgrind   --suppressions=supp.supp -q ./supp1 
+ supp2:           valgrind   --suppressions=supp.supp -q ./supp2 
+ supp_unknown:    valgrind   -q --suppressions=supp_unknown.supp ./badjump 
+-sh: line 1: 13050 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
++sh: line 1: 12861 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
+ *** supp_unknown failed (stderr) ***
+ suppfree:        valgrind   --suppressions=suppfree.supp -q ./suppfree 
+ test-plo-no:     valgrind   -q ./test-plo 
+@@ -2246,7 +2246,7 @@ gxx304:          valgrind   ./gxx304
+ ifunc:           (skipping, prereq failed: test -e ifunc)
+ -- Running  tests in none/tests/linux ----------------------------------
+ blockfault:      valgrind   ./blockfault 
+-sh: line 1: 17538 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
++sh: line 1: 17359 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
+ mremap:          valgrind   ./mremap 
+ mremap2:         valgrind   ./mremap2 
+ mremap3:         valgrind   ./mremap3 
+@@ -2412,7 +2412,7 @@ tc20_verifywrap: valgrind   --read-var-info=yes ./tc20_verifywrap
+ *** tc20_verifywrap failed (stderr) ***
+ tc21_pthonce:    valgrind   --read-var-info=yes ./tc21_pthonce 
+ tc22_exit_w_lock: valgrind   ./tc22_exit_w_lock 
+-sh: line 1:  2693 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1:  2523 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   ./tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --hg-sanity-flags=111111 ./tc24_nonzero_sem 
+ -- Finished tests in helgrind/tests ------------------------------------
+@@ -2531,7 +2531,7 @@ tc18_semabuse:   valgrind   ./../../helgrind/tests/tc18_semabuse
+ tc19_shadowmem:  valgrind   --error-limit=no --read-var-info=yes --show-confl-seg=no --num-callers=3 ./../../helgrind/tests/tc19_shadowmem 
+ tc21_pthonce:    valgrind   --num-callers=3 ./../../helgrind/tests/tc21_pthonce 
+ tc22_exit_w_lock: valgrind   --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock 
+-sh: line 1:  8040 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1:  8596 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   --num-callers=3 ./../../helgrind/tests/tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --read-var-info=yes ./../../helgrind/tests/tc24_nonzero_sem 
+ thread_name:     valgrind   --read-var-info=yes --check-stack-var=yes --num-callers=3 ./thread_name 
+-- 
+1.7.3.4
+

@@ -1,0 +1,1576 @@
+From 5a15dec32d979408e899710c550dfe09a19bc3ea Mon Sep 17 00:00:00 2001
+From: Anmol P. Paralkar <anmol@freescale.com>
+Date: Wed, 20 Feb 2013 03:18:17 -0800
+Subject: [PATCH 29/65] Implement SPE Instructions: { evcntlsw, evcntlzw }.
+
+---
+ VEX/priv/guest_ppc_toIR.c                |   56 ++
+ memcheck/tests/ppc32/test_spe.c          |  209 ++++++
+ memcheck/tests/ppc32/test_spe.h          | 1048 ++++++++++++++++++++++++++++++
+ memcheck/tests/ppc32/test_spe.stderr.exp |    6 +-
+ memcheck/tests/ppc32/test_spe.stdout.exp |    4 +
+ regtest-power7-64.log                    |   22 +-
+ 6 files changed, 1331 insertions(+), 14 deletions(-)
+
+diff --git a/VEX/priv/guest_ppc_toIR.c b/VEX/priv/guest_ppc_toIR.c
+index 313fb85..8f1fdbd 100644
+--- a/VEX/priv/guest_ppc_toIR.c
++++ b/VEX/priv/guest_ppc_toIR.c
+@@ -12239,6 +12239,42 @@ static Bool dis_spe_store ( UInt theInstr )
+ /*
+  * SPE Bitwise Instructions
+  */
++static IRExpr* spe_count_leading_zero_bits ( IRExpr* src )
++{
++  IRTemp c0 = newTemp( Ity_I1 );
++  IRTemp b0 = newTemp( Ity_I8 );
++
++  assign( c0, binop( Iop_CmpEQ32,
++                     src,
++                     mkU32  ( 0x0 ) ) );
++  assign( b0, unop( Iop_1Uto8,
++                    mkexpr ( c0 ) ) );
++  return IRExpr_Mux0X ( mkexpr ( b0 ),
++                        unop ( Iop_Clz32,
++                               src ),
++                        mkU32 ( 0x20 ) );
++}
++
++static IRExpr* spe_count_leading_sign_bits ( IRExpr* src )
++{
++  IRTemp w0 = newTemp( Ity_I32 );
++  IRTemp c0 = newTemp( Ity_I1 );
++  IRTemp b0 = newTemp( Ity_I8 );
++
++  assign( w0, binop( Iop_Shr32,
++                     src,
++                     mkU8 ( 0x1f ) ) );
++  assign( c0, binop( Iop_CmpEQ32,
++                     mkexpr ( w0 ),
++                     mkU32 ( 0x1 ) ) );
++  assign( b0, unop( Iop_1Uto8,
++                    mkexpr ( c0 ) ) );
++  return IRExpr_Mux0X ( mkexpr ( b0 ),
++                        spe_count_leading_zero_bits ( src ),
++                        spe_count_leading_zero_bits ( unop ( Iop_Not32,
++                                                             src ) ) );
++}
++
+ static Bool dis_spe_bitwise ( UInt theInstr )
+ {
+    /* EVX-Form */
+@@ -12271,6 +12307,8 @@ static Bool dis_spe_bitwise ( UInt theInstr )
+ 
+    case 0x20a:
+    case 0x20b:
++   case 0x20d:
++   case 0x20e:
+    case 0x211:
+    case 0x212:
+    case 0x216:
+@@ -12287,6 +12325,14 @@ static Bool dis_spe_bitwise ( UInt theInstr )
+         // evextsh (Vector Extend Sign Half Word)
+         DIP( "evextsh r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr);
+       }
++      if (opc2 == 0x20d) {
++        // evcntlzw (Vector count Leading Zeros Word)
++        DIP( "evcntlzw r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr);
++      }
++      if (opc2 == 0x20e) {
++        // evcntlsw (Vector count Leading Signed Bits Word)
++        DIP( "evcntlsw r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr);
++      }
+       if (opc2 == 0x211) {
+         // evand (Vector AND, SPEPEM p5-75)
+         DIP( "evand r%d, r%d, r%d\n", rD_addr, rA_addr, rB_addr );
+@@ -12336,6 +12382,14 @@ static Bool dis_spe_bitwise ( UInt theInstr )
+         assign ( rDL, unop ( Iop_16Sto32, ( unop ( Iop_32to16, mkexpr ( rAL ) ) ) ) );
+         assign ( rDU, unop ( Iop_16Sto32, ( unop ( Iop_32to16, mkexpr ( rAU ) ) ) ) );
+       }
++      if (opc2 == 0x20e) { // evcntlsw
++        assign ( rDL, spe_count_leading_sign_bits ( mkexpr ( rAL ) ) );
++        assign ( rDU, spe_count_leading_sign_bits ( mkexpr ( rAU ) ) );
++      }
++      if (opc2 == 0x20d) { // evcntlzw
++        assign ( rDL, spe_count_leading_zero_bits ( mkexpr ( rAL ) ) );
++        assign ( rDU, spe_count_leading_zero_bits ( mkexpr ( rAU ) ) );
++      }
+       if (opc2 == 0x211) { // evand
+         assign ( rDL, binop( Iop_And32, mkexpr ( rAL ), mkexpr ( rBL ) ) );
+         assign ( rDU, binop( Iop_And32, mkexpr ( rAU ), mkexpr ( rBU ) ) );
+@@ -18707,6 +18761,8 @@ DisResult disInstr_PPC_WRK (
+          goto decode_failure;
+       case 0x20a: // evextsb
+       case 0x20b: // evextsh
++      case 0x20d: // evcntlzw
++      case 0x20e: // evcntlsw
+       case 0x211: // evand
+       case 0x212: // evandc
+       case 0x216: // evxor
+diff --git a/memcheck/tests/ppc32/test_spe.c b/memcheck/tests/ppc32/test_spe.c
+index f8647c8..5dcd978 100644
+--- a/memcheck/tests/ppc32/test_spe.c
++++ b/memcheck/tests/ppc32/test_spe.c
+@@ -5823,6 +5823,209 @@ int __ev_extsh_intrinsic(void)
+ }
+ TEST_SPE_DECL(__ev_extsh_intrinsic, "__ev_extsh");
+ 
++uint32_t count_leading_sign_bits(int32_t n)
++{
++  uint32_t sign_bit = ((uint32_t) n) >> 31;
++  uint32_t i, count;
++
++#ifdef GEN_BASELINE
++  printf ("%s 0x%x: ", __func__, n);
++#endif
++  for (count = 0, i = 0; i < 32; n <<= 1, i++)
++    if ((((uint32_t) n) >> 31) == sign_bit)
++      count++;
++    else
++      break;
++#ifdef GEN_BASELINE
++  printf ("%d\n", count);
++#endif
++  return count;
++}
++
++int evcntlsw_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_s32__ regA asm ("30");
++  register __ev64_s32__ regD asm ("29");
++  int i;
++
++  __ev64_s32__ spl[] = {
++    (__ev64_s32__) { 0x0, 0x0 },
++    (__ev64_s32__) { 0xffffffff, 0xffffffff },
++  };
++
++  for (i = 0; i < NELTS(spl); i++) {
++    regA = spl[i];
++    asm volatile ("evcntlsw %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++    VERIFY(count_leading_sign_bits (regA[0]) == regD[0]);
++    VERIFY(count_leading_sign_bits (regA[1]) == regD[1]);
++  }
++  for (i = 0; i < NELTS(rA2s32); i++) {
++    regA = rA2s32[i];
++    asm volatile ("evcntlsw %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++    VERIFY(count_leading_sign_bits (regA[0]) == regD[0]);
++    VERIFY(count_leading_sign_bits (regA[1]) == regD[1]);
++  }
++  for (i = 0; i < NELTS(rA1s1_8); i += 2) {
++    regA = (__ev64_s32__) { rA1s1_8[i + 0], rA1s1_8[i + 1] };
++    asm volatile ("evcntlsw %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++    VERIFY(count_leading_sign_bits (regA[0]) == regD[0]);
++    VERIFY(count_leading_sign_bits (regA[1]) == regD[1]);
++  }
++  for (i = 0; i < NELTS(rA1u1_8); i += 2) {
++    regA = (__ev64_s32__) { rA1u1_8[i + 0], rA1u1_8[i + 1] };
++    asm volatile ("evcntlsw %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++    VERIFY(count_leading_sign_bits (regA[0]) == regD[0]);
++    VERIFY(count_leading_sign_bits (regA[1]) == regD[1]);
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evcntlsw_asm, "evcntlsw");
++
++int __ev_cntlsw_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ vd, va;
++  int i;
++
++  __ev64_s32__ spl[] = {
++    (__ev64_s32__) { 0x0, 0x0 },
++    (__ev64_s32__) { 0xffffffff, 0xffffffff },
++  };
++
++  for (i = 0; i < NELTS(spl); i++) {
++    va = __ev_create_s32 (__ev_get_upper_s32 (spl[i]), __ev_get_lower_s32 (spl[i]));
++    vd = __ev_cntlsw (va);
++    VERIFY(count_leading_sign_bits (__ev_get_upper_s32 (va)) == __ev_get_upper_s32 (vd));
++    VERIFY(count_leading_sign_bits (__ev_get_lower_s32 (va)) == __ev_get_lower_s32 (vd));
++  }
++  for (i = 0; i < NELTS(rA1s32); i += 2) {
++    va = __ev_create_s32 (rA1s32[i + 0], rA1s32[i + 1]);
++    vd = __ev_cntlsw (va);
++    VERIFY(count_leading_sign_bits (__ev_get_upper_s32 (va)) == __ev_get_upper_s32 (vd));
++    VERIFY(count_leading_sign_bits (__ev_get_lower_s32 (va)) == __ev_get_lower_s32 (vd));
++  }
++  for (i = 0; i < NELTS(rA1s1_8); i += 2) {
++    va = __ev_create_s32 (rA1s1_8[i + 0], rA1s1_8[i + 1]);
++    vd = __ev_cntlsw (va);
++    VERIFY(count_leading_sign_bits (__ev_get_upper_s32 (va)) == __ev_get_upper_s32 (vd));
++    VERIFY(count_leading_sign_bits (__ev_get_lower_s32 (va)) == __ev_get_lower_s32 (vd));
++  }
++  for (i = 0; i < NELTS(rA1u1_8); i += 2) {
++    va = __ev_create_s32 (rA1u1_8[i + 0], rA1u1_8[i + 1]);
++    vd = __ev_cntlsw (va);
++    VERIFY(count_leading_sign_bits (__ev_get_upper_s32 (va)) == __ev_get_upper_s32 (vd));
++    VERIFY(count_leading_sign_bits (__ev_get_lower_s32 (va)) == __ev_get_lower_s32 (vd));
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_cntlsw_intrinsic, "__ev_cntlsw");
++
++uint32_t count_leading_zero_bits(uint32_t n)
++{
++  uint32_t i, count;
++
++#ifdef GEN_BASELINE
++  printf ("%s 0x%x: ", __func__, n);
++#endif
++  for (count = 0, i = 0; i < 32; n <<= 1, i++)
++    if ((n >> 31) == 0x0)
++      count++;
++    else
++      break;
++#ifdef GEN_BASELINE
++  printf ("%d\n", count);
++#endif
++  return count;
++}
++
++int evcntlzw_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_u32__ regA asm ("30");
++  register __ev64_u32__ regD asm ("29");
++  int i;
++
++  __ev64_u32__ spl[] = {
++    (__ev64_u32__) { 0x0, 0x0 },
++    (__ev64_u32__) { 0xffffffff, 0xffffffff },
++  };
++
++  for (i = 0; i < NELTS(spl); i++) {
++    regA = spl[i];
++    asm volatile ("evcntlzw %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++    VERIFY(count_leading_zero_bits (regA[0]) == regD[0]);
++    VERIFY(count_leading_zero_bits (regA[1]) == regD[1]);
++  }
++  for (i = 0; i < NELTS(rA2u32); i++) {
++    regA = rA2u32[i];
++    asm volatile ("evcntlzw %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++    VERIFY(count_leading_zero_bits (regA[0]) == regD[0]);
++    VERIFY(count_leading_zero_bits (regA[1]) == regD[1]);
++  }
++  for (i = 0; i < NELTS(rA1u1_8); i += 2) {
++    regA = (__ev64_u32__) { rA1u1_8[i + 0], rA1u1_8[i + 1] };
++    asm volatile ("evcntlzw %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++    VERIFY(count_leading_zero_bits (regA[0]) == regD[0]);
++    VERIFY(count_leading_zero_bits (regA[1]) == regD[1]);
++  }
++  for (i = 0; i < NELTS(rA1s1_8); i += 2) {
++    regA = (__ev64_u32__) { rA1s1_8[i + 0], rA1s1_8[i + 1] };
++    asm volatile ("evcntlzw %[d], %[a]" : [d] "=r" (regD) : [a] "r" (regA));
++    VERIFY(count_leading_zero_bits (regA[0]) == regD[0]);
++    VERIFY(count_leading_zero_bits (regA[1]) == regD[1]);
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evcntlzw_asm, "evcntlzw");
++
++int __ev_cntlzw_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ vd, va;
++  int i;
++
++  __ev64_u32__ spl[] = {
++    (__ev64_u32__) { 0x0, 0x0 },
++    (__ev64_u32__) { 0xffffffff, 0xffffffff },
++  };
++
++  for (i = 0; i < NELTS(spl); i++) {
++    va = __ev_create_u32 (__ev_get_upper_u32 (spl[i]), __ev_get_lower_u32 (spl[i]));
++    vd = __ev_cntlzw (va);
++    VERIFY(count_leading_zero_bits (__ev_get_upper_u32 (va)) == __ev_get_upper_u32 (vd));
++    VERIFY(count_leading_zero_bits (__ev_get_lower_u32 (va)) == __ev_get_lower_u32 (vd));
++  }
++  for (i = 0; i < NELTS(rA1u32); i += 2) {
++    va = __ev_create_u32 (rA1u32[i + 0], rA1u32[i + 1]);
++    vd = __ev_cntlzw (va);
++    VERIFY(count_leading_zero_bits (__ev_get_upper_u32 (va)) == __ev_get_upper_u32 (vd));
++    VERIFY(count_leading_zero_bits (__ev_get_lower_u32 (va)) == __ev_get_lower_u32 (vd));
++  }
++  for (i = 0; i < NELTS(rA1u1_8); i += 2) {
++    va = __ev_create_u32 (rA1u1_8[i + 0], rA1u1_8[i + 1]);
++    vd = __ev_cntlzw (va);
++    VERIFY(count_leading_zero_bits (__ev_get_upper_u32 (va)) == __ev_get_upper_u32 (vd));
++    VERIFY(count_leading_zero_bits (__ev_get_lower_u32 (va)) == __ev_get_lower_u32 (vd));
++  }
++  for (i = 0; i < NELTS(rA1s1_8); i += 2) {
++    va = __ev_create_u32 (rA1s1_8[i + 0], rA1s1_8[i + 1]);
++    vd = __ev_cntlzw (va);
++    VERIFY(count_leading_zero_bits (__ev_get_upper_u32 (va)) == __ev_get_upper_u32 (vd));
++    VERIFY(count_leading_zero_bits (__ev_get_lower_u32 (va)) == __ev_get_lower_u32 (vd));
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_cntlzw_intrinsic, "__ev_cntlzw");
++
+ /* NOTE: To avoid having to remaster the .exp files entirely, add
+  *       new test functions /just above/ this comment.
+  *       That way, you only need to worry about the test that you
+@@ -5923,6 +6126,8 @@ test_t spe_isa_bitwise_operators_test_table = {
+     F(evorc_asm),
+     F(evextsb_asm),
+     F(evextsh_asm),
++    F(evcntlsw_asm),
++    F(evcntlzw_asm),
+     NULL
+   }
+ };
+@@ -6054,6 +6259,8 @@ test_t chapter3_spe2pim_intrinsics_tests_table = {
+     F(__ev_srwis_intrinsic),
+     F(__ev_extsb_intrinsic),
+     F(__ev_extsh_intrinsic),
++    F(__ev_cntlsw_intrinsic),
++    F(__ev_cntlzw_intrinsic),
+     NULL
+   }
+ };
+@@ -6145,3 +6352,5 @@ int main(void)
+ // 15. Add floating point examples to the spe2pim tests. See: __ADDED_FP_SUPPORT__
+ // 16. Add accumulator support. See: __ADDED_ACCUMULATOR_SUPPORT__
+ // 17. Get around to: #if TODO
++// 18. We were not able to use __ev_get_s16 (), in __ev_extsh_intrinsic (); see comment in __ev_lwhos_intrinsic ()
++//     Fix this GCC bug, and re-code.
+diff --git a/memcheck/tests/ppc32/test_spe.h b/memcheck/tests/ppc32/test_spe.h
+index 9b50826..0f80656 100644
+--- a/memcheck/tests/ppc32/test_spe.h
++++ b/memcheck/tests/ppc32/test_spe.h
+@@ -4618,6 +4618,269 @@ const unsigned int rA1u32[] = {
+ 
+ unsigned int rD1u32[NELTS(rA1u32)];
+ 
++const unsigned int rA1s32[] = {
++
++  /*   0 */ 0x5c482e8e,
++  /*   1 */ 0xd12a461c,
++  /*   2 */ 0x9dfbc419,
++  /*   3 */ 0xbd85105f,
++  /*   4 */ 0x6c31c0b7,
++  /*   5 */ 0x6a1b3697,
++  /*   6 */ 0xd096770f,
++  /*   7 */ 0x5194f43e,
++  /*   8 */ 0x1bfa148f,
++  /*   9 */ 0xcfc874df,
++  /*  10 */ 0x2c9793a9,
++  /*  11 */ 0x09dc48ae,
++  /*  12 */ 0x4e14904c,
++  /*  13 */ 0xe35c7c26,
++  /*  14 */ 0x330dd241,
++  /*  15 */ 0x5c593d99,
++  /*  16 */ 0xd87dcfdc,
++  /*  17 */ 0x4bb45b65,
++  /*  18 */ 0xec7fb6ac,
++  /*  19 */ 0xb855854d,
++  /*  20 */ 0xd5fabea5,
++  /*  21 */ 0xa53dbba7,
++  /*  22 */ 0x28a208ac,
++  /*  23 */ 0x453cecef,
++  /*  24 */ 0x49eb5605,
++  /*  25 */ 0x4be59738,
++  /*  26 */ 0xcdde4e36,
++  /*  27 */ 0x246a5c00,
++  /*  28 */ 0x8521f361,
++  /*  29 */ 0x58dba842,
++  /*  30 */ 0x35316dc4,
++  /*  31 */ 0xa150677e,
++  /*  32 */ 0x390c0c75,
++  /*  33 */ 0x0b13a72d,
++  /*  34 */ 0xabc51835,
++  /*  35 */ 0x9a56b3f0,
++  /*  36 */ 0x6ea31760,
++  /*  37 */ 0x7aa79370,
++  /*  38 */ 0x1eeab761,
++  /*  39 */ 0xa0ede9fe,
++  /*  40 */ 0x4d58d912,
++  /*  41 */ 0xff883f82,
++  /*  42 */ 0x00ae0cf4,
++  /*  43 */ 0xf4311a91,
++  /*  44 */ 0xcabf4310,
++  /*  45 */ 0xbc76c00b,
++  /*  46 */ 0x039e39c3,
++  /*  47 */ 0x7228e535,
++  /*  48 */ 0xb5757da3,
++  /*  49 */ 0x05aa7da8,
++  /*  50 */ 0x4fb89caf,
++  /*  51 */ 0x4bca017d,
++  /*  52 */ 0x983edf69,
++  /*  53 */ 0xccbde62c,
++  /*  54 */ 0xb615bc5b,
++  /*  55 */ 0x2760d62c,
++  /*  56 */ 0xbcf2961b,
++  /*  57 */ 0x4631d0ca,
++  /*  58 */ 0xebac27d0,
++  /*  59 */ 0x8b5e2f45,
++  /*  60 */ 0x0ae724cf,
++  /*  61 */ 0x03ba7e74,
++  /*  62 */ 0xfdc3d189,
++  /*  63 */ 0xf2ff4fdb,
++  /*  64 */ 0xeba67e98,
++  /*  65 */ 0x410874e0,
++  /*  66 */ 0x12800766,
++  /*  67 */ 0x2a6e2fc0,
++  /*  68 */ 0x7b616679,
++  /*  69 */ 0x87bbb674,
++  /*  70 */ 0x18fd0c83,
++  /*  71 */ 0x35b77b80,
++  /*  72 */ 0xc7aa07e2,
++  /*  73 */ 0xe0fc9f68,
++  /*  74 */ 0xa861b4e1,
++  /*  75 */ 0x3df2770f,
++  /*  76 */ 0x409aedf8,
++  /*  77 */ 0x04b62dc7,
++  /*  78 */ 0x0898f544,
++  /*  79 */ 0x0a1a67e0,
++  /*  80 */ 0x6f9a8bb9,
++  /*  81 */ 0x480f6c43,
++  /*  82 */ 0x757ec015,
++  /*  83 */ 0xf5a7f8c2,
++  /*  84 */ 0x02418d96,
++  /*  85 */ 0x08dabb65,
++  /*  86 */ 0xb7dd7f37,
++  /*  87 */ 0x5eb57aab,
++  /*  88 */ 0x9053caca,
++  /*  89 */ 0x6a059d45,
++  /*  90 */ 0xce00dfef,
++  /*  91 */ 0x4d970d3d,
++  /*  92 */ 0x931f7203,
++  /*  93 */ 0x754580c1,
++  /*  94 */ 0xe1a6d660,
++  /*  95 */ 0x97dc60bc,
++  /*  96 */ 0xc3ec8a0c,
++  /*  97 */ 0x535a0f47,
++  /*  98 */ 0x005ac8ec,
++  /*  99 */ 0x9ad59042,
++  /* 100 */ 0xfb9f808a,
++  /* 101 */ 0xcba9ef9d,
++  /* 102 */ 0x6cb906a6,
++  /* 103 */ 0x1acafd82,
++  /* 104 */ 0xd7a59ea6,
++  /* 105 */ 0x2bc78f53,
++  /* 106 */ 0x6c931111,
++  /* 107 */ 0x7eaaa404,
++  /* 108 */ 0x1c91a320,
++  /* 109 */ 0x408f4b70,
++  /* 110 */ 0xd6596190,
++  /* 111 */ 0x5c310002,
++  /* 112 */ 0xc6abfb3e,
++  /* 113 */ 0x39f8ff07,
++  /* 114 */ 0xfad4dc3d,
++  /* 115 */ 0x34fdcb77,
++  /* 116 */ 0x492216e7,
++  /* 117 */ 0xfd6194b0,
++  /* 118 */ 0x8d690a54,
++  /* 119 */ 0xcaae0a9b,
++  /* 120 */ 0xfc99b81d,
++  /* 121 */ 0x293a6cd0,
++  /* 122 */ 0x058f8bab,
++  /* 123 */ 0xe5cbe13a,
++  /* 124 */ 0x3ca29715,
++  /* 125 */ 0x9024fae9,
++  /* 126 */ 0xb9b7bab5,
++  /* 127 */ 0xac3bb9df,
++  /* 128 */ 0x79dbcc87,
++  /* 129 */ 0x312dd2d9,
++  /* 130 */ 0xb6aab204,
++  /* 131 */ 0x272ee476,
++  /* 132 */ 0x3d28b249,
++  /* 133 */ 0x0199d413,
++  /* 134 */ 0xda47b67e,
++  /* 135 */ 0xb7429214,
++  /* 136 */ 0xbbb5f082,
++  /* 137 */ 0x7809a598,
++  /* 138 */ 0x5d3f80c4,
++  /* 139 */ 0x281e889a,
++  /* 140 */ 0x85eaa229,
++  /* 141 */ 0x576807d1,
++  /* 142 */ 0x777165af,
++  /* 143 */ 0x4162971c,
++  /* 144 */ 0x7416cce9,
++  /* 145 */ 0x129023e3,
++  /* 146 */ 0x0c265a58,
++  /* 147 */ 0x74a11769,
++  /* 148 */ 0x6f571996,
++  /* 149 */ 0x46336dc5,
++  /* 150 */ 0xa350c6bb,
++  /* 151 */ 0xabb0d446,
++  /* 152 */ 0xeb8e1b09,
++  /* 153 */ 0x64414a39,
++  /* 154 */ 0x894bbc91,
++  /* 155 */ 0xc13bda78,
++  /* 156 */ 0x6ca4bc20,
++  /* 157 */ 0x7dd3fdd6,
++  /* 158 */ 0x8cc289f2,
++  /* 159 */ 0x301dcbef,
++  /* 160 */ 0x46a51db7,
++  /* 161 */ 0xcca3e6da,
++  /* 162 */ 0x6e79bc7a,
++  /* 163 */ 0x61ff376f,
++  /* 164 */ 0xac20650f,
++  /* 165 */ 0x1c31ddaa,
++  /* 166 */ 0x5677b558,
++  /* 167 */ 0x7e4e866d,
++  /* 168 */ 0x0d049687,
++  /* 169 */ 0x018d1f29,
++  /* 170 */ 0x5a288956,
++  /* 171 */ 0x660ddb51,
++  /* 172 */ 0x4e4d7461,
++  /* 173 */ 0x8ab79bde,
++  /* 174 */ 0x0b2644a9,
++  /* 175 */ 0x6fca0ba3,
++  /* 176 */ 0xe994bcc3,
++  /* 177 */ 0x523bd1aa,
++  /* 178 */ 0x520781af,
++  /* 179 */ 0x95cac9f6,
++  /* 180 */ 0x5bcb3799,
++  /* 181 */ 0x13bc31ea,
++  /* 182 */ 0xfdde5034,
++  /* 183 */ 0xde88ce75,
++  /* 184 */ 0xd6aa2cab,
++  /* 185 */ 0x6c365516,
++  /* 186 */ 0xb2992062,
++  /* 187 */ 0xf369204f,
++  /* 188 */ 0x5f6c6860,
++  /* 189 */ 0xf012f094,
++  /* 190 */ 0xd31fdfaf,
++  /* 191 */ 0xcbafbca9,
++  /* 192 */ 0x66f692d3,
++  /* 193 */ 0xd43bdbbf,
++  /* 194 */ 0xd6bef52d,
++  /* 195 */ 0xe17930f5,
++  /* 196 */ 0x29739be7,
++  /* 197 */ 0xf21a9d91,
++  /* 198 */ 0x73e563b6,
++  /* 199 */ 0x7467e2d6,
++  /* 200 */ 0x9cb62c8f,
++  /* 201 */ 0x93ed62fd,
++  /* 202 */ 0xa7c37e04,
++  /* 203 */ 0x6bd906f5,
++  /* 204 */ 0xeb923315,
++  /* 205 */ 0x0fdfb6fc,
++  /* 206 */ 0x83b73589,
++  /* 207 */ 0x5f4063d1,
++  /* 208 */ 0xb98ac63a,
++  /* 209 */ 0x7ca0eaf9,
++  /* 210 */ 0x63e8acae,
++  /* 211 */ 0x77294e27,
++  /* 212 */ 0x78a44c93,
++  /* 213 */ 0xd89da982,
++  /* 214 */ 0x6c5156c6,
++  /* 215 */ 0x8bf774db,
++  /* 216 */ 0xfe2b3bb9,
++  /* 217 */ 0x8ee533c9,
++  /* 218 */ 0xebeeb3e3,
++  /* 219 */ 0xc146512f,
++  /* 220 */ 0x50807f9d,
++  /* 221 */ 0x7178b283,
++  /* 222 */ 0xf01e572f,
++  /* 223 */ 0x697ee718,
++  /* 224 */ 0x6bf67280,
++  /* 225 */ 0x4927244d,
++  /* 226 */ 0xbd36304e,
++  /* 227 */ 0x127b65e3,
++  /* 228 */ 0x83d257c8,
++  /* 229 */ 0xe99c402b,
++  /* 230 */ 0xd4837c47,
++  /* 231 */ 0x0e1a8e5e,
++  /* 232 */ 0xe503c270,
++  /* 233 */ 0x4c5441d4,
++  /* 234 */ 0x7f2b969c,
++  /* 235 */ 0x7f05f051,
++  /* 236 */ 0xb5e69c30,
++  /* 237 */ 0xb4f2f0f7,
++  /* 238 */ 0x4ea10f5f,
++  /* 239 */ 0x8d0601c1,
++  /* 240 */ 0xa9410bc9,
++  /* 241 */ 0x7f296d6b,
++  /* 242 */ 0x886dd486,
++  /* 243 */ 0x5f727ae0,
++  /* 244 */ 0x0553c7c3,
++  /* 245 */ 0xa4bbda13,
++  /* 246 */ 0x910e5ddf,
++  /* 247 */ 0x8ea30bda,
++  /* 248 */ 0x16bec15c,
++  /* 249 */ 0x5f706f09,
++  /* 250 */ 0x610d00a8,
++  /* 251 */ 0xfe72c13a,
++  /* 252 */ 0xd9f97f26,
++  /* 253 */ 0x18d75157,
++  /* 254 */ 0xacac872b,
++  /* 255 */ 0x34dafc96,
++
++};
++
++unsigned int rD1s32[NELTS(rA1s32)];
++
+ // Even Half Word
+ #define EHW(n) ((n) >> 16)
+ 
+@@ -4630,6 +4893,269 @@ unsigned int rD1u32[NELTS(rA1u32)];
+ // Access a given bit of a word
+ #define BIT_W(w, n) (((w) & (0x1 << (31 - (n)))) >> (31 - (n)))
+ 
++const signed short rA1u16[] = {
++
++  /*   0 */ 0x0241,
++  /*   1 */ 0x42cb,
++  /*   2 */ 0xc5d1,
++  /*   3 */ 0x11b5,
++  /*   4 */ 0xa9b7,
++  /*   5 */ 0x7f83,
++  /*   6 */ 0xc63b,
++  /*   7 */ 0x194b,
++  /*   8 */ 0xf6c5,
++  /*   9 */ 0xaf8e,
++  /*  10 */ 0x0368,
++  /*  11 */ 0x8c28,
++  /*  12 */ 0x8bd8,
++  /*  13 */ 0x4860,
++  /*  14 */ 0xf6e7,
++  /*  15 */ 0x0297,
++  /*  16 */ 0x989f,
++  /*  17 */ 0x0ce8,
++  /*  18 */ 0x2578,
++  /*  19 */ 0x22f6,
++  /*  20 */ 0x839c,
++  /*  21 */ 0x2725,
++  /*  22 */ 0x15f5,
++  /*  23 */ 0xab28,
++  /*  24 */ 0x9df5,
++  /*  25 */ 0x4bc3,
++  /*  26 */ 0x78f7,
++  /*  27 */ 0x7d21,
++  /*  28 */ 0x286c,
++  /*  29 */ 0x3772,
++  /*  30 */ 0xf69c,
++  /*  31 */ 0xc1dc,
++  /*  32 */ 0xd2ca,
++  /*  33 */ 0x0af6,
++  /*  34 */ 0xbecc,
++  /*  35 */ 0xa99a,
++  /*  36 */ 0x45c1,
++  /*  37 */ 0x7777,
++  /*  38 */ 0xabf1,
++  /*  39 */ 0x932e,
++  /*  40 */ 0x45ac,
++  /*  41 */ 0x7245,
++  /*  42 */ 0x2611,
++  /*  43 */ 0xf01f,
++  /*  44 */ 0xaad9,
++  /*  45 */ 0x9f80,
++  /*  46 */ 0xa609,
++  /*  47 */ 0x17f7,
++  /*  48 */ 0xb6b5,
++  /*  49 */ 0x3d65,
++  /*  50 */ 0xf51b,
++  /*  51 */ 0x0968,
++  /*  52 */ 0xa76d,
++  /*  53 */ 0x53dc,
++  /*  54 */ 0x684e,
++  /*  55 */ 0xc886,
++  /*  56 */ 0x7d4c,
++  /*  57 */ 0x0e6b,
++  /*  58 */ 0x675a,
++  /*  59 */ 0x0ae3,
++  /*  60 */ 0x3776,
++  /*  61 */ 0x8c28,
++  /*  62 */ 0x8163,
++  /*  63 */ 0xf8cc,
++  /*  64 */ 0x8eb4,
++  /*  65 */ 0x8910,
++  /*  66 */ 0x4197,
++  /*  67 */ 0x6f8a,
++  /*  68 */ 0x7297,
++  /*  69 */ 0x5ed9,
++  /*  70 */ 0xf6ec,
++  /*  71 */ 0x4a08,
++  /*  72 */ 0xe6c5,
++  /*  73 */ 0xea4e,
++  /*  74 */ 0xd0dd,
++  /*  75 */ 0x12fc,
++  /*  76 */ 0x20fe,
++  /*  77 */ 0x5812,
++  /*  78 */ 0x1f62,
++  /*  79 */ 0xab8c,
++  /*  80 */ 0xacbe,
++  /*  81 */ 0xab77,
++  /*  82 */ 0xddca,
++  /*  83 */ 0x54e8,
++  /*  84 */ 0x3b47,
++  /*  85 */ 0x16d1,
++  /*  86 */ 0x11bd,
++  /*  87 */ 0x540e,
++  /*  88 */ 0xa5b0,
++  /*  89 */ 0xe94a,
++  /*  90 */ 0x997c,
++  /*  91 */ 0xdd1c,
++  /*  92 */ 0xdf71,
++  /*  93 */ 0x3afa,
++  /*  94 */ 0xef45,
++  /*  95 */ 0x0412,
++  /*  96 */ 0x99b9,
++  /*  97 */ 0xfa2c,
++  /*  98 */ 0xd7cc,
++  /*  99 */ 0x677c,
++  /* 100 */ 0xba2a,
++  /* 101 */ 0x5925,
++  /* 102 */ 0xafe3,
++  /* 103 */ 0xf987,
++  /* 104 */ 0xd80f,
++  /* 105 */ 0x424e,
++  /* 106 */ 0x78b8,
++  /* 107 */ 0x03b6,
++  /* 108 */ 0x78dd,
++  /* 109 */ 0x1437,
++  /* 110 */ 0x6dad,
++  /* 111 */ 0x72b1,
++  /* 112 */ 0x2bf7,
++  /* 113 */ 0x52d2,
++  /* 114 */ 0x1e08,
++  /* 115 */ 0x00ca,
++  /* 116 */ 0x4f18,
++  /* 117 */ 0x316b,
++  /* 118 */ 0x28ce,
++  /* 119 */ 0xd392,
++  /* 120 */ 0x1487,
++  /* 121 */ 0x6df3,
++  /* 122 */ 0xadbd,
++  /* 123 */ 0x9f87,
++  /* 124 */ 0x9796,
++  /* 125 */ 0x489b,
++  /* 126 */ 0x9feb,
++  /* 127 */ 0xb696,
++  /* 128 */ 0x20c8,
++  /* 129 */ 0x5cee,
++  /* 130 */ 0xbcf9,
++  /* 131 */ 0xc19a,
++  /* 132 */ 0xbc79,
++  /* 133 */ 0x1eba,
++  /* 134 */ 0x9d1c,
++  /* 135 */ 0x471f,
++  /* 136 */ 0xad2f,
++  /* 137 */ 0xc481,
++  /* 138 */ 0x4083,
++  /* 139 */ 0x07ec,
++  /* 140 */ 0xdde4,
++  /* 141 */ 0x727c,
++  /* 142 */ 0x67b4,
++  /* 143 */ 0x8d42,
++  /* 144 */ 0x5d23,
++  /* 145 */ 0x0fde,
++  /* 146 */ 0x2c15,
++  /* 147 */ 0x859e,
++  /* 148 */ 0x383e,
++  /* 149 */ 0xd84d,
++  /* 150 */ 0xec1f,
++  /* 151 */ 0xdd26,
++  /* 152 */ 0xbe71,
++  /* 153 */ 0x6edd,
++  /* 154 */ 0xd5b3,
++  /* 155 */ 0x9209,
++  /* 156 */ 0xee80,
++  /* 157 */ 0x1075,
++  /* 158 */ 0xd30c,
++  /* 159 */ 0xb76c,
++  /* 160 */ 0x51cf,
++  /* 161 */ 0xc536,
++  /* 162 */ 0x6de1,
++  /* 163 */ 0x18c0,
++  /* 164 */ 0x597e,
++  /* 165 */ 0xd876,
++  /* 166 */ 0xeba6,
++  /* 167 */ 0x35c8,
++  /* 168 */ 0x8d7e,
++  /* 169 */ 0x2eec,
++  /* 170 */ 0x37ab,
++  /* 171 */ 0x61a5,
++  /* 172 */ 0x8f66,
++  /* 173 */ 0x6683,
++  /* 174 */ 0x4d49,
++  /* 175 */ 0x0780,
++  /* 176 */ 0x49f5,
++  /* 177 */ 0x4d26,
++  /* 178 */ 0xcf2b,
++  /* 179 */ 0x960f,
++  /* 180 */ 0x3cb4,
++  /* 181 */ 0xa14b,
++  /* 182 */ 0xaff0,
++  /* 183 */ 0xdc04,
++  /* 184 */ 0xd4dc,
++  /* 185 */ 0x6859,
++  /* 186 */ 0x7125,
++  /* 187 */ 0x3d43,
++  /* 188 */ 0xe954,
++  /* 189 */ 0xb0db,
++  /* 190 */ 0x474b,
++  /* 191 */ 0x3584,
++  /* 192 */ 0xba51,
++  /* 193 */ 0xd60b,
++  /* 194 */ 0x6edd,
++  /* 195 */ 0x4b8d,
++  /* 196 */ 0x0bb6,
++  /* 197 */ 0xe037,
++  /* 198 */ 0xa764,
++  /* 199 */ 0xeb7b,
++  /* 200 */ 0x44dd,
++  /* 201 */ 0x73f6,
++  /* 202 */ 0x6540,
++  /* 203 */ 0xea90,
++  /* 204 */ 0x1e76,
++  /* 205 */ 0xf9c1,
++  /* 206 */ 0xa311,
++  /* 207 */ 0x7d35,
++  /* 208 */ 0x6e05,
++  /* 209 */ 0xda83,
++  /* 210 */ 0x8538,
++  /* 211 */ 0x4a29,
++  /* 212 */ 0x382b,
++  /* 213 */ 0x3229,
++  /* 214 */ 0xf68e,
++  /* 215 */ 0xb65b,
++  /* 216 */ 0xe8b0,
++  /* 217 */ 0x0d8a,
++  /* 218 */ 0x47f7,
++  /* 219 */ 0xef5c,
++  /* 220 */ 0xc6d1,
++  /* 221 */ 0x0141,
++  /* 222 */ 0x35eb,
++  /* 223 */ 0x2491,
++  /* 224 */ 0xb466,
++  /* 225 */ 0x9bf5,
++  /* 226 */ 0xd1a4,
++  /* 227 */ 0x6325,
++  /* 228 */ 0x5020,
++  /* 229 */ 0xda71,
++  /* 230 */ 0x5408,
++  /* 231 */ 0xf883,
++  /* 232 */ 0x5501,
++  /* 233 */ 0xda5a,
++  /* 234 */ 0xfe5a,
++  /* 235 */ 0x4d7c,
++  /* 236 */ 0x4d3e,
++  /* 237 */ 0x1484,
++  /* 238 */ 0xa238,
++  /* 239 */ 0x09c0,
++  /* 240 */ 0x3b69,
++  /* 241 */ 0x8387,
++  /* 242 */ 0xc7eb,
++  /* 243 */ 0x3c7e,
++  /* 244 */ 0x5cc1,
++  /* 245 */ 0xb9a1,
++  /* 246 */ 0xbb9e,
++  /* 247 */ 0x15ed,
++  /* 248 */ 0x8f86,
++  /* 249 */ 0xb201,
++  /* 250 */ 0x9a05,
++  /* 251 */ 0xaccb,
++  /* 252 */ 0x0fa4,
++  /* 253 */ 0xf459,
++  /* 254 */ 0xba79,
++  /* 255 */ 0x0d0b,
++
++};
++
++signed short rD1u16[NELTS(rA1u16)];
++
+ const signed short rA1s16[] = {
+ 
+   /*   0 */ 0x2168,
+@@ -4900,3 +5426,525 @@ signed short rD1s16[NELTS(rA1s16)];
+ #define NOR(a, b)  (~((a) | (b)))
+ #define NOT(a)     (~(a))
+ #define ORC(a, b)  ((a) | ~(b))
++
++const uint32_t rA1u1_8[] = {
++
++  /*   0 */ 0xc,
++  /*   1 */ 0x4,
++  /*   2 */ 0x0,
++  /*   3 */ 0x9,
++  /*   4 */ 0x1,
++  /*   5 */ 0x7,
++  /*   6 */ 0x4,
++  /*   7 */ 0x4,
++  /*   8 */ 0x8,
++  /*   9 */ 0xa,
++  /*  10 */ 0xb,
++  /*  11 */ 0x1,
++  /*  12 */ 0x1,
++  /*  13 */ 0x6,
++  /*  14 */ 0x1,
++  /*  15 */ 0xc,
++  /*  16 */ 0x6,
++  /*  17 */ 0xf,
++  /*  18 */ 0xa,
++  /*  19 */ 0x2,
++  /*  20 */ 0x2,
++  /*  21 */ 0x1,
++  /*  22 */ 0x9,
++  /*  23 */ 0xf,
++  /*  24 */ 0xa,
++  /*  25 */ 0x2,
++  /*  26 */ 0x2,
++  /*  27 */ 0x3,
++  /*  28 */ 0xd,
++  /*  29 */ 0xc,
++  /*  30 */ 0xe,
++  /*  31 */ 0x6,
++  /*  32 */ 0xec,
++  /*  33 */ 0xed,
++  /*  34 */ 0x43,
++  /*  35 */ 0x3e,
++  /*  36 */ 0xf4,
++  /*  37 */ 0xb1,
++  /*  38 */ 0x54,
++  /*  39 */ 0xf7,
++  /*  40 */ 0xd1,
++  /*  41 */ 0x14,
++  /*  42 */ 0xc3,
++  /*  43 */ 0x29,
++  /*  44 */ 0x3a,
++  /*  45 */ 0x34,
++  /*  46 */ 0x34,
++  /*  47 */ 0xd1,
++  /*  48 */ 0xa5,
++  /*  49 */ 0x3b,
++  /*  50 */ 0x73,
++  /*  51 */ 0xda,
++  /*  52 */ 0x25,
++  /*  53 */ 0x9c,
++  /*  54 */ 0x6a,
++  /*  55 */ 0x65,
++  /*  56 */ 0x2e,
++  /*  57 */ 0x3c,
++  /*  58 */ 0x97,
++  /*  59 */ 0x82,
++  /*  60 */ 0x45,
++  /*  61 */ 0x94,
++  /*  62 */ 0x9e,
++  /*  63 */ 0x98,
++  /*  64 */ 0xf40,
++  /*  65 */ 0xbc5,
++  /*  66 */ 0x70e,
++  /*  67 */ 0x5f6,
++  /*  68 */ 0xf31,
++  /*  69 */ 0x735,
++  /*  70 */ 0x68d,
++  /*  71 */ 0xefe,
++  /*  72 */ 0xdd2,
++  /*  73 */ 0x02a,
++  /*  74 */ 0x293,
++  /*  75 */ 0xc1e,
++  /*  76 */ 0x89c,
++  /*  77 */ 0x543,
++  /*  78 */ 0xd9e,
++  /*  79 */ 0xa70,
++  /*  80 */ 0xbf4,
++  /*  81 */ 0x0cd,
++  /*  82 */ 0xcb9,
++  /*  83 */ 0xd34,
++  /*  84 */ 0xb3f,
++  /*  85 */ 0xf83,
++  /*  86 */ 0x591,
++  /*  87 */ 0x3e1,
++  /*  88 */ 0xcd5,
++  /*  89 */ 0x1cb,
++  /*  90 */ 0xf61,
++  /*  91 */ 0x2ff,
++  /*  92 */ 0xd20,
++  /*  93 */ 0xe92,
++  /*  94 */ 0x342,
++  /*  95 */ 0x173,
++  /*  96 */ 0x4501,
++  /*  97 */ 0x303a,
++  /*  98 */ 0x6177,
++  /*  99 */ 0xf262,
++  /* 100 */ 0xa7fb,
++  /* 101 */ 0xb0b1,
++  /* 102 */ 0x2b2f,
++  /* 103 */ 0x60b8,
++  /* 104 */ 0xab5f,
++  /* 105 */ 0xb0c1,
++  /* 106 */ 0x34b9,
++  /* 107 */ 0x3cca,
++  /* 108 */ 0x7651,
++  /* 109 */ 0x0a28,
++  /* 110 */ 0x4bd1,
++  /* 111 */ 0x3bf4,
++  /* 112 */ 0x6a96,
++  /* 113 */ 0x913c,
++  /* 114 */ 0xb41e,
++  /* 115 */ 0xa152,
++  /* 116 */ 0xc9cf,
++  /* 117 */ 0xc455,
++  /* 118 */ 0x413d,
++  /* 119 */ 0x6109,
++  /* 120 */ 0x298f,
++  /* 121 */ 0xd7ed,
++  /* 122 */ 0x2382,
++  /* 123 */ 0x038a,
++  /* 124 */ 0x3ece,
++  /* 125 */ 0x5e21,
++  /* 126 */ 0xb753,
++  /* 127 */ 0xf86c,
++  /* 128 */ 0xbb214,
++  /* 129 */ 0x8d4dd,
++  /* 130 */ 0x9d03c,
++  /* 131 */ 0x6f2f3,
++  /* 132 */ 0xec07a,
++  /* 133 */ 0x47735,
++  /* 134 */ 0x482b7,
++  /* 135 */ 0xef11b,
++  /* 136 */ 0x67bd8,
++  /* 137 */ 0x6e014,
++  /* 138 */ 0x82613,
++  /* 139 */ 0xe6de3,
++  /* 140 */ 0x537a0,
++  /* 141 */ 0x014a7,
++  /* 142 */ 0x230d8,
++  /* 143 */ 0x87389,
++  /* 144 */ 0xe0d5a,
++  /* 145 */ 0xfddd1,
++  /* 146 */ 0x8d864,
++  /* 147 */ 0xe2c30,
++  /* 148 */ 0xdd6d0,
++  /* 149 */ 0xa66d3,
++  /* 150 */ 0xff146,
++  /* 151 */ 0x60deb,
++  /* 152 */ 0x34238,
++  /* 153 */ 0xf9c06,
++  /* 154 */ 0x21c93,
++  /* 155 */ 0x80ae6,
++  /* 156 */ 0xd6ba6,
++  /* 157 */ 0xb992b,
++  /* 158 */ 0xcf340,
++  /* 159 */ 0xf250c,
++  /* 160 */ 0x24b6d09,
++  /* 161 */ 0xcaa0bb6,
++  /* 162 */ 0xa561278,
++  /* 163 */ 0x37e18a2,
++  /* 164 */ 0x358ce1e,
++  /* 165 */ 0x7ff790b,
++  /* 166 */ 0x06b2b75,
++  /* 167 */ 0x768e5e1,
++  /* 168 */ 0xb104828,
++  /* 169 */ 0x546dec6,
++  /* 170 */ 0x3eedb6c,
++  /* 171 */ 0xe06f819,
++  /* 172 */ 0x7001ff5,
++  /* 173 */ 0x93c2b22,
++  /* 174 */ 0x4f8f0cd,
++  /* 175 */ 0xc8fc159,
++  /* 176 */ 0xdd1c59e,
++  /* 177 */ 0x5c840c7,
++  /* 178 */ 0x95eafc0,
++  /* 179 */ 0x2ba9943,
++  /* 180 */ 0x7e13365,
++  /* 181 */ 0x042643f,
++  /* 182 */ 0x4cbb445,
++  /* 183 */ 0xd04e603,
++  /* 184 */ 0xfb663f0,
++  /* 185 */ 0x009ce0f,
++  /* 186 */ 0x10d6b2c,
++  /* 187 */ 0x8928c82,
++  /* 188 */ 0xd1ab578,
++  /* 189 */ 0x3b571f4,
++  /* 190 */ 0xc7590d8,
++  /* 191 */ 0xc3601cd,
++  /* 192 */ 0x4b68cd93,
++  /* 193 */ 0x6b6a33c2,
++  /* 194 */ 0x80fba91f,
++  /* 195 */ 0xc081c517,
++  /* 196 */ 0xf91c67c5,
++  /* 197 */ 0x183a312f,
++  /* 198 */ 0xef28b0ad,
++  /* 199 */ 0xb8c5778e,
++  /* 200 */ 0xb0b0198d,
++  /* 201 */ 0xf2f4bc26,
++  /* 202 */ 0x722a497a,
++  /* 203 */ 0xa0e16c9d,
++  /* 204 */ 0xefd28116,
++  /* 205 */ 0xfcf76df7,
++  /* 206 */ 0x86f6e0d0,
++  /* 207 */ 0xbf41b1d9,
++  /* 208 */ 0x70da6dd1,
++  /* 209 */ 0xf584c38d,
++  /* 210 */ 0x87fcad59,
++  /* 211 */ 0x4ef78751,
++  /* 212 */ 0x2e6d0781,
++  /* 213 */ 0x263c9aea,
++  /* 214 */ 0x59fa2fb3,
++  /* 215 */ 0x2068bffc,
++  /* 216 */ 0xf621f786,
++  /* 217 */ 0x1f8c52d6,
++  /* 218 */ 0x7eb660ec,
++  /* 219 */ 0x72427d15,
++  /* 220 */ 0x6c6e8047,
++  /* 221 */ 0x7d7f1e95,
++  /* 222 */ 0x98b98719,
++  /* 223 */ 0xad89bd1d,
++  /* 224 */ 0x4ba47087,
++  /* 225 */ 0x8cfb79b3,
++  /* 226 */ 0xcca4c48c,
++  /* 227 */ 0xf5f77713,
++  /* 228 */ 0xb61ea94c,
++  /* 229 */ 0x7bcadc53,
++  /* 230 */ 0xeff879e0,
++  /* 231 */ 0x749cd6b0,
++  /* 232 */ 0x52addef9,
++  /* 233 */ 0xffc40171,
++  /* 234 */ 0xe2552b4e,
++  /* 235 */ 0x961d17bc,
++  /* 236 */ 0xbda97527,
++  /* 237 */ 0x1569ea1d,
++  /* 238 */ 0xc445d11b,
++  /* 239 */ 0xbf1f1328,
++  /* 240 */ 0xe5be0cb9,
++  /* 241 */ 0x0d5f222a,
++  /* 242 */ 0xc273de72,
++  /* 243 */ 0x86b12010,
++  /* 244 */ 0x05b3dc87,
++  /* 245 */ 0xc809be39,
++  /* 246 */ 0xbedcdd5b,
++  /* 247 */ 0x7d7b1b0e,
++  /* 248 */ 0x2c6bcf56,
++  /* 249 */ 0xa8dc2510,
++  /* 250 */ 0x69226af4,
++  /* 251 */ 0x889c3e8f,
++  /* 252 */ 0x282530cf,
++  /* 253 */ 0xbe3aa59a,
++  /* 254 */ 0x0348b8ca,
++  /* 255 */ 0x5f539088,
++
++};
++
++const int32_t rA1s1_8[] = {
++
++  /*   0 */ 0xfffffffc,
++  /*   1 */ 0xfffffff4,
++  /*   2 */ 0xfffffff0,
++  /*   3 */ 0xfffffff9,
++  /*   4 */ 0xfffffff1,
++  /*   5 */ 0xfffffff7,
++  /*   6 */ 0xfffffff4,
++  /*   7 */ 0xfffffff4,
++  /*   8 */ 0xfffffff8,
++  /*   9 */ 0xfffffffa,
++  /*  10 */ 0xfffffffb,
++  /*  11 */ 0xfffffff1,
++  /*  12 */ 0xfffffff1,
++  /*  13 */ 0xfffffff6,
++  /*  14 */ 0xfffffff1,
++  /*  15 */ 0xfffffffc,
++  /*  16 */ 0xfffffff6,
++  /*  17 */ 0xffffffff,
++  /*  18 */ 0xfffffffa,
++  /*  19 */ 0xfffffff2,
++  /*  20 */ 0xfffffff2,
++  /*  21 */ 0xfffffff1,
++  /*  22 */ 0xfffffff9,
++  /*  23 */ 0xffffffff,
++  /*  24 */ 0xfffffffa,
++  /*  25 */ 0xfffffff2,
++  /*  26 */ 0xfffffff2,
++  /*  27 */ 0xfffffff3,
++  /*  28 */ 0xfffffffd,
++  /*  29 */ 0xfffffffc,
++  /*  30 */ 0xfffffffe,
++  /*  31 */ 0xfffffff6,
++  /*  32 */ 0xffffffec,
++  /*  33 */ 0xffffffed,
++  /*  34 */ 0xffffff43,
++  /*  35 */ 0xffffff3e,
++  /*  36 */ 0xfffffff4,
++  /*  37 */ 0xffffffb1,
++  /*  38 */ 0xffffff54,
++  /*  39 */ 0xfffffff7,
++  /*  40 */ 0xffffffd1,
++  /*  41 */ 0xffffff14,
++  /*  42 */ 0xffffffc3,
++  /*  43 */ 0xffffff29,
++  /*  44 */ 0xffffff3a,
++  /*  45 */ 0xffffff34,
++  /*  46 */ 0xffffff34,
++  /*  47 */ 0xffffffd1,
++  /*  48 */ 0xffffffa5,
++  /*  49 */ 0xffffff3b,
++  /*  50 */ 0xffffff73,
++  /*  51 */ 0xffffffda,
++  /*  52 */ 0xffffff25,
++  /*  53 */ 0xffffff9c,
++  /*  54 */ 0xffffff6a,
++  /*  55 */ 0xffffff65,
++  /*  56 */ 0xffffff2e,
++  /*  57 */ 0xffffff3c,
++  /*  58 */ 0xffffff97,
++  /*  59 */ 0xffffff82,
++  /*  60 */ 0xffffff45,
++  /*  61 */ 0xffffff94,
++  /*  62 */ 0xffffff9e,
++  /*  63 */ 0xffffff98,
++  /*  64 */ 0xffffff40,
++  /*  65 */ 0xfffffbc5,
++  /*  66 */ 0xfffff70e,
++  /*  67 */ 0xfffff5f6,
++  /*  68 */ 0xffffff31,
++  /*  69 */ 0xfffff735,
++  /*  70 */ 0xfffff68d,
++  /*  71 */ 0xfffffefe,
++  /*  72 */ 0xfffffdd2,
++  /*  73 */ 0xfffff02a,
++  /*  74 */ 0xfffff293,
++  /*  75 */ 0xfffffc1e,
++  /*  76 */ 0xfffff89c,
++  /*  77 */ 0xfffff543,
++  /*  78 */ 0xfffffd9e,
++  /*  79 */ 0xfffffa70,
++  /*  80 */ 0xfffffbf4,
++  /*  81 */ 0xfffff0cd,
++  /*  82 */ 0xfffffcb9,
++  /*  83 */ 0xfffffd34,
++  /*  84 */ 0xfffffb3f,
++  /*  85 */ 0xffffff83,
++  /*  86 */ 0xfffff591,
++  /*  87 */ 0xfffff3e1,
++  /*  88 */ 0xfffffcd5,
++  /*  89 */ 0xfffff1cb,
++  /*  90 */ 0xffffff61,
++  /*  91 */ 0xfffff2ff,
++  /*  92 */ 0xfffffd20,
++  /*  93 */ 0xfffffe92,
++  /*  94 */ 0xfffff342,
++  /*  95 */ 0xfffff173,
++  /*  96 */ 0xffff4501,
++  /*  97 */ 0xffff303a,
++  /*  98 */ 0xffff6177,
++  /*  99 */ 0xfffff262,
++  /* 100 */ 0xffffa7fb,
++  /* 101 */ 0xffffb0b1,
++  /* 102 */ 0xffff2b2f,
++  /* 103 */ 0xffff60b8,
++  /* 104 */ 0xffffab5f,
++  /* 105 */ 0xffffb0c1,
++  /* 106 */ 0xffff34b9,
++  /* 107 */ 0xffff3cca,
++  /* 108 */ 0xffff7651,
++  /* 109 */ 0xffff0a28,
++  /* 110 */ 0xffff4bd1,
++  /* 111 */ 0xffff3bf4,
++  /* 112 */ 0xffff6a96,
++  /* 113 */ 0xffff913c,
++  /* 114 */ 0xffffb41e,
++  /* 115 */ 0xffffa152,
++  /* 116 */ 0xffffc9cf,
++  /* 117 */ 0xffffc455,
++  /* 118 */ 0xffff413d,
++  /* 119 */ 0xffff6109,
++  /* 120 */ 0xffff298f,
++  /* 121 */ 0xffffd7ed,
++  /* 122 */ 0xffff2382,
++  /* 123 */ 0xffff038a,
++  /* 124 */ 0xffff3ece,
++  /* 125 */ 0xffff5e21,
++  /* 126 */ 0xffffb753,
++  /* 127 */ 0xfffff86c,
++  /* 128 */ 0xfffbb214,
++  /* 129 */ 0xfff8d4dd,
++  /* 130 */ 0xfff9d03c,
++  /* 131 */ 0xfff6f2f3,
++  /* 132 */ 0xfffec07a,
++  /* 133 */ 0xfff47735,
++  /* 134 */ 0xfff482b7,
++  /* 135 */ 0xfffef11b,
++  /* 136 */ 0xfff67bd8,
++  /* 137 */ 0xfff6e014,
++  /* 138 */ 0xfff82613,
++  /* 139 */ 0xfffe6de3,
++  /* 140 */ 0xfff537a0,
++  /* 141 */ 0xfff014a7,
++  /* 142 */ 0xfff230d8,
++  /* 143 */ 0xfff87389,
++  /* 144 */ 0xfffe0d5a,
++  /* 145 */ 0xffffddd1,
++  /* 146 */ 0xfff8d864,
++  /* 147 */ 0xfffe2c30,
++  /* 148 */ 0xfffdd6d0,
++  /* 149 */ 0xfffa66d3,
++  /* 150 */ 0xfffff146,
++  /* 151 */ 0xfff60deb,
++  /* 152 */ 0xfff34238,
++  /* 153 */ 0xffff9c06,
++  /* 154 */ 0xfff21c93,
++  /* 155 */ 0xfff80ae6,
++  /* 156 */ 0xfffd6ba6,
++  /* 157 */ 0xfffb992b,
++  /* 158 */ 0xfffcf340,
++  /* 159 */ 0xffff250c,
++  /* 160 */ 0xf24b6d09,
++  /* 161 */ 0xfcaa0bb6,
++  /* 162 */ 0xfa561278,
++  /* 163 */ 0xf37e18a2,
++  /* 164 */ 0xf358ce1e,
++  /* 165 */ 0xf7ff790b,
++  /* 166 */ 0xf06b2b75,
++  /* 167 */ 0xf768e5e1,
++  /* 168 */ 0xfb104828,
++  /* 169 */ 0xf546dec6,
++  /* 170 */ 0xf3eedb6c,
++  /* 171 */ 0xfe06f819,
++  /* 172 */ 0xf7001ff5,
++  /* 173 */ 0xf93c2b22,
++  /* 174 */ 0xf4f8f0cd,
++  /* 175 */ 0xfc8fc159,
++  /* 176 */ 0xfdd1c59e,
++  /* 177 */ 0xf5c840c7,
++  /* 178 */ 0xf95eafc0,
++  /* 179 */ 0xf2ba9943,
++  /* 180 */ 0xf7e13365,
++  /* 181 */ 0xf042643f,
++  /* 182 */ 0xf4cbb445,
++  /* 183 */ 0xfd04e603,
++  /* 184 */ 0xffb663f0,
++  /* 185 */ 0xf009ce0f,
++  /* 186 */ 0xf10d6b2c,
++  /* 187 */ 0xf8928c82,
++  /* 188 */ 0xfd1ab578,
++  /* 189 */ 0xf3b571f4,
++  /* 190 */ 0xfc7590d8,
++  /* 191 */ 0xfc3601cd,
++  /* 192 */ 0x4b68cd93,
++  /* 193 */ 0x6b6a33c2,
++  /* 194 */ 0x80fba91f,
++  /* 195 */ 0xc081c517,
++  /* 196 */ 0xf91c67c5,
++  /* 197 */ 0x183a312f,
++  /* 198 */ 0xef28b0ad,
++  /* 199 */ 0xb8c5778e,
++  /* 200 */ 0xb0b0198d,
++  /* 201 */ 0xf2f4bc26,
++  /* 202 */ 0x722a497a,
++  /* 203 */ 0xa0e16c9d,
++  /* 204 */ 0xefd28116,
++  /* 205 */ 0xfcf76df7,
++  /* 206 */ 0x86f6e0d0,
++  /* 207 */ 0xbf41b1d9,
++  /* 208 */ 0x70da6dd1,
++  /* 209 */ 0xf584c38d,
++  /* 210 */ 0x87fcad59,
++  /* 211 */ 0x4ef78751,
++  /* 212 */ 0x2e6d0781,
++  /* 213 */ 0x263c9aea,
++  /* 214 */ 0x59fa2fb3,
++  /* 215 */ 0x2068bffc,
++  /* 216 */ 0xf621f786,
++  /* 217 */ 0x1f8c52d6,
++  /* 218 */ 0x7eb660ec,
++  /* 219 */ 0x72427d15,
++  /* 220 */ 0x6c6e8047,
++  /* 221 */ 0x7d7f1e95,
++  /* 222 */ 0x98b98719,
++  /* 223 */ 0xad89bd1d,
++  /* 224 */ 0x4ba47087,
++  /* 225 */ 0x8cfb79b3,
++  /* 226 */ 0xcca4c48c,
++  /* 227 */ 0xf5f77713,
++  /* 228 */ 0xb61ea94c,
++  /* 229 */ 0x7bcadc53,
++  /* 230 */ 0xeff879e0,
++  /* 231 */ 0x749cd6b0,
++  /* 232 */ 0x52addef9,
++  /* 233 */ 0xffc40171,
++  /* 234 */ 0xe2552b4e,
++  /* 235 */ 0x961d17bc,
++  /* 236 */ 0xbda97527,
++  /* 237 */ 0x1569ea1d,
++  /* 238 */ 0xc445d11b,
++  /* 239 */ 0xbf1f1328,
++  /* 240 */ 0xe5be0cb9,
++  /* 241 */ 0x0d5f222a,
++  /* 242 */ 0xc273de72,
++  /* 243 */ 0x86b12010,
++  /* 244 */ 0x05b3dc87,
++  /* 245 */ 0xc809be39,
++  /* 246 */ 0xbedcdd5b,
++  /* 247 */ 0x7d7b1b0e,
++  /* 248 */ 0x2c6bcf56,
++  /* 249 */ 0xa8dc2510,
++  /* 250 */ 0x69226af4,
++  /* 251 */ 0x889c3e8f,
++  /* 252 */ 0x282530cf,
++  /* 253 */ 0xbe3aa59a,
++  /* 254 */ 0x0348b8ca,
++  /* 255 */ 0x5f539088,
++
++};
+diff --git a/memcheck/tests/ppc32/test_spe.stderr.exp b/memcheck/tests/ppc32/test_spe.stderr.exp
+index 3460300..7ebf146 100644
+--- a/memcheck/tests/ppc32/test_spe.stderr.exp
++++ b/memcheck/tests/ppc32/test_spe.stderr.exp
+@@ -5,7 +5,7 @@ Invalid write of size 4
+    by 0x........: run (test_spe.h:42)
+    by 0x........: run (test_spe.h:48)
+    by 0x........: run (test_spe.h:48)
+-   by 0x........: main (test_spe.c:6123)
++   by 0x........: main (test_spe.c:6330)
+  Address 0x........ is 0 bytes after a block of size 40 alloc'd
+    at 0x........: malloc (vg_replace_malloc.c:...)
+    by 0x........: vg_quick_start_guide_aux (test_spe.c:26)
+@@ -13,7 +13,7 @@ Invalid write of size 4
+    by 0x........: run (test_spe.h:42)
+    by 0x........: run (test_spe.h:48)
+    by 0x........: run (test_spe.h:48)
+-   by 0x........: main (test_spe.c:6123)
++   by 0x........: main (test_spe.c:6330)
+ 
+ 
+ HEAP SUMMARY:
+@@ -27,7 +27,7 @@ HEAP SUMMARY:
+    by 0x........: run (test_spe.h:42)
+    by 0x........: run (test_spe.h:48)
+    by 0x........: run (test_spe.h:48)
+-   by 0x........: main (test_spe.c:6123)
++   by 0x........: main (test_spe.c:6330)
+ 
+ LEAK SUMMARY:
+    definitely lost: 40 bytes in 1 blocks
+diff --git a/memcheck/tests/ppc32/test_spe.stdout.exp b/memcheck/tests/ppc32/test_spe.stdout.exp
+index 2f66aa4..221edfe 100644
+--- a/memcheck/tests/ppc32/test_spe.stdout.exp
++++ b/memcheck/tests/ppc32/test_spe.stdout.exp
+@@ -63,6 +63,8 @@ SPE Regression Tests: PASS
+ ....evorc: PASS
+ ....evextsb: PASS
+ ....evextsh: PASS
++....evcntlsw: PASS
++....evcntlzw: PASS
+ ...SPE ISA Merge Instructions Tests: PASS
+ ....evmergehi: PASS
+ ....evmergehilo: PASS
+@@ -140,6 +142,8 @@ SPE Regression Tests: PASS
+ ....__ev_srwis: PASS
+ ....__ev_extsb: PASS
+ ....__ev_extsh: PASS
++....__ev_cntlsw: PASS
++....__ev_cntlzw: PASS
+ ..SPE ISA Miscellaneous Tests: PASS
+ ...Memory transfer using evldd-evstdd: PASS
+ ...Value pool demo: PASS
+diff --git a/regtest-power7-64.log b/regtest-power7-64.log
+index e0622e9..ce66932 100644
+--- a/regtest-power7-64.log
++++ b/regtest-power7-64.log
+@@ -461,7 +461,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -gdwarf-4 -fdebug-types-section -Wno-long-lo
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests'
+-make[5]: Warning: File `.deps/xml1.Po' has modification time 68 s in the future
++make[5]: Warning: File `.deps/xml1.Po' has modification time 69 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -484,7 +484,7 @@ gcc -Winline -Wall -Wshadow -g -Wno-long-long  -Wno-pointer-sign -fno-stack-prot
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/ppc32'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/ppc32'
+-make[5]: Warning: File `.deps/test_spe.Po' has modification time 73 s in the future
++make[5]: Warning: File `.deps/test_spe.Po' has modification time 74 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1066,7 +1066,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests'
+-make[5]: Warning: File `.deps/vgprintf.Po' has modification time 72 s in the future
++make[5]: Warning: File `.deps/vgprintf.Po' has modification time 73 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1418,7 +1418,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/helgrind/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/helgrind/tests'
+-make[4]: Warning: File `.deps/tc24_nonzero_sem.Po' has modification time 72 s in the future
++make[4]: Warning: File `.deps/tc24_nonzero_sem.Po' has modification time 73 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1863,7 +1863,7 @@ gcc -Winline -Wall -Wshadow -g -O -m64 -Wno-shadow -Wno-inline -Wno-long-long  -
+ make[3]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/perf'
+ make  check-local
+ make[3]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/perf'
+-make[3]: Warning: File `.deps/tinycc-tinycc.Po' has modification time 73 s in the future
++make[3]: Warning: File `.deps/tinycc-tinycc.Po' has modification time 74 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1980,7 +1980,7 @@ badfree-2trace:  valgrind   --num-callers=2 -q ./badfree
+ badfree:         valgrind   -q ./badfree 
+ badfree3:        valgrind   -q --fullpath-after=/proj/ppc/DT/labhome/anmol/valgrind-3.8.1/ ./badfree 
+ badjump:         valgrind   ./badjump 
+-sh: line 1:  3717 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
++sh: line 1:  7258 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
+ badjump2:        valgrind   -q ./badjump2 
+ badloop:         valgrind   -q ./badloop 
+ badpoll:         valgrind   -q ./badpoll 
+@@ -1997,7 +1997,7 @@ clo_redzone_default: valgrind   --leak-check=no -q ./clo_redzone
+ custom-overlap:  valgrind   --leak-check=summary -q ./custom-overlap 
+ custom_alloc:    valgrind   -q ./custom_alloc 
+ deep-backtrace:  valgrind   -q --num-callers=500 ./deep-backtrace 
+-sh: line 1:  4279 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
++sh: line 1:  7824 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
+ deep_templates:  valgrind   -q ./deep_templates 
+ describe-block:  valgrind   ./describe-block 
+ doublefree:      valgrind   -q ./doublefree 
+@@ -2110,7 +2110,7 @@ supp-dir:        valgrind   --suppressions=x86/ ./../../tests/true
+ supp1:           valgrind   --suppressions=supp.supp -q ./supp1 
+ supp2:           valgrind   --suppressions=supp.supp -q ./supp2 
+ supp_unknown:    valgrind   -q --suppressions=supp_unknown.supp ./badjump 
+-sh: line 1:  8993 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
++sh: line 1: 12557 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
+ *** supp_unknown failed (stderr) ***
+ suppfree:        valgrind   --suppressions=suppfree.supp -q ./suppfree 
+ test-plo-no:     valgrind   -q ./test-plo 
+@@ -2246,7 +2246,7 @@ gxx304:          valgrind   ./gxx304
+ ifunc:           (skipping, prereq failed: test -e ifunc)
+ -- Running  tests in none/tests/linux ----------------------------------
+ blockfault:      valgrind   ./blockfault 
+-sh: line 1: 13512 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
++sh: line 1: 17035 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
+ mremap:          valgrind   ./mremap 
+ mremap2:         valgrind   ./mremap2 
+ mremap3:         valgrind   ./mremap3 
+@@ -2412,7 +2412,7 @@ tc20_verifywrap: valgrind   --read-var-info=yes ./tc20_verifywrap
+ *** tc20_verifywrap failed (stderr) ***
+ tc21_pthonce:    valgrind   --read-var-info=yes ./tc21_pthonce 
+ tc22_exit_w_lock: valgrind   ./tc22_exit_w_lock 
+-sh: line 1: 30939 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1:  2132 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   ./tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --hg-sanity-flags=111111 ./tc24_nonzero_sem 
+ -- Finished tests in helgrind/tests ------------------------------------
+@@ -2531,7 +2531,7 @@ tc18_semabuse:   valgrind   ./../../helgrind/tests/tc18_semabuse
+ tc19_shadowmem:  valgrind   --error-limit=no --read-var-info=yes --show-confl-seg=no --num-callers=3 ./../../helgrind/tests/tc19_shadowmem 
+ tc21_pthonce:    valgrind   --num-callers=3 ./../../helgrind/tests/tc21_pthonce 
+ tc22_exit_w_lock: valgrind   --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock 
+-sh: line 1:  3957 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1:  7482 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   --num-callers=3 ./../../helgrind/tests/tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --read-var-info=yes ./../../helgrind/tests/tc24_nonzero_sem 
+ thread_name:     valgrind   --read-var-info=yes --check-stack-var=yes --num-callers=3 ./thread_name 
+-- 
+1.7.3.4
+

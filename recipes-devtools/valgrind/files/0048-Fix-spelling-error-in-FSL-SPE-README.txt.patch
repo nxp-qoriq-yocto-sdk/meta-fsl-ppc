@@ -1,0 +1,25 @@
+From a7348e0cdfaece79b6d5c14986c03e2ad9ca3d79 Mon Sep 17 00:00:00 2001
+From: Anmol P. Paralkar <anmol@freescale.com>
+Date: Mon, 8 Apr 2013 08:47:30 -0700
+Subject: [PATCH 48/65] Fix spelling error in: FSL-SPE-README.txt
+
+---
+ FSL-SPE-README.txt |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/FSL-SPE-README.txt b/FSL-SPE-README.txt
+index 64e5c4a..e239685 100644
+--- a/FSL-SPE-README.txt
++++ b/FSL-SPE-README.txt
+@@ -76,7 +76,7 @@
+  Note: Synthetic instructions appear prefixed with a leading underscore in the
+        above list. All synthetic instructions are tested as working under
+        Valgrind even though, strictly speaking, such an instruction is not
+-       explcitly implemented, but works as a result of some other instruction
++       explicitly implemented, but works as a result of some other instruction
+        being implemented.
+ 
+  The following instructions have not been implemented yet:
+-- 
+1.7.3.4
+

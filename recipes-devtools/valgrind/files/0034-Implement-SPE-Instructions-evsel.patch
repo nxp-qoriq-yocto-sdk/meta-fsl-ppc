@@ -1,0 +1,705 @@
+From 1c07db3719bba28d087f57f9bfc23bcefe28142f Mon Sep 17 00:00:00 2001
+From: Anmol P. Paralkar <anmol@freescale.com>
+Date: Thu, 28 Feb 2013 18:56:27 -0800
+Subject: [PATCH 34/65] Implement SPE Instructions: { evsel }.
+
+---
+ VEX/priv/guest_ppc_toIR.c                |   88 ++++++++
+ memcheck/tests/ppc32/test_spe.c          |  336 +++++++++++++++++++++++++++++-
+ memcheck/tests/ppc32/test_spe.stderr.exp |    6 +-
+ memcheck/tests/ppc32/test_spe.stdout.exp |    7 +
+ regtest-power7-64.log                    |   32 ++--
+ 5 files changed, 449 insertions(+), 20 deletions(-)
+
+diff --git a/VEX/priv/guest_ppc_toIR.c b/VEX/priv/guest_ppc_toIR.c
+index 2c9351f..09aa6f7 100644
+--- a/VEX/priv/guest_ppc_toIR.c
++++ b/VEX/priv/guest_ppc_toIR.c
+@@ -13006,6 +13006,83 @@ static Bool dis_spe_compare ( UInt theInstr )
+    return True;
+ }
+ 
++static Bool dis_spe_evsel ( UInt theInstr )
++{
++  /* EVS-Form */
++  UChar opc1     = evsOpcode( theInstr );
++  UInt  opc2     = evsXO( theInstr );
++  UChar CR_field = evsBFA( theInstr );
++  UChar rA_addr  = evsRA( theInstr );
++  UChar rB_addr  = evsRB( theInstr );
++  UChar rT_addr  = evsRT( theInstr );
++
++  IRTemp rA = newTemp( Ity_I64 );
++  IRTemp rB = newTemp( Ity_I64 );
++  IRTemp rT = newTemp( Ity_I64 );
++
++  IRTemp rAU  = newTemp( Ity_I32 );
++  IRTemp rAL  = newTemp( Ity_I32 );
++  IRTemp rBU  = newTemp( Ity_I32 );
++  IRTemp rBL  = newTemp( Ity_I32 );
++  IRTemp rTU  = newTemp( Ity_I32 );
++  IRTemp rTL  = newTemp( Ity_I32 );
++
++  IRTemp ch  = newTemp( Ity_I1 );
++  IRTemp cl  = newTemp( Ity_I1 );
++  IRTemp bch = newTemp( Ity_I8 );
++  IRTemp bcl = newTemp( Ity_I8 );
++
++  if (opc1 != 0x4) {
++     vex_printf( "dis_spe_evsel(ppc)(opc1 != 0x4)\n" );
++     return False;
++  }
++  switch (opc2) {
++  case 0x4f:
++     // evsel (Vector Select, SPEPEM p5-219)
++     DIP( "evsel r%d, r%d, r%d, CR%d\n", rT_addr, rA_addr, rB_addr, CR_field );
++     break;
++  default:
++     return False;
++  }
++
++  assign ( rA, getSPEReg( rA_addr ) );
++  assign ( rB, getSPEReg( rB_addr ) );
++
++  assign ( rAU, unop( Iop_64HIto32,
++                      mkexpr ( rA ) ) );
++  assign ( rAL, unop( Iop_64to32,
++                      mkexpr ( rA ) ) );
++  assign ( rBU, unop( Iop_64HIto32,
++                      mkexpr ( rB ) ) );
++  assign ( rBL, unop( Iop_64to32,
++                      mkexpr ( rB ) ) );
++
++  assign ( ch, unop ( Iop_32to1,
++                      getCRbit( CR_field * 4 + 0 ) ) );
++  assign ( cl, unop ( Iop_32to1,
++                      getCRbit( CR_field * 4 + 1 ) ) );
++
++  assign ( bch, unop ( Iop_1Uto8,
++                       mkexpr ( ch ) ) );
++  assign ( bcl, unop ( Iop_1Uto8,
++                       mkexpr ( cl ) ) );
++
++  assign ( rTU, IRExpr_Mux0X ( mkexpr ( bch ),
++                               mkexpr ( rBU ),
++                               mkexpr ( rAU ) ) );
++  assign ( rTL, IRExpr_Mux0X ( mkexpr ( bcl ),
++                               mkexpr ( rBL ),
++                               mkexpr ( rAL ) ) );
++
++  assign ( rT, binop( Iop_32HLto64,
++                      mkexpr ( rTU ),
++                      mkexpr ( rTL ) ) );
++
++  putSPEReg( rT_addr, mkexpr ( rT ) );
++
++  return True;
++}
++
+ /*------------------------------------------------------------*/
+ /*--- AltiVec Instruction Translation                      ---*/
+ /*------------------------------------------------------------*/
+@@ -19076,6 +19153,17 @@ DisResult disInstr_PPC_WRK (
+          if (dis_spe_compare( theInstr )) goto decode_success;
+          goto decode_failure;
+       default:
++         // Check for evsel before giving up.
++         opc2 = evsXO(theInstr);
++         switch (opc2) {
++         case 0x4f: // evsel
++            if (!allow_SPE) goto decode_noSPE;
++            if (dis_spe_evsel( theInstr )) goto decode_success;
++            goto decode_failure;
++         default:
++            // Just fall through...
++            break;
++         }
+          vex_printf("disInstr_PPC_WRK (ppc): unhandled SPE instruction: "
+                     "0x%x\n", theInstr);
+          goto decode_failure;
+diff --git a/memcheck/tests/ppc32/test_spe.c b/memcheck/tests/ppc32/test_spe.c
+index 6293e10..fc25f7f 100644
+--- a/memcheck/tests/ppc32/test_spe.c
++++ b/memcheck/tests/ppc32/test_spe.c
+@@ -7294,6 +7294,11 @@ int __ev_any_ltu_intrinsic(void)
+       VERIFY(d == true);
+ 
+       // both halves always lesser
++      // FIXME TODO:
++      // Change to:
++      // va = __ev_create_u32 (rA1u32[i+0]/2, rA1u32[i+1]/2);
++      // vb = __ev_create_u32 (rA1u32[i+0],   rA1u32[i+1]);
++      // This works, only because of "_any_"! :)
+       va = __ev_create_u32 (rA1u32[i+0],   rA1u32[i+1]/2);
+       vb = __ev_create_u32 (rA1u32[i+0]/2, rA1u32[i+1]);
+       d = __ev_any_ltu (va, vb);
+@@ -7385,6 +7390,318 @@ int __ev_upper_ltu_intrinsic(void)
+ }
+ TEST_SPE_DECL(__ev_upper_ltu_intrinsic, "__ev_upper_ltu");
+ 
++int evsel_asm(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  register __ev64_u32__ regA asm ("30");
++  register __ev64_u32__ regB asm ("29");
++  register __ev64_u32__ regD asm ("28");
++  register uint32_t     CR   asm ("27");
++  int i, j, ch, cl, field;
++
++  for (i = 0; i < NELTS(rA2u32); i++) {
++    for (j = 0; j < NELTS(rB2u32); j++) {
++
++      regA = rA2u32[i];
++      regB = rB2u32[j];
++      for (ch = 0; ch < 2; ch++) {
++        for (cl = 0; cl < 2; cl++) {
++
++#define EVSEL(CR_field)                                                                                          \
++          field = CR_field;                                                                                      \
++          CR = 0x0;                                                                                              \
++          CR = CR | (ch << (((7 - (field)) * 4) + 3));                                                           \
++          CR = CR | (cl << (((7 - (field)) * 4) + 2));                                                           \
++          asm volatile ("mtcrf (0x1 << (7 - " #CR_field ")), %[r]" : : [r] "r" (CR));                            \
++          asm volatile ("evsel %[d], %[a], %[b]," #CR_field : [d] "=r" (regD) : [a] "r" (regA), [b] "r" (regB)); \
++          VERIFY(regD[0] == ((ch == 1) ? regA[0] : regB[0]));                                                    \
++          VERIFY(regD[1] == ((cl == 1) ? regA[1] : regB[1]));
++
++          /* CR0 */ EVSEL(0);
++          /* CR1 */ EVSEL(1);
++          /* CR5 */ EVSEL(5);
++          /* CR6 */ EVSEL(6);
++          /* CR7 */ EVSEL(7);
++        }
++      }
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(evsel_asm, "evsel");
++
++int __ev_select_eq_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ va, vb, vc, vd, ve;
++  int i, j;
++
++  for (i = 0; i < NELTS(rA1u32); i += 2) {
++    for (j = 0; j < NELTS(rA1u32); j += 2) {
++
++      vc = rA2u32[i];
++      vd = rB2u32[j];
++
++      va = __ev_create_u32 (rA1u32[i+0], rA1u32[i+1]);
++      vb = __ev_create_u32 (rA1u32[j+0], rA1u32[j+1]);
++      ve = __ev_select_eq (va, vb, vc, vd);
++      VERIFY(__ev_get_upper_u32 (ve) == ((__ev_get_upper_u32 (va) == __ev_get_upper_u32 (vb)) ?
++                                          __ev_get_upper_u32 (vc) :
++                                          __ev_get_upper_u32 (vd)));
++      VERIFY(__ev_get_lower_u32 (ve) == ((__ev_get_lower_u32 (va) == __ev_get_lower_u32 (vb)) ?
++                                          __ev_get_lower_u32 (vc) :
++                                          __ev_get_lower_u32 (vd)));
++
++      // upper halves always equal
++      va = __ev_create_u32 (rA1u32[i+0], rA1u32[i+1]);
++      vb = __ev_create_u32 (rA1u32[i+0], rA1u32[j+1]);
++      ve = __ev_select_eq (va, vb, vc, vd);
++      VERIFY(__ev_get_upper_u32 (ve) == __ev_get_upper_u32 (vc));
++      VERIFY(__ev_get_lower_u32 (ve) == ((__ev_get_lower_u32 (va) == __ev_get_lower_u32 (vb)) ?
++                                          __ev_get_lower_u32 (vc) :
++                                          __ev_get_lower_u32 (vd)));
++
++      // lower halves always equal
++      va = __ev_create_u32 (rA1u32[i+0], rA1u32[i+1]);
++      vb = __ev_create_u32 (rA1u32[j+0], rA1u32[i+1]);
++      ve = __ev_select_eq (va, vb, vc, vd);
++      VERIFY(__ev_get_upper_u32 (ve) == ((__ev_get_upper_u32 (va) == __ev_get_upper_u32 (vb)) ?
++                                          __ev_get_upper_u32 (vc) :
++                                          __ev_get_upper_u32 (vd)));
++      VERIFY(__ev_get_lower_u32 (ve) == __ev_get_lower_u32 (vc));
++
++      // both halves always equal
++      va = __ev_create_u32 (rA1u32[i+0], rA1u32[i+1]);
++      vb = __ev_create_u32 (rA1u32[i+0], rA1u32[i+1]);
++      ve = __ev_select_eq (va, vb, vc, vd);
++      VERIFY(__ev_get_upper_u32 (ve) == __ev_get_upper_u32 (vc));
++      VERIFY(__ev_get_lower_u32 (ve) == __ev_get_lower_u32 (vc));
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_select_eq_intrinsic, "__ev_select_eq");
++
++int __ev_select_gts_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ va, vb, vc, vd, ve;
++  int i, j;
++
++  for (i = 0; i < NELTS(rA1s32); i += 2) {
++    for (j = 0; j < NELTS(rA1s32); j += 2) {
++
++      vc = rA2u32[i];
++      vd = rB2u32[j];
++
++      va = __ev_create_s32 (rA1s32[i+0], rA1s32[i+1]);
++      vb = __ev_create_s32 (rA1s32[j+0], rA1s32[j+1]);
++      ve = __ev_select_gts (va, vb, vc, vd);
++      VERIFY(__ev_get_upper_u32 (ve) == ((__ev_get_upper_s32 (va) > __ev_get_upper_s32 (vb)) ?
++                                          __ev_get_upper_u32 (vc) :
++                                          __ev_get_upper_u32 (vd)));
++      VERIFY(__ev_get_lower_u32 (ve) == ((__ev_get_lower_s32 (va) > __ev_get_lower_s32 (vb)) ?
++                                          __ev_get_lower_u32 (vc) :
++                                          __ev_get_lower_u32 (vd)));
++
++      // upper halves always greater
++      va = __ev_create_s32 ( abs (rA1s32[i+0]), rA1s32[i+1]);
++      vb = __ev_create_s32 (-abs (rA1s32[i+0]), rA1s32[j+1]);
++      ve = __ev_select_gts (va, vb, vc, vd);
++      VERIFY(__ev_get_upper_u32 (ve) == __ev_get_upper_u32 (vc));
++      VERIFY(__ev_get_lower_u32 (ve) == ((__ev_get_lower_s32 (va) > __ev_get_lower_s32 (vb)) ?
++                                          __ev_get_lower_u32 (vc) :
++                                          __ev_get_lower_u32 (vd)));
++
++      // lower halves always greater
++      va = __ev_create_s32 (rA1s32[i+0],  abs (rA1s32[i+1]));
++      vb = __ev_create_s32 (rA1s32[j+0], -abs (rA1s32[i+1]));
++      ve = __ev_select_gts (va, vb, vc, vd);
++      VERIFY(__ev_get_upper_u32 (ve) == ((__ev_get_upper_s32 (va) > __ev_get_upper_s32 (vb)) ?
++                                          __ev_get_upper_u32 (vc) :
++                                          __ev_get_upper_u32 (vd)));
++      VERIFY(__ev_get_lower_u32 (ve) == __ev_get_lower_u32 (vc));
++
++      // both halves always greater
++      va = __ev_create_s32 ( abs (rA1s32[i+0]),  abs (rA1s32[i+1]));
++      vb = __ev_create_s32 (-abs (rA1s32[i+0]), -abs (rA1s32[i+1]));
++      ve = __ev_select_gts (va, vb, vc, vd);
++      VERIFY(__ev_get_upper_u32 (ve) == __ev_get_upper_u32 (vc));
++      VERIFY(__ev_get_lower_u32 (ve) == __ev_get_lower_u32 (vc));
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_select_gts_intrinsic, "__ev_select_gts");
++
++int __ev_select_gtu_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ va, vb, vc, vd, ve;
++  int i, j;
++
++  for (i = 0; i < NELTS(rA1u32); i += 2) {
++    for (j = 0; j < NELTS(rA1u32); j += 2) {
++
++      vc = rA2u32[i];
++      vd = rB2u32[j];
++
++      va = __ev_create_u32 (rA1u32[i+0], rA1u32[i+1]);
++      vb = __ev_create_u32 (rA1u32[j+0], rA1u32[j+1]);
++      ve = __ev_select_gtu (va, vb, vc, vd);
++      VERIFY(__ev_get_upper_u32 (ve) == ((__ev_get_upper_u32 (va) > __ev_get_upper_u32 (vb)) ?
++                                          __ev_get_upper_u32 (vc) :
++                                          __ev_get_upper_u32 (vd)));
++      VERIFY(__ev_get_lower_u32 (ve) == ((__ev_get_lower_u32 (va) > __ev_get_lower_u32 (vb)) ?
++                                          __ev_get_lower_u32 (vc) :
++                                          __ev_get_lower_u32 (vd)));
++
++      // upper halves always greater
++      va = __ev_create_u32 (rA1u32[i+0],   rA1u32[i+1]);
++      vb = __ev_create_u32 (rA1u32[i+0]/2, rA1u32[j+1]);
++      ve = __ev_select_gtu (va, vb, vc, vd);
++      VERIFY(__ev_get_upper_u32 (ve) == __ev_get_upper_u32 (vc));
++      VERIFY(__ev_get_lower_u32 (ve) == ((__ev_get_lower_u32 (va) > __ev_get_lower_u32 (vb)) ?
++                                          __ev_get_lower_u32 (vc) :
++                                          __ev_get_lower_u32 (vd)));
++
++      // lower halves always greater
++      va = __ev_create_u32 (rA1u32[i+0], rA1u32[i+1]);
++      vb = __ev_create_u32 (rA1u32[j+0], rA1u32[i+1]/2);
++      ve = __ev_select_gtu (va, vb, vc, vd);
++      VERIFY(__ev_get_upper_u32 (ve) == ((__ev_get_upper_u32 (va) > __ev_get_upper_u32 (vb)) ?
++                                          __ev_get_upper_u32 (vc) :
++                                          __ev_get_upper_u32 (vd)));
++      VERIFY(__ev_get_lower_u32 (ve) == __ev_get_lower_u32 (vc));
++
++      // both halves always greater
++      va = __ev_create_u32 (rA1u32[i+0],   rA1u32[i+1]);
++      vb = __ev_create_u32 (rA1u32[i+0]/2, rA1u32[i+1]/2);
++      ve = __ev_select_gtu (va, vb, vc, vd);
++      VERIFY(__ev_get_upper_u32 (ve) == __ev_get_upper_u32 (vc));
++      VERIFY(__ev_get_lower_u32 (ve) == __ev_get_lower_u32 (vc));
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_select_gtu_intrinsic, "__ev_select_gtu");
++
++int __ev_select_lts_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ va, vb, vc, vd, ve;
++  int i, j;
++
++  for (i = 0; i < NELTS(rA1s32); i += 2) {
++    for (j = 0; j < NELTS(rA1s32); j += 2) {
++
++      vc = rA2u32[i];
++      vd = rB2u32[j];
++
++      va = __ev_create_s32 (rA1s32[i+0], rA1s32[i+1]);
++      vb = __ev_create_s32 (rA1s32[j+0], rA1s32[j+1]);
++      ve = __ev_select_lts (va, vb, vc, vd);
++      VERIFY(__ev_get_upper_u32 (ve) == ((__ev_get_upper_s32 (va) < __ev_get_upper_s32 (vb)) ?
++                                          __ev_get_upper_u32 (vc) :
++                                          __ev_get_upper_u32 (vd)));
++      VERIFY(__ev_get_lower_u32 (ve) == ((__ev_get_lower_s32 (va) < __ev_get_lower_s32 (vb)) ?
++                                          __ev_get_lower_u32 (vc) :
++                                          __ev_get_lower_u32 (vd)));
++
++      // upper halves always lesser
++      va = __ev_create_s32 (-abs (rA1s32[i+0]), rA1s32[i+1]);
++      vb = __ev_create_s32 ( abs (rA1s32[i+0]), rA1s32[j+1]);
++      ve = __ev_select_lts (va, vb, vc, vd);
++      VERIFY(__ev_get_upper_u32 (ve) == __ev_get_upper_u32 (vc));
++      VERIFY(__ev_get_lower_u32 (ve) == ((__ev_get_lower_s32 (va) < __ev_get_lower_s32 (vb)) ?
++                                          __ev_get_lower_u32 (vc) :
++                                          __ev_get_lower_u32 (vd)));
++
++      // lower halves always lesser
++      va = __ev_create_s32 (rA1s32[i+0], -abs (rA1s32[i+1]));
++      vb = __ev_create_s32 (rA1s32[j+0],  abs (rA1s32[i+1]));
++      ve = __ev_select_lts (va, vb, vc, vd);
++      VERIFY(__ev_get_upper_u32 (ve) == ((__ev_get_upper_s32 (va) < __ev_get_upper_s32 (vb)) ?
++                                          __ev_get_upper_u32 (vc) :
++                                          __ev_get_upper_u32 (vd)));
++      VERIFY(__ev_get_lower_u32 (ve) == __ev_get_lower_u32 (vc));
++
++      // both halves always lesser
++      va = __ev_create_s32 (-abs (rA1s32[i+0]), -abs (rA1s32[i+1]));
++      vb = __ev_create_s32 ( abs (rA1s32[i+0]),  abs (rA1s32[i+1]));
++      ve = __ev_select_lts (va, vb, vc, vd);
++      VERIFY(__ev_get_upper_u32 (ve) == __ev_get_upper_u32 (vc));
++      VERIFY(__ev_get_lower_u32 (ve) == __ev_get_lower_u32 (vc));
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_select_lts_intrinsic, "__ev_select_lts");
++
++int __ev_select_ltu_intrinsic(void)
++{
++  int failures = 0;
++#ifdef __SPE__
++  __ev64_opaque__ va, vb, vc, vd, ve;
++  int i, j;
++
++  for (i = 0; i < NELTS(rA1u32); i += 2) {
++    for (j = 0; j < NELTS(rA1u32); j += 2) {
++
++      vc = rA2u32[i];
++      vd = rB2u32[j];
++
++      va = __ev_create_u32 (rA1u32[i+0], rA1u32[i+1]);
++      vb = __ev_create_u32 (rA1u32[j+0], rA1u32[j+1]);
++      ve = __ev_select_ltu (va, vb, vc, vd);
++      VERIFY(__ev_get_upper_u32 (ve) == ((__ev_get_upper_u32 (va) < __ev_get_upper_u32 (vb)) ?
++                                          __ev_get_upper_u32 (vc) :
++                                          __ev_get_upper_u32 (vd)));
++      VERIFY(__ev_get_lower_u32 (ve) == ((__ev_get_lower_u32 (va) < __ev_get_lower_u32 (vb)) ?
++                                          __ev_get_lower_u32 (vc) :
++                                          __ev_get_lower_u32 (vd)));
++
++      // upper halves always lesser
++      va = __ev_create_u32 (rA1u32[i+0]/2, rA1u32[i+1]);
++      vb = __ev_create_u32 (rA1u32[i+0],   rA1u32[j+1]);
++      ve = __ev_select_ltu (va, vb, vc, vd);
++      VERIFY(__ev_get_upper_u32 (ve) == __ev_get_upper_u32 (vc));
++      VERIFY(__ev_get_lower_u32 (ve) == ((__ev_get_lower_u32 (va) < __ev_get_lower_u32 (vb)) ?
++                                          __ev_get_lower_u32 (vc) :
++                                          __ev_get_lower_u32 (vd)));
++
++      // lower halves always lesser
++      va = __ev_create_u32 (rA1u32[i+0], rA1u32[i+1]/2);
++      vb = __ev_create_u32 (rA1u32[j+0], rA1u32[i+1]);
++      ve = __ev_select_ltu (va, vb, vc, vd);
++      VERIFY(__ev_get_upper_u32 (ve) == ((__ev_get_upper_u32 (va) < __ev_get_upper_u32 (vb)) ?
++                                          __ev_get_upper_u32 (vc) :
++                                          __ev_get_upper_u32 (vd)));
++      VERIFY(__ev_get_lower_u32 (ve) == __ev_get_lower_u32 (vc));
++
++      // both halves always lesser
++      va = __ev_create_u32 (rA1u32[i+0]/2, rA1u32[i+1]/2);
++      vb = __ev_create_u32 (rA1u32[i+0],   rA1u32[i+1]);
++      ve = __ev_select_ltu (va, vb, vc, vd);
++      VERIFY(__ev_get_upper_u32 (ve) == __ev_get_upper_u32 (vc));
++      VERIFY(__ev_get_lower_u32 (ve) == __ev_get_lower_u32 (vc));
++    }
++  }
++#endif // __SPE__
++  return failures;
++}
++TEST_SPE_DECL(__ev_select_ltu_intrinsic, "__ev_select_ltu");
++
+ /* NOTE: To avoid having to remaster the .exp files entirely, add
+  *       new test functions /just above/ this comment.
+  *       That way, you only need to worry about the test that you
+@@ -7540,6 +7857,16 @@ test_t spe_isa_compare_insns_test_table = {
+   }
+ };
+ 
++test_t spe_isa_select_insns_test_table = {
++
++  .type = table,
++  .description = "SPE ISA Select Instructions Tests",
++  .table = {
++    F(evsel_asm),
++    NULL
++  }
++};
++
+ test_t spe_isa_insn_test_table = {
+ 
+   .type = table,
+@@ -7550,6 +7877,7 @@ test_t spe_isa_insn_test_table = {
+     &spe_isa_merge_insns_test_table,
+     &spe_isa_shift_rotate_insns_test_table,
+     &spe_isa_compare_insns_test_table,
++    &spe_isa_select_insns_test_table,
+     NULL
+   }
+ };
+@@ -7665,6 +7993,11 @@ test_t chapter3_spe2pim_intrinsics_tests_table = {
+     F(__ev_any_ltu_intrinsic),
+     F(__ev_lower_ltu_intrinsic),
+     F(__ev_upper_ltu_intrinsic),
++    F(__ev_select_eq_intrinsic),
++    F(__ev_select_gts_intrinsic),
++    F(__ev_select_gtu_intrinsic),
++    F(__ev_select_lts_intrinsic),
++    F(__ev_select_ltu_intrinsic),
+     NULL
+   }
+ };
+@@ -7763,4 +8096,5 @@ int main(void)
+ // 21. Have a dynamic random number generator to be able to to test for literally zillions of values (instead of using
+ //     the pre-generated values from the data pools - since all the semantics are already coded and yuou do not depend
+ //     upon raw values (ensure that this is so).
+-// 22. Add a switch --run-in-random-order ie. the tests will run in a random order.
++// 22. Add a switch --run-in-random-order i.e. the tests will run in a random order.
++// 23. Add a switch --number-of-runs <number> to repeat the tests without exiting.
+diff --git a/memcheck/tests/ppc32/test_spe.stderr.exp b/memcheck/tests/ppc32/test_spe.stderr.exp
+index 1b92f28..7fb9005 100644
+--- a/memcheck/tests/ppc32/test_spe.stderr.exp
++++ b/memcheck/tests/ppc32/test_spe.stderr.exp
+@@ -5,7 +5,7 @@ Invalid write of size 4
+    by 0x........: run (test_spe.h:43)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:7734)
++   by 0x........: main (test_spe.c:8067)
+  Address 0x........ is 0 bytes after a block of size 40 alloc'd
+    at 0x........: malloc (vg_replace_malloc.c:...)
+    by 0x........: vg_quick_start_guide_aux (test_spe.c:26)
+@@ -13,7 +13,7 @@ Invalid write of size 4
+    by 0x........: run (test_spe.h:43)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:7734)
++   by 0x........: main (test_spe.c:8067)
+ 
+ 
+ HEAP SUMMARY:
+@@ -27,7 +27,7 @@ HEAP SUMMARY:
+    by 0x........: run (test_spe.h:43)
+    by 0x........: run (test_spe.h:49)
+    by 0x........: run (test_spe.h:49)
+-   by 0x........: main (test_spe.c:7734)
++   by 0x........: main (test_spe.c:8067)
+ 
+ LEAK SUMMARY:
+    definitely lost: 40 bytes in 1 blocks
+diff --git a/memcheck/tests/ppc32/test_spe.stdout.exp b/memcheck/tests/ppc32/test_spe.stdout.exp
+index 75bfa06..d59b808 100644
+--- a/memcheck/tests/ppc32/test_spe.stdout.exp
++++ b/memcheck/tests/ppc32/test_spe.stdout.exp
+@@ -90,6 +90,8 @@ SPE Regression Tests: PASS
+ ....evcmpgtu: PASS
+ ....evcmplts: PASS
+ ....evcmpltu: PASS
++...SPE ISA Select Instructions Tests: PASS
++....evsel: PASS
+ ..SPE2PIM Tests: PASS
+ ...Chapter 2: High-Level Language Interface: PASS
+ ...Chapter 5: Programming Interface Examples: PASS
+@@ -175,6 +177,11 @@ SPE Regression Tests: PASS
+ ....__ev_any_ltu: PASS
+ ....__ev_lower_ltu: PASS
+ ....__ev_upper_ltu: PASS
++....__ev_select_eq: PASS
++....__ev_select_gts: PASS
++....__ev_select_gtu: PASS
++....__ev_select_lts: PASS
++....__ev_select_ltu: PASS
+ ..SPE ISA Miscellaneous Tests: PASS
+ ...Memory transfer using evldd-evstdd: PASS
+ ...Value pool demo: PASS
+diff --git a/regtest-power7-64.log b/regtest-power7-64.log
+index 4939299..b0aeaf6 100644
+--- a/regtest-power7-64.log
++++ b/regtest-power7-64.log
+@@ -484,7 +484,7 @@ gcc -Winline -Wall -Wshadow -g -Wno-long-long  -Wno-pointer-sign -fno-stack-prot
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/ppc32'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/ppc32'
+-make[5]: Warning: File `.deps/test_spe.Po' has modification time 75 s in the future
++make[5]: Warning: File `.deps/test_spe.Po' has modification time 76 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -504,7 +504,7 @@ gcc -Winline -Wall -Wshadow -g  -Winline -Wall -Wshadow -g -I../../../include -m
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/ppc64'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/ppc64'
+-make[5]: Warning: File `.deps/power_ISA2_05-power_ISA2_05.Po' has modification time 75 s in the future
++make[5]: Warning: File `.deps/power_ISA2_05-power_ISA2_05.Po' has modification time 76 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -551,7 +551,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/linux'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/linux'
+-make[5]: Warning: File `.deps/timerfd-syscall.Po' has modification time 75 s in the future
++make[5]: Warning: File `.deps/timerfd-syscall.Po' has modification time 76 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -605,7 +605,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -fPIC -Wno-long-long  -Wno-pointer-sign -fno
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/cachegrind/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/cachegrind/tests'
+-make[5]: Warning: File `.deps/myprint_so-myprint.Po' has modification time 75 s in the future
++make[5]: Warning: File `.deps/myprint_so-myprint.Po' has modification time 76 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -656,7 +656,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/callgrind/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/callgrind/tests'
+-make[5]: Warning: File `.deps/threads.Po' has modification time 75 s in the future
++make[5]: Warning: File `.deps/threads.Po' has modification time 76 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1255,7 +1255,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/linux'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/linux'
+-make[5]: Warning: File `.deps/mremap3.Po' has modification time 75 s in the future
++make[5]: Warning: File `.deps/mremap3.Po' has modification time 76 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1628,7 +1628,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wextra -Wno-inline -Wno-unused-parameter -W
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/drd/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/drd/tests'
+-make[4]: Warning: File `.deps/unit_vc-unit_vc.Po' has modification time 69 s in the future
++make[4]: Warning: File `.deps/unit_vc-unit_vc.Po' has modification time 70 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1689,7 +1689,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-sgcheck/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-sgcheck/tests'
+-make[4]: Warning: File `.deps/stackerr.Po' has modification time 75 s in the future
++make[4]: Warning: File `.deps/stackerr.Po' has modification time 76 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1759,7 +1759,7 @@ gcc -Winline -Wall -Wshadow -g -Wno-long-long  -Wno-pointer-sign -fno-stack-prot
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-bbv/tests/ppc32-linux'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-bbv/tests/ppc32-linux'
+-make[5]: Warning: File `.deps/million.Po' has modification time 75 s in the future
++make[5]: Warning: File `.deps/million.Po' has modification time 76 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1901,7 +1901,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[3]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/gdbserver_tests'
+ make  check-local
+ make[3]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/gdbserver_tests'
+-make[3]: Warning: File `.deps/watchpoints.Po' has modification time 75 s in the future
++make[3]: Warning: File `.deps/watchpoints.Po' has modification time 76 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1980,7 +1980,7 @@ badfree-2trace:  valgrind   --num-callers=2 -q ./badfree
+ badfree:         valgrind   -q ./badfree 
+ badfree3:        valgrind   -q --fullpath-after=/proj/ppc/DT/labhome/anmol/valgrind-3.8.1/ ./badfree 
+ badjump:         valgrind   ./badjump 
+-sh: line 1: 23594 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
++sh: line 1: 22362 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
+ badjump2:        valgrind   -q ./badjump2 
+ badloop:         valgrind   -q ./badloop 
+ badpoll:         valgrind   -q ./badpoll 
+@@ -1997,7 +1997,7 @@ clo_redzone_default: valgrind   --leak-check=no -q ./clo_redzone
+ custom-overlap:  valgrind   --leak-check=summary -q ./custom-overlap 
+ custom_alloc:    valgrind   -q ./custom_alloc 
+ deep-backtrace:  valgrind   -q --num-callers=500 ./deep-backtrace 
+-sh: line 1: 24152 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
++sh: line 1: 22920 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
+ deep_templates:  valgrind   -q ./deep_templates 
+ describe-block:  valgrind   ./describe-block 
+ doublefree:      valgrind   -q ./doublefree 
+@@ -2110,7 +2110,7 @@ supp-dir:        valgrind   --suppressions=x86/ ./../../tests/true
+ supp1:           valgrind   --suppressions=supp.supp -q ./supp1 
+ supp2:           valgrind   --suppressions=supp.supp -q ./supp2 
+ supp_unknown:    valgrind   -q --suppressions=supp_unknown.supp ./badjump 
+-sh: line 1: 28835 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
++sh: line 1: 27603 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
+ *** supp_unknown failed (stderr) ***
+ suppfree:        valgrind   --suppressions=suppfree.supp -q ./suppfree 
+ test-plo-no:     valgrind   -q ./test-plo 
+@@ -2246,7 +2246,7 @@ gxx304:          valgrind   ./gxx304
+ ifunc:           (skipping, prereq failed: test -e ifunc)
+ -- Running  tests in none/tests/linux ----------------------------------
+ blockfault:      valgrind   ./blockfault 
+-sh: line 1:   900 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
++sh: line 1: 32071 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
+ mremap:          valgrind   ./mremap 
+ mremap2:         valgrind   ./mremap2 
+ mremap3:         valgrind   ./mremap3 
+@@ -2412,7 +2412,7 @@ tc20_verifywrap: valgrind   --read-var-info=yes ./tc20_verifywrap
+ *** tc20_verifywrap failed (stderr) ***
+ tc21_pthonce:    valgrind   --read-var-info=yes ./tc21_pthonce 
+ tc22_exit_w_lock: valgrind   ./tc22_exit_w_lock 
+-sh: line 1: 18450 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1: 17216 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   ./tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --hg-sanity-flags=111111 ./tc24_nonzero_sem 
+ -- Finished tests in helgrind/tests ------------------------------------
+@@ -2531,7 +2531,7 @@ tc18_semabuse:   valgrind   ./../../helgrind/tests/tc18_semabuse
+ tc19_shadowmem:  valgrind   --error-limit=no --read-var-info=yes --show-confl-seg=no --num-callers=3 ./../../helgrind/tests/tc19_shadowmem 
+ tc21_pthonce:    valgrind   --num-callers=3 ./../../helgrind/tests/tc21_pthonce 
+ tc22_exit_w_lock: valgrind   --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock 
+-sh: line 1: 23787 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1: 22552 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   --num-callers=3 ./../../helgrind/tests/tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --read-var-info=yes ./../../helgrind/tests/tc24_nonzero_sem 
+ thread_name:     valgrind   --read-var-info=yes --check-stack-var=yes --num-callers=3 ./thread_name 
+-- 
+1.7.3.4
+

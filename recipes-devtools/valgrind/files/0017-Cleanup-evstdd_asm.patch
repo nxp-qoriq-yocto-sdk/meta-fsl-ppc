@@ -1,0 +1,305 @@
+From d3a1ebdb57c88006653592f4109fc0a19afdcd1b Mon Sep 17 00:00:00 2001
+From: Anmol P. Paralkar <anmol@freescale.com>
+Date: Fri, 1 Feb 2013 18:27:32 -0800
+Subject: [PATCH 17/65] Cleanup evstdd_asm ().
+
+---
+ memcheck/tests/ppc32/test_spe.c          |  166 +++++++-----------------------
+ memcheck/tests/ppc32/test_spe.stderr.exp |    6 +-
+ regtest-power7-64.log                    |   16 ++--
+ 3 files changed, 49 insertions(+), 139 deletions(-)
+
+diff --git a/memcheck/tests/ppc32/test_spe.c b/memcheck/tests/ppc32/test_spe.c
+index 430d82a..4030241 100644
+--- a/memcheck/tests/ppc32/test_spe.c
++++ b/memcheck/tests/ppc32/test_spe.c
+@@ -142,133 +142,43 @@ int evstdd_asm(void)
+   asm volatile ("lis %[b], evstdd_asm_dst@ha" : [b] "=r" (dst_base));
+   asm volatile ("addic %[bd], %[bs], evstdd_asm_dst@l" : [bd] "=r" (dst_base) : [bs] "r" (dst_base));
+ 
+-  vec = (__ev64_u32__) { 0xd5e80d24, 0xcd019f8f };
+-  asm volatile ("evstdd %[v], 0*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base));
+-  VERIFY (evstdd_asm_dst[0][0] == 0xd5e80d24 && evstdd_asm_dst[0][1] == 0xcd019f8f);
+-
+-  vec = (__ev64_u32__) { 0xa2710780, 0x3e50576e };
+-  asm volatile ("evstdd %[v], 1*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base));
+-  VERIFY (evstdd_asm_dst[1][0] == 0xa2710780 && evstdd_asm_dst[1][1] == 0x3e50576e);
+-
+-  vec = (__ev64_u32__) { 0x9fc90cb6, 0xa784453e };
+-  asm volatile ("evstdd %[v], 2*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base));
+-  VERIFY (evstdd_asm_dst[2][0] == 0x9fc90cb6 && evstdd_asm_dst[2][1] == 0xa784453e);
+-
+-  vec = (__ev64_u32__) { 0xe71596a2, 0x573a90f3 };
+-  asm volatile ("evstdd %[v], 3*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base));
+-  VERIFY (evstdd_asm_dst[3][0] == 0xe71596a2 && evstdd_asm_dst[3][1] == 0x573a90f3);
+-
+-  vec = (__ev64_u32__) { 0xafe1fca6, 0x2625d451 };
+-  asm volatile ("evstdd %[v], 4*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base));
+-  VERIFY (evstdd_asm_dst[4][0] == 0xafe1fca6 && evstdd_asm_dst[4][1] == 0x2625d451);
+-
+-  vec = (__ev64_u32__) { 0xd2b9f988, 0x2b819222 };
+-  asm volatile ("evstdd %[v], 5*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base));
+-  VERIFY (evstdd_asm_dst[5][0] == 0xd2b9f988 && evstdd_asm_dst[5][1] == 0x2b819222);
+-
+-  vec = (__ev64_u32__) { 0x309c9019, 0x38e11c55 };
+-  asm volatile ("evstdd %[v], 6*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base));
+-  VERIFY (evstdd_asm_dst[6][0] == 0x309c9019 && evstdd_asm_dst[6][1] == 0x38e11c55);
+-
+-  vec = (__ev64_u32__) { 0xf8cd97ec, 0xf4c3a9fb };
+-  asm volatile ("evstdd %[v], 7*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base));
+-  VERIFY (evstdd_asm_dst[7][0] == 0xf8cd97ec && evstdd_asm_dst[7][1] == 0xf4c3a9fb);
+-
+-  vec = (__ev64_u32__) { 0xee7c08d6, 0x7ed67555 };
+-  asm volatile ("evstdd %[v], 8*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base));
+-  VERIFY (evstdd_asm_dst[8][0] == 0xee7c08d6 && evstdd_asm_dst[8][1] == 0x7ed67555);
+-
+-  vec = (__ev64_u32__) { 0xb81617a4, 0xed28fe61 };
+-  asm volatile ("evstdd %[v], 9*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base));
+-  VERIFY (evstdd_asm_dst[9][0] == 0xb81617a4 && evstdd_asm_dst[9][1] == 0xed28fe61);
+-
+-  vec = (__ev64_u32__) { 0xe6e838d8, 0xe798ed70 };
+-  asm volatile ("evstdd %[v], 10*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base));
+-  VERIFY (evstdd_asm_dst[10][0] == 0xe6e838d8 && evstdd_asm_dst[10][1] == 0xe798ed70);
+-
+-  vec = (__ev64_u32__) { 0xb462fcf2, 0xeb2280b5 };
+-  asm volatile ("evstdd %[v], 11*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base));
+-  VERIFY (evstdd_asm_dst[11][0] == 0xb462fcf2 && evstdd_asm_dst[11][1] == 0xeb2280b5);
+-
+-  vec = (__ev64_u32__) { 0x9278e4a8, 0x9c4cd3b7 };
+-  asm volatile ("evstdd %[v], 12*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base));
+-  VERIFY (evstdd_asm_dst[12][0] == 0x9278e4a8 && evstdd_asm_dst[12][1] == 0x9c4cd3b7);
+-
+-  vec = (__ev64_u32__) { 0xdf804478, 0x5c77d6bc };
+-  asm volatile ("evstdd %[v], 13*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base));
+-  VERIFY (evstdd_asm_dst[13][0] == 0xdf804478 && evstdd_asm_dst[13][1] == 0x5c77d6bc);
+-
+-  vec = (__ev64_u32__) { 0x2f2899f9, 0x39a4c433 };
+-  asm volatile ("evstdd %[v], 14*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base));
+-  VERIFY (evstdd_asm_dst[14][0] == 0x2f2899f9 && evstdd_asm_dst[14][1] == 0x39a4c433);
+-
+-  vec = (__ev64_u32__) { 0xf3c64145, 0xa9e111d4 };
+-  asm volatile ("evstdd %[v], 15*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base));
+-  VERIFY (evstdd_asm_dst[15][0] == 0xf3c64145 && evstdd_asm_dst[15][1] == 0xa9e111d4);
+-
+-  vec = (__ev64_u32__) { 0xfa6c19f8, 0xea17d96f };
+-  asm volatile ("evstdd %[v], 16*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base));
+-  VERIFY (evstdd_asm_dst[16][0] == 0xfa6c19f8 && evstdd_asm_dst[16][1] == 0xea17d96f);
+-
+-  vec = (__ev64_u32__) { 0x9ecc98f6, 0x8e7a368a };
+-  asm volatile ("evstdd %[v], 17*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base));
+-  VERIFY (evstdd_asm_dst[17][0] == 0x9ecc98f6 && evstdd_asm_dst[17][1] == 0x8e7a368a);
+-
+-  vec = (__ev64_u32__) { 0x0cc06b83, 0x4108be2f };
+-  asm volatile ("evstdd %[v], 18*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base));
+-  VERIFY (evstdd_asm_dst[18][0] == 0x0cc06b83 && evstdd_asm_dst[18][1] == 0x4108be2f);
+-
+-  vec = (__ev64_u32__) { 0x6fa49893, 0xe7f9a50d };
+-  asm volatile ("evstdd %[v], 19*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base));
+-  VERIFY (evstdd_asm_dst[19][0] == 0x6fa49893 && evstdd_asm_dst[19][1] == 0xe7f9a50d);
+-
+-  vec = (__ev64_u32__) { 0xb9e590af, 0x54c3f09e };
+-  asm volatile ("evstdd %[v], 20*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base));
+-  VERIFY (evstdd_asm_dst[20][0] == 0xb9e590af && evstdd_asm_dst[20][1] == 0x54c3f09e);
+-
+-  vec = (__ev64_u32__) { 0xc0f9f024, 0x175c9d12 };
+-  asm volatile ("evstdd %[v], 21*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base));
+-  VERIFY (evstdd_asm_dst[21][0] == 0xc0f9f024 && evstdd_asm_dst[21][1] == 0x175c9d12);
+-
+-  vec = (__ev64_u32__) { 0x28d55d51, 0xa5ba8569 };
+-  asm volatile ("evstdd %[v], 22*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base));
+-  VERIFY (evstdd_asm_dst[22][0] == 0x28d55d51 && evstdd_asm_dst[22][1] == 0xa5ba8569);
+-
+-  vec = (__ev64_u32__) { 0x68b2f5d6, 0x6f6db375 };
+-  asm volatile ("evstdd %[v], 23*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base));
+-  VERIFY (evstdd_asm_dst[23][0] == 0x68b2f5d6 && evstdd_asm_dst[23][1] == 0x6f6db375);
+-
+-  vec = (__ev64_u32__) { 0xe21eada1, 0xca51865f };
+-  asm volatile ("evstdd %[v], 24*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base));
+-  VERIFY (evstdd_asm_dst[24][0] == 0xe21eada1 && evstdd_asm_dst[24][1] == 0xca51865f);
+-
+-  vec = (__ev64_u32__) { 0xfc2a4ff3, 0x5a4d04ab };
+-  asm volatile ("evstdd %[v], 25*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base));
+-  VERIFY (evstdd_asm_dst[25][0] == 0xfc2a4ff3 && evstdd_asm_dst[25][1] == 0x5a4d04ab);
+-
+-  vec = (__ev64_u32__) { 0xaa41414a, 0x00a546e5 };
+-  asm volatile ("evstdd %[v], 26*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base));
+-  VERIFY (evstdd_asm_dst[26][0] == 0xaa41414a && evstdd_asm_dst[26][1] == 0x00a546e5);
+-
+-  vec = (__ev64_u32__) { 0x5da31deb, 0x9508aada };
+-  asm volatile ("evstdd %[v], 27*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base));
+-  VERIFY (evstdd_asm_dst[27][0] == 0x5da31deb && evstdd_asm_dst[27][1] == 0x9508aada);
+-
+-  vec = (__ev64_u32__) { 0x9bc2f7f5, 0x69ae0cc8 };
+-  asm volatile ("evstdd %[v], 28*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base));
+-  VERIFY (evstdd_asm_dst[28][0] == 0x9bc2f7f5 && evstdd_asm_dst[28][1] == 0x69ae0cc8);
+-
+-  vec = (__ev64_u32__) { 0xa2037d9f, 0x1a57cd53 };
+-  asm volatile ("evstdd %[v], 29*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base));
+-  VERIFY (evstdd_asm_dst[29][0] == 0xa2037d9f && evstdd_asm_dst[29][1] == 0x1a57cd53);
+-
+-  vec = (__ev64_u32__) { 0x15db13bb, 0x64dc655a };
+-  asm volatile ("evstdd %[v], 30*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base));
+-  VERIFY (evstdd_asm_dst[30][0] == 0x15db13bb && evstdd_asm_dst[30][1] == 0x64dc655a);
+-
+-  vec = (__ev64_u32__) { 0x98d2685f, 0x1a6f9ad8 };
+-  asm volatile ("evstdd %[v], 31*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base));
+-  VERIFY (evstdd_asm_dst[31][0] == 0x98d2685f && evstdd_asm_dst[31][1] == 0x1a6f9ad8);
++#define EVSTDD(index, hw, lw)                                                             \
++  vec = (__ev64_u32__) { (hw), (lw) };                                                    \
++  asm volatile ("evstdd %[v], " #index "*8(%[b])" : [v] "=r" (vec) : [b] "r" (dst_base)); \
++  VERIFY (evstdd_asm_dst[index][0] == (hw) && evstdd_asm_dst[index][1] == (lw));
++
++  EVSTDD(0,  0xd5e80d24, 0xcd019f8f);
++  EVSTDD(1,  0xa2710780, 0x3e50576e);
++  EVSTDD(2,  0x9fc90cb6, 0xa784453e);
++  EVSTDD(3,  0xe71596a2, 0x573a90f3);
++  EVSTDD(4,  0xafe1fca6, 0x2625d451);
++  EVSTDD(5,  0xd2b9f988, 0x2b819222);
++  EVSTDD(6,  0x309c9019, 0x38e11c55);
++  EVSTDD(7,  0xf8cd97ec, 0xf4c3a9fb);
++  EVSTDD(8,  0xee7c08d6, 0x7ed67555);
++  EVSTDD(9,  0xb81617a4, 0xed28fe61);
++  EVSTDD(10, 0xe6e838d8, 0xe798ed70);
++  EVSTDD(11, 0xb462fcf2, 0xeb2280b5);
++  EVSTDD(12, 0x9278e4a8, 0x9c4cd3b7);
++  EVSTDD(13, 0xdf804478, 0x5c77d6bc);
++  EVSTDD(14, 0x2f2899f9, 0x39a4c433);
++  EVSTDD(15, 0xf3c64145, 0xa9e111d4);
++  EVSTDD(16, 0xfa6c19f8, 0xea17d96f);
++  EVSTDD(17, 0x9ecc98f6, 0x8e7a368a);
++  EVSTDD(18, 0x0cc06b83, 0x4108be2f);
++  EVSTDD(19, 0x6fa49893, 0xe7f9a50d);
++  EVSTDD(10, 0xb9e590af, 0x54c3f09e);
++  EVSTDD(21, 0xc0f9f024, 0x175c9d12);
++  EVSTDD(22, 0x28d55d51, 0xa5ba8569);
++  EVSTDD(23, 0x68b2f5d6, 0x6f6db375);
++  EVSTDD(24, 0xe21eada1, 0xca51865f);
++  EVSTDD(25, 0xfc2a4ff3, 0x5a4d04ab);
++  EVSTDD(26, 0xaa41414a, 0x00a546e5);
++  EVSTDD(27, 0x5da31deb, 0x9508aada);
++  EVSTDD(28, 0x9bc2f7f5, 0x69ae0cc8);
++  EVSTDD(29, 0xa2037d9f, 0x1a57cd53);
++  EVSTDD(30, 0x15db13bb, 0x64dc655a);
++  EVSTDD(31, 0x98d2685f, 0x1a6f9ad8);
+ #endif // __SPE__
+   return failures;
+ }
+@@ -2522,7 +2432,7 @@ int main(void)
+ // 0. Add extensive tests for printf ()-family functions with varied format.
+ // 1. Make VERIFY() a variadic function, parametrized with the local paramters in addition to __LINE__.
+ // 2. Make a data header file per test and include those throughout the code where you have those blobs of 0x's.
+-// 3. Cleanup evstdd_asm (); like macroise like evstdh_asm ()
++// 3. (Done) Cleanup evstdd_asm (); macro-ise like evstdh_asm ()
+ // 4. Add support to measure time (add clock per test) - standalone and under valgrind.
+ // 5. The memset(a) and VERIFY(a == {0x0}) pattern ought to be abstracted into it's own function.
+ // 6. Add intrinsic based tests.
+diff --git a/memcheck/tests/ppc32/test_spe.stderr.exp b/memcheck/tests/ppc32/test_spe.stderr.exp
+index aa07c0c..bff9fae 100644
+--- a/memcheck/tests/ppc32/test_spe.stderr.exp
++++ b/memcheck/tests/ppc32/test_spe.stderr.exp
+@@ -5,7 +5,7 @@ Invalid write of size 4
+    by 0x........: run (test_spe.h:42)
+    by 0x........: run (test_spe.h:48)
+    by 0x........: run (test_spe.h:48)
+-   by 0x........: main (test_spe.c:2516)
++   by 0x........: main (test_spe.c:2426)
+  Address 0x........ is 0 bytes after a block of size 40 alloc'd
+    at 0x........: malloc (vg_replace_malloc.c:...)
+    by 0x........: vg_quick_start_guide_aux (test_spe.c:26)
+@@ -13,7 +13,7 @@ Invalid write of size 4
+    by 0x........: run (test_spe.h:42)
+    by 0x........: run (test_spe.h:48)
+    by 0x........: run (test_spe.h:48)
+-   by 0x........: main (test_spe.c:2516)
++   by 0x........: main (test_spe.c:2426)
+ 
+ 
+ HEAP SUMMARY:
+@@ -27,7 +27,7 @@ HEAP SUMMARY:
+    by 0x........: run (test_spe.h:42)
+    by 0x........: run (test_spe.h:48)
+    by 0x........: run (test_spe.h:48)
+-   by 0x........: main (test_spe.c:2516)
++   by 0x........: main (test_spe.c:2426)
+ 
+ LEAK SUMMARY:
+    definitely lost: 40 bytes in 1 blocks
+diff --git a/regtest-power7-64.log b/regtest-power7-64.log
+index a285fb4..cc5d5ca 100644
+--- a/regtest-power7-64.log
++++ b/regtest-power7-64.log
+@@ -1226,7 +1226,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Winline -Wall -O -lm -g -mregnames -DHAS_DF
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc64'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc64'
+-make[5]: Warning: File `.deps/twi_tdi.Po' has modification time 68 s in the future
++make[5]: Warning: File `.deps/twi_tdi.Po' has modification time 69 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1418,7 +1418,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/helgrind/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/helgrind/tests'
+-make[4]: Warning: File `.deps/tc24_nonzero_sem.Po' has modification time 70 s in the future
++make[4]: Warning: File `.deps/tc24_nonzero_sem.Po' has modification time 71 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1980,7 +1980,7 @@ badfree-2trace:  valgrind   --num-callers=2 -q ./badfree
+ badfree:         valgrind   -q ./badfree 
+ badfree3:        valgrind   -q --fullpath-after=/proj/ppc/DT/labhome/anmol/valgrind-3.8.1/ ./badfree 
+ badjump:         valgrind   ./badjump 
+-sh: line 1:  6251 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
++sh: line 1: 23456 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
+ badjump2:        valgrind   -q ./badjump2 
+ badloop:         valgrind   -q ./badloop 
+ badpoll:         valgrind   -q ./badpoll 
+@@ -1997,7 +1997,7 @@ clo_redzone_default: valgrind   --leak-check=no -q ./clo_redzone
+ custom-overlap:  valgrind   --leak-check=summary -q ./custom-overlap 
+ custom_alloc:    valgrind   -q ./custom_alloc 
+ deep-backtrace:  valgrind   -q --num-callers=500 ./deep-backtrace 
+-sh: line 1:  6811 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
++sh: line 1: 24015 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
+ deep_templates:  valgrind   -q ./deep_templates 
+ describe-block:  valgrind   ./describe-block 
+ doublefree:      valgrind   -q ./doublefree 
+@@ -2110,7 +2110,7 @@ supp-dir:        valgrind   --suppressions=x86/ ./../../tests/true
+ supp1:           valgrind   --suppressions=supp.supp -q ./supp1 
+ supp2:           valgrind   --suppressions=supp.supp -q ./supp2 
+ supp_unknown:    valgrind   -q --suppressions=supp_unknown.supp ./badjump 
+-sh: line 1: 11552 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
++sh: line 1: 28723 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
+ *** supp_unknown failed (stderr) ***
+ suppfree:        valgrind   --suppressions=suppfree.supp -q ./suppfree 
+ test-plo-no:     valgrind   -q ./test-plo 
+@@ -2246,7 +2246,7 @@ gxx304:          valgrind   ./gxx304
+ ifunc:           (skipping, prereq failed: test -e ifunc)
+ -- Running  tests in none/tests/linux ----------------------------------
+ blockfault:      valgrind   ./blockfault 
+-sh: line 1: 16025 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
++sh: line 1:   751 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
+ mremap:          valgrind   ./mremap 
+ mremap2:         valgrind   ./mremap2 
+ mremap3:         valgrind   ./mremap3 
+@@ -2412,7 +2412,7 @@ tc20_verifywrap: valgrind   --read-var-info=yes ./tc20_verifywrap
+ *** tc20_verifywrap failed (stderr) ***
+ tc21_pthonce:    valgrind   --read-var-info=yes ./tc21_pthonce 
+ tc22_exit_w_lock: valgrind   ./tc22_exit_w_lock 
+-sh: line 1:  1044 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1: 18356 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   ./tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --hg-sanity-flags=111111 ./tc24_nonzero_sem 
+ -- Finished tests in helgrind/tests ------------------------------------
+@@ -2531,7 +2531,7 @@ tc18_semabuse:   valgrind   ./../../helgrind/tests/tc18_semabuse
+ tc19_shadowmem:  valgrind   --error-limit=no --read-var-info=yes --show-confl-seg=no --num-callers=3 ./../../helgrind/tests/tc19_shadowmem 
+ tc21_pthonce:    valgrind   --num-callers=3 ./../../helgrind/tests/tc21_pthonce 
+ tc22_exit_w_lock: valgrind   --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock 
+-sh: line 1:  6521 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1: 23704 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   --num-callers=3 ./../../helgrind/tests/tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --read-var-info=yes ./../../helgrind/tests/tc24_nonzero_sem 
+ thread_name:     valgrind   --read-var-info=yes --check-stack-var=yes --num-callers=3 ./thread_name 
+-- 
+1.7.3.4
+

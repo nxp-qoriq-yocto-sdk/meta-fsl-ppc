@@ -1,0 +1,303 @@
+From 00e825be1fe85be497771bceeb9e738a1675cdcb Mon Sep 17 00:00:00 2001
+From: Anmol P. Paralkar <anmol@freescale.com>
+Date: Thu, 3 Jan 2013 10:23:46 -0800
+Subject: [PATCH 03/65] Declare the 64-bit SPE GPR's to the PPC32 guest state. (Add upper word per GPR).
+
+---
+ VEX/priv/guest_ppc_helpers.c |   96 +++++++++++++++++++++++++++--------------
+ VEX/priv/guest_ppc_toIR.c    |   56 ++++++++++++++++++++++++
+ VEX/pub/libvex_guest_ppc32.h |   97 ++++++++++++++++++++++++++++--------------
+ 3 files changed, 185 insertions(+), 64 deletions(-)
+
+diff --git a/VEX/priv/guest_ppc_helpers.c b/VEX/priv/guest_ppc_helpers.c
+index 6ffb1ea..4f457e0 100644
+--- a/VEX/priv/guest_ppc_helpers.c
++++ b/VEX/priv/guest_ppc_helpers.c
+@@ -357,38 +357,70 @@ void LibVEX_GuestPPC32_initialise ( /*OUT*/VexGuestPPC32State* vex_state )
+    vex_state->pad3 = 0;
+    vex_state->pad4 = 0;
+ 
+-   vex_state->guest_GPR0  = 0;
+-   vex_state->guest_GPR1  = 0;
+-   vex_state->guest_GPR2  = 0;
+-   vex_state->guest_GPR3  = 0;
+-   vex_state->guest_GPR4  = 0;
+-   vex_state->guest_GPR5  = 0;
+-   vex_state->guest_GPR6  = 0;
+-   vex_state->guest_GPR7  = 0;
+-   vex_state->guest_GPR8  = 0;
+-   vex_state->guest_GPR9  = 0;
+-   vex_state->guest_GPR10 = 0;
+-   vex_state->guest_GPR11 = 0;
+-   vex_state->guest_GPR12 = 0;
+-   vex_state->guest_GPR13 = 0;
+-   vex_state->guest_GPR14 = 0;
+-   vex_state->guest_GPR15 = 0;
+-   vex_state->guest_GPR16 = 0;
+-   vex_state->guest_GPR17 = 0;
+-   vex_state->guest_GPR18 = 0;
+-   vex_state->guest_GPR19 = 0;
+-   vex_state->guest_GPR20 = 0;
+-   vex_state->guest_GPR21 = 0;
+-   vex_state->guest_GPR22 = 0;
+-   vex_state->guest_GPR23 = 0;
+-   vex_state->guest_GPR24 = 0;
+-   vex_state->guest_GPR25 = 0;
+-   vex_state->guest_GPR26 = 0;
+-   vex_state->guest_GPR27 = 0;
+-   vex_state->guest_GPR28 = 0;
+-   vex_state->guest_GPR29 = 0;
+-   vex_state->guest_GPR30 = 0;
+-   vex_state->guest_GPR31 = 0;
++   vex_state->guest_GPR0U  = 0;
++   vex_state->guest_GPR0   = 0;
++   vex_state->guest_GPR1U  = 0;
++   vex_state->guest_GPR1   = 0;
++   vex_state->guest_GPR2U  = 0;
++   vex_state->guest_GPR2   = 0;
++   vex_state->guest_GPR3U  = 0;
++   vex_state->guest_GPR3   = 0;
++   vex_state->guest_GPR4U  = 0;
++   vex_state->guest_GPR4   = 0;
++   vex_state->guest_GPR5U  = 0;
++   vex_state->guest_GPR5   = 0;
++   vex_state->guest_GPR6U  = 0;
++   vex_state->guest_GPR6   = 0;
++   vex_state->guest_GPR7U  = 0;
++   vex_state->guest_GPR7   = 0;
++   vex_state->guest_GPR8U  = 0;
++   vex_state->guest_GPR8   = 0;
++   vex_state->guest_GPR9U  = 0;
++   vex_state->guest_GPR9   = 0;
++   vex_state->guest_GPR10U = 0;
++   vex_state->guest_GPR10  = 0;
++   vex_state->guest_GPR11U = 0;
++   vex_state->guest_GPR11  = 0;
++   vex_state->guest_GPR12U = 0;
++   vex_state->guest_GPR12  = 0;
++   vex_state->guest_GPR13U = 0;
++   vex_state->guest_GPR13  = 0;
++   vex_state->guest_GPR14U = 0;
++   vex_state->guest_GPR14  = 0;
++   vex_state->guest_GPR15U = 0;
++   vex_state->guest_GPR15  = 0;
++   vex_state->guest_GPR16U = 0;
++   vex_state->guest_GPR16  = 0;
++   vex_state->guest_GPR17U = 0;
++   vex_state->guest_GPR17  = 0;
++   vex_state->guest_GPR18U = 0;
++   vex_state->guest_GPR18  = 0;
++   vex_state->guest_GPR19U = 0;
++   vex_state->guest_GPR19  = 0;
++   vex_state->guest_GPR20U = 0;
++   vex_state->guest_GPR20  = 0;
++   vex_state->guest_GPR21U = 0;
++   vex_state->guest_GPR21  = 0;
++   vex_state->guest_GPR22U = 0;
++   vex_state->guest_GPR22  = 0;
++   vex_state->guest_GPR23U = 0;
++   vex_state->guest_GPR23  = 0;
++   vex_state->guest_GPR24U = 0;
++   vex_state->guest_GPR24  = 0;
++   vex_state->guest_GPR25U = 0;
++   vex_state->guest_GPR25  = 0;
++   vex_state->guest_GPR26U = 0;
++   vex_state->guest_GPR26  = 0;
++   vex_state->guest_GPR27U = 0;
++   vex_state->guest_GPR27  = 0;
++   vex_state->guest_GPR28U = 0;
++   vex_state->guest_GPR28  = 0;
++   vex_state->guest_GPR29U = 0;
++   vex_state->guest_GPR29  = 0;
++   vex_state->guest_GPR30U = 0;
++   vex_state->guest_GPR30  = 0;
++   vex_state->guest_GPR31U = 0;
++   vex_state->guest_GPR31  = 0;
+ 
+    /* Initialise the vector state. */
+ #  define VECZERO(_vr) _vr[0]=_vr[1]=_vr[2]=_vr[3] = 0;
+diff --git a/VEX/priv/guest_ppc_toIR.c b/VEX/priv/guest_ppc_toIR.c
+index 57f7248..dcca701 100644
+--- a/VEX/priv/guest_ppc_toIR.c
++++ b/VEX/priv/guest_ppc_toIR.c
+@@ -1303,6 +1303,62 @@ static void putVSReg ( UInt archreg, IRExpr* e )
+    stmt( IRStmt_Put(vsxGuestRegOffset(archreg), e) );
+ }
+ 
++static Int speGuestRegOffset ( UInt archreg )
++{
++   vassert(archreg < 32);
++
++   switch (archreg) {
++   case  0: return offsetof(VexGuestPPC32State, guest_GPR0U);
++   case  1: return offsetof(VexGuestPPC32State, guest_GPR1U);
++   case  2: return offsetof(VexGuestPPC32State, guest_GPR2U);
++   case  3: return offsetof(VexGuestPPC32State, guest_GPR3U);
++   case  4: return offsetof(VexGuestPPC32State, guest_GPR4U);
++   case  5: return offsetof(VexGuestPPC32State, guest_GPR5U);
++   case  6: return offsetof(VexGuestPPC32State, guest_GPR6U);
++   case  7: return offsetof(VexGuestPPC32State, guest_GPR7U);
++   case  8: return offsetof(VexGuestPPC32State, guest_GPR8U);
++   case  9: return offsetof(VexGuestPPC32State, guest_GPR9U);
++   case 10: return offsetof(VexGuestPPC32State, guest_GPR10U);
++   case 11: return offsetof(VexGuestPPC32State, guest_GPR11U);
++   case 12: return offsetof(VexGuestPPC32State, guest_GPR12U);
++   case 13: return offsetof(VexGuestPPC32State, guest_GPR13U);
++   case 14: return offsetof(VexGuestPPC32State, guest_GPR14U);
++   case 15: return offsetof(VexGuestPPC32State, guest_GPR15U);
++   case 16: return offsetof(VexGuestPPC32State, guest_GPR16U);
++   case 17: return offsetof(VexGuestPPC32State, guest_GPR17U);
++   case 18: return offsetof(VexGuestPPC32State, guest_GPR18U);
++   case 19: return offsetof(VexGuestPPC32State, guest_GPR19U);
++   case 20: return offsetof(VexGuestPPC32State, guest_GPR20U);
++   case 21: return offsetof(VexGuestPPC32State, guest_GPR21U);
++   case 22: return offsetof(VexGuestPPC32State, guest_GPR22U);
++   case 23: return offsetof(VexGuestPPC32State, guest_GPR23U);
++   case 24: return offsetof(VexGuestPPC32State, guest_GPR24U);
++   case 25: return offsetof(VexGuestPPC32State, guest_GPR25U);
++   case 26: return offsetof(VexGuestPPC32State, guest_GPR26U);
++   case 27: return offsetof(VexGuestPPC32State, guest_GPR27U);
++   case 28: return offsetof(VexGuestPPC32State, guest_GPR28U);
++   case 29: return offsetof(VexGuestPPC32State, guest_GPR29U);
++   case 30: return offsetof(VexGuestPPC32State, guest_GPR30U);
++   case 31: return offsetof(VexGuestPPC32State, guest_GPR31U);
++   default: break;
++   }
++   vpanic("speGuestRegOffset(ppc)"); /*notreached*/
++}
++
++/* Get contents of an SPE 64-bit GPRguest register */
++static IRExpr* getSPEReg ( UInt archreg )
++{
++   vassert(archreg < 32);
++   return IRExpr_Get( speGuestRegOffset(archreg), Ity_I64 );
++}
++
++/* Ditto, but write to an SPE 64-bit GPR instead. */
++static void putSPEReg ( UInt archreg, IRExpr* e )
++{
++   vassert(archreg < 32);
++   vassert(typeOfIRExpr(irsb->tyenv, e) == Ity_I64 );
++   stmt( IRStmt_Put( speGuestRegOffset(archreg), e) );
++}
+ 
+ static Int guestCR321offset ( UInt cr )
+ {
+diff --git a/VEX/pub/libvex_guest_ppc32.h b/VEX/pub/libvex_guest_ppc32.h
+index 606f16c..b31fc5e 100644
+--- a/VEX/pub/libvex_guest_ppc32.h
++++ b/VEX/pub/libvex_guest_ppc32.h
+@@ -55,38 +55,70 @@ typedef
+       /*  12 */ UInt pad4; 
+       /* Add 16 to all the numbers below.  Sigh. */
+       /* General Purpose Registers */
+-      /*   0 */ UInt guest_GPR0;
+-      /*   4 */ UInt guest_GPR1;
+-      /*   8 */ UInt guest_GPR2;
+-      /*  12 */ UInt guest_GPR3;
+-      /*  16 */ UInt guest_GPR4;
+-      /*  20 */ UInt guest_GPR5;
+-      /*  24 */ UInt guest_GPR6;
+-      /*  28 */ UInt guest_GPR7;
+-      /*  32 */ UInt guest_GPR8;
+-      /*  36 */ UInt guest_GPR9;
+-      /*  40 */ UInt guest_GPR10;
+-      /*  44 */ UInt guest_GPR11;
+-      /*  48 */ UInt guest_GPR12;
+-      /*  52 */ UInt guest_GPR13;
+-      /*  56 */ UInt guest_GPR14;
+-      /*  60 */ UInt guest_GPR15;
+-      /*  64 */ UInt guest_GPR16;
+-      /*  68 */ UInt guest_GPR17;
+-      /*  72 */ UInt guest_GPR18;
+-      /*  76 */ UInt guest_GPR19;
+-      /*  80 */ UInt guest_GPR20;
+-      /*  84 */ UInt guest_GPR21;
+-      /*  88 */ UInt guest_GPR22;
+-      /*  92 */ UInt guest_GPR23;
+-      /*  96 */ UInt guest_GPR24;
+-      /* 100 */ UInt guest_GPR25;
+-      /* 104 */ UInt guest_GPR26;
+-      /* 108 */ UInt guest_GPR27;
+-      /* 112 */ UInt guest_GPR28;
+-      /* 116 */ UInt guest_GPR29;
+-      /* 120 */ UInt guest_GPR30;
+-      /* 124 */ UInt guest_GPR31;
++      /*   0 */ UInt guest_GPR0U;
++      /*   4 */ UInt guest_GPR0;
++      /*   8 */ UInt guest_GPR1U;
++      /*  12 */ UInt guest_GPR1;
++      /*  16 */ UInt guest_GPR2U;
++      /*  20 */ UInt guest_GPR2;
++      /*  24 */ UInt guest_GPR3U;
++      /*  28 */ UInt guest_GPR3;
++      /*  32 */ UInt guest_GPR4U;
++      /*  36 */ UInt guest_GPR4;
++      /*  40 */ UInt guest_GPR5U;
++      /*  44 */ UInt guest_GPR5;
++      /*  48 */ UInt guest_GPR6U;
++      /*  52 */ UInt guest_GPR6;
++      /*  56 */ UInt guest_GPR7U;
++      /*  60 */ UInt guest_GPR7;
++      /*  64 */ UInt guest_GPR8U;
++      /*  68 */ UInt guest_GPR8;
++      /*  72 */ UInt guest_GPR9U;
++      /*  76 */ UInt guest_GPR9;
++      /*  80 */ UInt guest_GPR10U;
++      /*  84 */ UInt guest_GPR10;
++      /*  88 */ UInt guest_GPR11U;
++      /*  92 */ UInt guest_GPR11;
++      /*  96 */ UInt guest_GPR12U;
++      /* 100 */ UInt guest_GPR12;
++      /* 104 */ UInt guest_GPR13U;
++      /* 108 */ UInt guest_GPR13;
++      /* 112 */ UInt guest_GPR14U;
++      /* 116 */ UInt guest_GPR14;
++      /* 120 */ UInt guest_GPR15U;
++      /* 124 */ UInt guest_GPR15;
++      /* 128 */ UInt guest_GPR16U;
++      /* 132 */ UInt guest_GPR16;
++      /* 136 */ UInt guest_GPR17U;
++      /* 140 */ UInt guest_GPR17;
++      /* 144 */ UInt guest_GPR18U;
++      /* 148 */ UInt guest_GPR18;
++      /* 152 */ UInt guest_GPR19U;
++      /* 156 */ UInt guest_GPR19;
++      /* 160 */ UInt guest_GPR20U;
++      /* 164 */ UInt guest_GPR20;
++      /* 168 */ UInt guest_GPR21U;
++      /* 172 */ UInt guest_GPR21;
++      /* 176 */ UInt guest_GPR22U;
++      /* 180 */ UInt guest_GPR22;
++      /* 184 */ UInt guest_GPR23U;
++      /* 188 */ UInt guest_GPR23;
++      /* 192 */ UInt guest_GPR24U;
++      /* 196 */ UInt guest_GPR24;
++      /* 200 */ UInt guest_GPR25U;
++      /* 204 */ UInt guest_GPR25;
++      /* 208 */ UInt guest_GPR26U;
++      /* 212 */ UInt guest_GPR26;
++      /* 216 */ UInt guest_GPR27U;
++      /* 220 */ UInt guest_GPR27;
++      /* 224 */ UInt guest_GPR28U;
++      /* 228 */ UInt guest_GPR28;
++      /* 232 */ UInt guest_GPR29U;
++      /* 236 */ UInt guest_GPR29;
++      /* 240 */ UInt guest_GPR30U;
++      /* 244 */ UInt guest_GPR30;
++      /* 248 */ UInt guest_GPR31U;
++      /* 252 */ UInt guest_GPR31;
+ 
+       // Vector Registers, Floating Point Registers, and VSX Registers
+       // With ISA 2.06, the "Vector-Scalar Floating-point" category
+@@ -241,6 +273,7 @@ typedef
+ 
+       /* Padding to make it have an 8-aligned size */
+       /* 1356 */ UInt  padding;
++
+    }
+    VexGuestPPC32State;
+ 
+-- 
+1.7.3.4
+

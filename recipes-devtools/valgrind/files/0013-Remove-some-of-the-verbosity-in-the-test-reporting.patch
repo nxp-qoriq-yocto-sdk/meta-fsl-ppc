@@ -1,0 +1,206 @@
+From 6706e3a23ebea56067445e9e8bcd07c97049f523 Mon Sep 17 00:00:00 2001
+From: Anmol P. Paralkar <anmol@freescale.com>
+Date: Thu, 31 Jan 2013 10:03:19 -0800
+Subject: [PATCH 13/65] Remove some of the verbosity in the test reporting.
+
+---
+ memcheck/tests/ppc32/test_spe.c          |   32 +++++++++++++++---------------
+ memcheck/tests/ppc32/test_spe.stdout.exp |   32 +++++++++++++++---------------
+ 2 files changed, 32 insertions(+), 32 deletions(-)
+
+diff --git a/memcheck/tests/ppc32/test_spe.c b/memcheck/tests/ppc32/test_spe.c
+index bd5470b..8b86951 100644
+--- a/memcheck/tests/ppc32/test_spe.c
++++ b/memcheck/tests/ppc32/test_spe.c
+@@ -126,7 +126,7 @@ int evldd_asm(void)
+ #endif // __SPE__
+   return failures;
+ }
+-TEST_SPE_DECL(evldd_asm, "Unit test for evldd using asm");
++TEST_SPE_DECL(evldd_asm, "evldd");
+ 
+ #ifdef __SPE__
+ __ev64_u32__ evstdd_asm_dst[32];
+@@ -272,7 +272,7 @@ int evstdd_asm(void)
+ #endif // __SPE__
+   return failures;
+ }
+-TEST_SPE_DECL(evstdd_asm, "Unit test for evstdd using asm");
++TEST_SPE_DECL(evstdd_asm, "evstdd");
+ 
+ #ifdef __SPE__
+ __ev64_u32__ evldd_evstdd_mem_xfer_src[32] = {
+@@ -678,7 +678,7 @@ int evxor_asm (void)
+ #endif // __SPE__
+   return failures;
+ }
+-TEST_SPE_DECL(evxor_asm, "Unit test for evxor using asm");
++TEST_SPE_DECL(evxor_asm, "evxor");
+ 
+ long long evxor_algo(long long rA, long long rB)
+ {
+@@ -911,7 +911,7 @@ int evlddx_asm(void)
+ #endif // __SPE__
+   return failures;
+ }
+-TEST_SPE_DECL(evlddx_asm, "Unit test for evlddx using asm");
++TEST_SPE_DECL(evlddx_asm, "evlddx");
+ 
+ #ifdef __SPE__
+ __ev64_u64__ evstddx_asm_src[64] = {
+@@ -1011,7 +1011,7 @@ int evstddx_asm(void)
+ #endif // __SPE__
+   return failures;
+ }
+-TEST_SPE_DECL(evstddx_asm, "Unit test for evstddx using asm");
++TEST_SPE_DECL(evstddx_asm, "evstddx");
+ 
+ #ifdef __SPE__
+ __ev64_u16__ evldh_asm_src[32] = {
+@@ -1104,7 +1104,7 @@ int evldh_asm(void)
+ #endif // __SPE__
+   return failures;
+ }
+-TEST_SPE_DECL(evldh_asm, "Unit test for evldh using asm");
++TEST_SPE_DECL(evldh_asm, "evldh");
+ 
+ #ifdef __SPE__
+ __ev64_u16__ evstdh_asm_dst[32];
+@@ -1161,7 +1161,7 @@ int evstdh_asm(void)
+ #endif // __SPE__
+   return failures;
+ }
+-TEST_SPE_DECL(evstdh_asm, "Unit test for evstdh using asm");
++TEST_SPE_DECL(evstdh_asm, "evstdh");
+ 
+ #ifdef __SPE__
+ __ev64_u16__ pool_demo_4u16_mst[4] = {
+@@ -1647,7 +1647,7 @@ int evor_asm (void)
+ #endif // __SPE__
+   return failures;
+ }
+-TEST_SPE_DECL(evor_asm, "Unit test for evor using asm");
++TEST_SPE_DECL(evor_asm, "evor");
+ 
+ int evmr_asm (void)
+ {
+@@ -1688,7 +1688,7 @@ int evmr_asm (void)
+ #endif // __SPE__
+   return failures;
+ }
+-TEST_SPE_DECL(evmr_asm, "Unit test for evmr using asm");
++TEST_SPE_DECL(evmr_asm, "evmr");
+ 
+ int evldhx_asm(void)
+ {
+@@ -1714,7 +1714,7 @@ int evldhx_asm(void)
+ #endif // __SPE__
+   return failures;
+ }
+-TEST_SPE_DECL(evldhx_asm, "Unit test for evldhx using asm");
++TEST_SPE_DECL(evldhx_asm, "evldhx");
+ 
+ int evstdhx_asm(void)
+ {
+@@ -1753,7 +1753,7 @@ int evstdhx_asm(void)
+ #endif // __SPE__
+   return failures;
+ }
+-TEST_SPE_DECL(evstdhx_asm, "Unit test for evstdhx using asm");
++TEST_SPE_DECL(evstdhx_asm, "evstdhx");
+ 
+ int evldw_asm(void)
+ {
+@@ -1806,7 +1806,7 @@ int evldw_asm(void)
+ #endif // __SPE__
+   return failures;
+ }
+-TEST_SPE_DECL(evldw_asm, "Unit test for evldw using asm");
++TEST_SPE_DECL(evldw_asm, "evldw");
+ 
+ int evstdw_asm(void)
+ {
+@@ -1865,7 +1865,7 @@ int evstdw_asm(void)
+ #endif // __SPE__
+   return failures;
+ }
+-TEST_SPE_DECL(evstdw_asm, "Unit test for evstdw using asm");
++TEST_SPE_DECL(evstdw_asm, "evstdw");
+ 
+ int evldwx_asm(void)
+ {
+@@ -1889,7 +1889,7 @@ int evldwx_asm(void)
+ #endif // __SPE__
+   return failures;
+ }
+-TEST_SPE_DECL(evldwx_asm, "Unit test for evldwx using asm");
++TEST_SPE_DECL(evldwx_asm, "evldwx");
+ 
+ int evstdwx_asm(void)
+ {
+@@ -1924,7 +1924,7 @@ int evstdwx_asm(void)
+ #endif // __SPE__
+   return failures;
+ }
+-TEST_SPE_DECL(evstdwx_asm, "Unit test for evstdwx using asm");
++TEST_SPE_DECL(evstdwx_asm, "evstdwx");
+ 
+ /* NOTE: To avoid having to remaster the .exp files entirely, add
+  *       new test functions /just above/ this comment.
+@@ -2000,7 +2000,7 @@ test_t spe_isa_bitwise_operators_test_table = {
+ test_t spe_isa_insn_test_table = {
+ 
+   .type = table,
+-  .description = "SPE ISA Standalone Instruction Tests",
++  .description = "SPE ISA Unit Tests",
+   .table = {
+     &spe_isa_load_store_test_table,
+     &spe_isa_bitwise_operators_test_table,
+diff --git a/memcheck/tests/ppc32/test_spe.stdout.exp b/memcheck/tests/ppc32/test_spe.stdout.exp
+index 6eff92f..7dab515 100644
+--- a/memcheck/tests/ppc32/test_spe.stdout.exp
++++ b/memcheck/tests/ppc32/test_spe.stdout.exp
+@@ -12,24 +12,24 @@ SPE Regression Tests: PASS
+ ..Algorithm in C for evxor: PASS
+ ..A sample test that actually needs evor: PASS
+ .SPE ISA Tests: PASS
+-..SPE ISA Standalone Instruction Tests: PASS
++..SPE ISA Unit Tests: PASS
+ ...SPE ISA Load Store Tests: PASS
+-....Unit test for evldd using asm: PASS
+-....Unit test for evstdd using asm: PASS
+-....Unit test for evlddx using asm: PASS
+-....Unit test for evstddx using asm: PASS
+-....Unit test for evldh using asm: PASS
+-....Unit test for evstdh using asm: PASS
+-....Unit test for evldhx using asm: PASS
+-....Unit test for evstdhx using asm: PASS
+-....Unit test for evldw using asm: PASS
+-....Unit test for evstdw using asm: PASS
+-....Unit test for evldwx using asm: PASS
+-....Unit test for evstdwx using asm: PASS
++....evldd: PASS
++....evstdd: PASS
++....evlddx: PASS
++....evstddx: PASS
++....evldh: PASS
++....evstdh: PASS
++....evldhx: PASS
++....evstdhx: PASS
++....evldw: PASS
++....evstdw: PASS
++....evldwx: PASS
++....evstdwx: PASS
+ ...SPE ISA Bitwise Operators Tests: PASS
+-....Unit test for evmr using asm: PASS
+-....Unit test for evor using asm: PASS
+-....Unit test for evxor using asm: PASS
++....evmr: PASS
++....evor: PASS
++....evxor: PASS
+ ..SPE ISA Miscellaneous Tests: PASS
+ ...Memory transfer using evldd-evstdd: PASS
+ ...Value pool demo: PASS
+-- 
+1.7.3.4
+

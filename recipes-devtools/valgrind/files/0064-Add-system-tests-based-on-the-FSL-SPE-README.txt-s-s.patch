@@ -1,0 +1,906 @@
+From d9890b60f4cc198523539fb5e7cd3249c3824f69 Mon Sep 17 00:00:00 2001
+From: Anmol P. Paralkar <anmol@freescale.com>
+Date: Fri, 7 Jun 2013 09:46:17 -0700
+Subject: [PATCH 64/65] Add system-tests based on the FSL-SPE-README.txt's section:
+  'Standard UNIX Utilities running stand-alone and under Valgrind on a p1022ds Linux system'
+
+---
+ none/tests/linux/utils/Makefile.am            |   12 +++++
+ none/tests/linux/utils/README.txt             |    8 +++
+ none/tests/linux/utils/filter_stderr          |    3 +
+ none/tests/linux/utils/gcc-test-input.c       |    7 +++
+ none/tests/linux/utils/gcc.stderr.exp         |    2 +
+ none/tests/linux/utils/gcc.vgtest             |    3 +
+ none/tests/linux/utils/grep-test-input.txt    |    5 ++
+ none/tests/linux/utils/grep.stderr.exp        |    2 +
+ none/tests/linux/utils/grep.stdout.exp        |    2 +
+ none/tests/linux/utils/grep.vgtest            |    3 +
+ none/tests/linux/utils/head-test-input.txt    |   64 +++++++++++++++++++++++++
+ none/tests/linux/utils/head.stderr.exp        |    2 +
+ none/tests/linux/utils/head.stdout.exp        |   43 +++++++++++++++++
+ none/tests/linux/utils/head.vgtest            |    3 +
+ none/tests/linux/utils/hello-world.stderr.exp |    2 +
+ none/tests/linux/utils/hello-world.stdout.exp |    1 +
+ none/tests/linux/utils/hello-world.vgtest     |    5 ++
+ none/tests/linux/utils/ls-test-input.txt      |    2 +
+ none/tests/linux/utils/ls.stderr.exp          |    2 +
+ none/tests/linux/utils/ls.stdout.exp          |    1 +
+ none/tests/linux/utils/ls.vgtest              |    3 +
+ none/tests/linux/utils/wc-test-input.txt      |    4 ++
+ none/tests/linux/utils/wc.stderr.exp          |    2 +
+ none/tests/linux/utils/wc.stdout.exp          |    1 +
+ none/tests/linux/utils/wc.vgtest              |    3 +
+ regtest-power7-64.default-build.log           |   63 +++++++++++++++----------
+ regtest-power7-64.log                         |   59 +++++++++++++----------
+ 27 files changed, 257 insertions(+), 50 deletions(-)
+ create mode 100644 none/tests/linux/utils/Makefile.am
+ create mode 100644 none/tests/linux/utils/README.txt
+ create mode 100755 none/tests/linux/utils/filter_stderr
+ create mode 100644 none/tests/linux/utils/gcc-test-input.c
+ create mode 100644 none/tests/linux/utils/gcc.stderr.exp
+ create mode 100644 none/tests/linux/utils/gcc.vgtest
+ create mode 100644 none/tests/linux/utils/grep-test-input.txt
+ create mode 100644 none/tests/linux/utils/grep.stderr.exp
+ create mode 100644 none/tests/linux/utils/grep.stdout.exp
+ create mode 100644 none/tests/linux/utils/grep.vgtest
+ create mode 100644 none/tests/linux/utils/head-test-input.txt
+ create mode 100644 none/tests/linux/utils/head.stderr.exp
+ create mode 100644 none/tests/linux/utils/head.stdout.exp
+ create mode 100644 none/tests/linux/utils/head.vgtest
+ create mode 100644 none/tests/linux/utils/hello-world.stderr.exp
+ create mode 100644 none/tests/linux/utils/hello-world.stdout.exp
+ create mode 100644 none/tests/linux/utils/hello-world.vgtest
+ create mode 100644 none/tests/linux/utils/ls-test-input.txt
+ create mode 100644 none/tests/linux/utils/ls.stderr.exp
+ create mode 100644 none/tests/linux/utils/ls.stdout.exp
+ create mode 100644 none/tests/linux/utils/ls.vgtest
+ create mode 100644 none/tests/linux/utils/wc-test-input.txt
+ create mode 100644 none/tests/linux/utils/wc.stderr.exp
+ create mode 100644 none/tests/linux/utils/wc.stdout.exp
+ create mode 100644 none/tests/linux/utils/wc.vgtest
+
+diff --git a/none/tests/linux/utils/Makefile.am b/none/tests/linux/utils/Makefile.am
+new file mode 100644
+index 0000000..e6a4749
+--- /dev/null
++++ b/none/tests/linux/utils/Makefile.am
+@@ -0,0 +1,12 @@
++
++include $(top_srcdir)/Makefile.tool-tests.am
++
++dist_noinst_SCRIPTS = filter_stderr
++
++EXTRA_DIST = $(noinst_SCRIPTS) \
++	wc.stderr.exp wc.stdout.exp wc.vgtest \
++	grep.stderr.exp grep.stdout.exp grep.vgtest \
++	ls.stderr.exp ls.stdout.exp ls.vgtest \
++	head.stderr.exp head.stdout.exp head.vgtest \
++	gcc.stderr.exp gcc.vgtest \
++	hello-world.stderr.exp hello-world.stdout.exp hello-world.vgtest
+diff --git a/none/tests/linux/utils/README.txt b/none/tests/linux/utils/README.txt
+new file mode 100644
+index 0000000..efb2336
+--- /dev/null
++++ b/none/tests/linux/utils/README.txt
+@@ -0,0 +1,8 @@
++
++ For now, create all the tests *without* using --leak-check=full
++ or any other memcheck option; all we want to ensure is that the
++ typical UNIX utilities can function under valgrind. Later, when
++ you have access to the sources of all the tools that you are
++ testing (in yocto); add fancier valgrind/memcheck options and
++ *FIX* the tools based on valgrind's findings.
++ 
+diff --git a/none/tests/linux/utils/filter_stderr b/none/tests/linux/utils/filter_stderr
+new file mode 100755
+index 0000000..3d7c07b
+--- /dev/null
++++ b/none/tests/linux/utils/filter_stderr
+@@ -0,0 +1,3 @@
++#! /bin/sh
++
++../../filter_stderr "$@"
+diff --git a/none/tests/linux/utils/gcc-test-input.c b/none/tests/linux/utils/gcc-test-input.c
+new file mode 100644
+index 0000000..4568db9
+--- /dev/null
++++ b/none/tests/linux/utils/gcc-test-input.c
+@@ -0,0 +1,7 @@
++#include <stdio.h>
++
++int main(void)
++{
++  printf("hello, world!\n");
++  return 0;
++}
+diff --git a/none/tests/linux/utils/gcc.stderr.exp b/none/tests/linux/utils/gcc.stderr.exp
+new file mode 100644
+index 0000000..139597f
+--- /dev/null
++++ b/none/tests/linux/utils/gcc.stderr.exp
+@@ -0,0 +1,2 @@
++
++
+diff --git a/none/tests/linux/utils/gcc.vgtest b/none/tests/linux/utils/gcc.vgtest
+new file mode 100644
+index 0000000..3624396
+--- /dev/null
++++ b/none/tests/linux/utils/gcc.vgtest
+@@ -0,0 +1,3 @@
++prog: /usr/bin/gcc
++args: ./gcc-test-input.c -o hello-world
++vgopts: --tool=none
+diff --git a/none/tests/linux/utils/grep-test-input.txt b/none/tests/linux/utils/grep-test-input.txt
+new file mode 100644
+index 0000000..37c308e
+--- /dev/null
++++ b/none/tests/linux/utils/grep-test-input.txt
+@@ -0,0 +1,5 @@
++
++ Mary had a little lamb,
++ it's fleece was white as snow.
++ ...and every where that Mary went,
++ the lamb was sure to go!
+diff --git a/none/tests/linux/utils/grep.stderr.exp b/none/tests/linux/utils/grep.stderr.exp
+new file mode 100644
+index 0000000..139597f
+--- /dev/null
++++ b/none/tests/linux/utils/grep.stderr.exp
+@@ -0,0 +1,2 @@
++
++
+diff --git a/none/tests/linux/utils/grep.stdout.exp b/none/tests/linux/utils/grep.stdout.exp
+new file mode 100644
+index 0000000..05fc51d
+--- /dev/null
++++ b/none/tests/linux/utils/grep.stdout.exp
+@@ -0,0 +1,2 @@
++ Mary had a little lamb,
++ ...and every where that Mary went,
+diff --git a/none/tests/linux/utils/grep.vgtest b/none/tests/linux/utils/grep.vgtest
+new file mode 100644
+index 0000000..cbb3521
+--- /dev/null
++++ b/none/tests/linux/utils/grep.vgtest
+@@ -0,0 +1,3 @@
++prog: /bin/grep
++args: -E "M([a-z])+y" ./grep-test-input.txt
++vgopts: --tool=none
+diff --git a/none/tests/linux/utils/head-test-input.txt b/none/tests/linux/utils/head-test-input.txt
+new file mode 100644
+index 0000000..2b694fa
+--- /dev/null
++++ b/none/tests/linux/utils/head-test-input.txt
+@@ -0,0 +1,64 @@
++0
++1
++2
++3
++4
++5
++6
++7
++8
++9
++10
++11
++12
++13
++14
++15
++16
++17
++18
++19
++20
++21
++22
++23
++24
++25
++26
++27
++28
++29
++30
++31
++32
++33
++34
++35
++36
++37
++38
++39
++40
++41
++42
++43
++44
++45
++46
++47
++48
++49
++50
++51
++52
++53
++54
++55
++56
++57
++58
++59
++60
++61
++62
++63
+diff --git a/none/tests/linux/utils/head.stderr.exp b/none/tests/linux/utils/head.stderr.exp
+new file mode 100644
+index 0000000..139597f
+--- /dev/null
++++ b/none/tests/linux/utils/head.stderr.exp
+@@ -0,0 +1,2 @@
++
++
+diff --git a/none/tests/linux/utils/head.stdout.exp b/none/tests/linux/utils/head.stdout.exp
+new file mode 100644
+index 0000000..f168b45
+--- /dev/null
++++ b/none/tests/linux/utils/head.stdout.exp
+@@ -0,0 +1,43 @@
++0
++1
++2
++3
++4
++5
++6
++7
++8
++9
++10
++11
++12
++13
++14
++15
++16
++17
++18
++19
++20
++21
++22
++23
++24
++25
++26
++27
++28
++29
++30
++31
++32
++33
++34
++35
++36
++37
++38
++39
++40
++41
++42
+diff --git a/none/tests/linux/utils/head.vgtest b/none/tests/linux/utils/head.vgtest
+new file mode 100644
+index 0000000..63a9eed
+--- /dev/null
++++ b/none/tests/linux/utils/head.vgtest
+@@ -0,0 +1,3 @@
++prog: /usr/bin/head
++args: --lines=43 ./head-test-input.txt
++vgopts: --tool=none
+diff --git a/none/tests/linux/utils/hello-world.stderr.exp b/none/tests/linux/utils/hello-world.stderr.exp
+new file mode 100644
+index 0000000..139597f
+--- /dev/null
++++ b/none/tests/linux/utils/hello-world.stderr.exp
+@@ -0,0 +1,2 @@
++
++
+diff --git a/none/tests/linux/utils/hello-world.stdout.exp b/none/tests/linux/utils/hello-world.stdout.exp
+new file mode 100644
+index 0000000..270c611
+--- /dev/null
++++ b/none/tests/linux/utils/hello-world.stdout.exp
+@@ -0,0 +1 @@
++hello, world!
+diff --git a/none/tests/linux/utils/hello-world.vgtest b/none/tests/linux/utils/hello-world.vgtest
+new file mode 100644
+index 0000000..138a2c5
+--- /dev/null
++++ b/none/tests/linux/utils/hello-world.vgtest
+@@ -0,0 +1,5 @@
++prog: hello-world
++args:
++vgopts: --tool=none
++prereq: ./hello-world
++cleanup: rm -f ./hello-world
+diff --git a/none/tests/linux/utils/ls-test-input.txt b/none/tests/linux/utils/ls-test-input.txt
+new file mode 100644
+index 0000000..1b7c0cb
+--- /dev/null
++++ b/none/tests/linux/utils/ls-test-input.txt
+@@ -0,0 +1,2 @@
++
++ Test file for ls test.
+diff --git a/none/tests/linux/utils/ls.stderr.exp b/none/tests/linux/utils/ls.stderr.exp
+new file mode 100644
+index 0000000..139597f
+--- /dev/null
++++ b/none/tests/linux/utils/ls.stderr.exp
+@@ -0,0 +1,2 @@
++
++
+diff --git a/none/tests/linux/utils/ls.stdout.exp b/none/tests/linux/utils/ls.stdout.exp
+new file mode 100644
+index 0000000..f6f606e
+--- /dev/null
++++ b/none/tests/linux/utils/ls.stdout.exp
+@@ -0,0 +1 @@
++./ls-test-input.txt
+diff --git a/none/tests/linux/utils/ls.vgtest b/none/tests/linux/utils/ls.vgtest
+new file mode 100644
+index 0000000..f737dfc
+--- /dev/null
++++ b/none/tests/linux/utils/ls.vgtest
+@@ -0,0 +1,3 @@
++prog: /bin/ls
++args: ./ls-test-input.txt
++vgopts: --tool=none
+diff --git a/none/tests/linux/utils/wc-test-input.txt b/none/tests/linux/utils/wc-test-input.txt
+new file mode 100644
+index 0000000..d0efb70
+--- /dev/null
++++ b/none/tests/linux/utils/wc-test-input.txt
+@@ -0,0 +1,4 @@
++Mary had a little lamb,
++It's fleece was white as snow.
++...and everywhere that Mary went,
++the lamb was sure to go!
+diff --git a/none/tests/linux/utils/wc.stderr.exp b/none/tests/linux/utils/wc.stderr.exp
+new file mode 100644
+index 0000000..139597f
+--- /dev/null
++++ b/none/tests/linux/utils/wc.stderr.exp
+@@ -0,0 +1,2 @@
++
++
+diff --git a/none/tests/linux/utils/wc.stdout.exp b/none/tests/linux/utils/wc.stdout.exp
+new file mode 100644
+index 0000000..87e0b15
+--- /dev/null
++++ b/none/tests/linux/utils/wc.stdout.exp
+@@ -0,0 +1 @@
++  4  22 114 ./wc-test-input.txt
+diff --git a/none/tests/linux/utils/wc.vgtest b/none/tests/linux/utils/wc.vgtest
+new file mode 100644
+index 0000000..7fb33e8
+--- /dev/null
++++ b/none/tests/linux/utils/wc.vgtest
+@@ -0,0 +1,3 @@
++prog: /usr/bin/wc
++args: ./wc-test-input.txt
++vgopts: --tool=none
+diff --git a/regtest-power7-64.default-build.log b/regtest-power7-64.default-build.log
+index bd2863c..485463e 100644
+--- a/regtest-power7-64.default-build.log
++++ b/regtest-power7-64.default-build.log
+@@ -461,7 +461,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -gdwarf-4 -fdebug-types-section -Wno-long-lo
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests'
+-make[5]: Warning: File `.deps/writev1.Po' has modification time 0.12 s in the future
++make[5]: Warning: File `.deps/xml1.Po' has modification time 86 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -484,7 +484,7 @@ gcc -Winline -Wall -Wshadow -g -Wno-long-long  -Wno-pointer-sign -fno-stack-prot
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/ppc32'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/ppc32'
+-make[5]: Warning: File `.deps/test_spe.Po' has modification time 0.86 s in the future
++make[5]: Warning: File `.deps/test_spe.Po' has modification time 91 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -504,7 +504,7 @@ gcc -Winline -Wall -Wshadow -g  -Winline -Wall -Wshadow -g -I../../../include -m
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/ppc64'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/ppc64'
+-make[5]: Warning: File `.deps/power_ISA2_05-power_ISA2_05.Po' has modification time 0.96 s in the future
++make[5]: Warning: File `.deps/power_ISA2_05-power_ISA2_05.Po' has modification time 91 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -551,7 +551,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/linux'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/linux'
+-make[5]: Warning: File `.deps/timerfd-syscall.Po' has modification time 0.89 s in the future
++make[5]: Warning: File `.deps/timerfd-syscall.Po' has modification time 91 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -605,7 +605,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -fPIC -Wno-long-long  -Wno-pointer-sign -fno
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/cachegrind/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/cachegrind/tests'
+-make[5]: Warning: File `.deps/myprint_so-myprint.Po' has modification time 0.95 s in the future
++make[5]: Warning: File `.deps/myprint_so-myprint.Po' has modification time 91 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -656,7 +656,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/callgrind/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/callgrind/tests'
+-make[5]: Warning: File `.deps/threads.Po' has modification time 0.95 s in the future
++make[5]: Warning: File `.deps/threads.Po' has modification time 91 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -764,7 +764,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/massif/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/massif/tests'
+-make[4]: Warning: File `.deps/zero.Po' has modification time 0.81 s in the future
++make[4]: Warning: File `.deps/zero.Po' has modification time 91 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1066,7 +1066,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests'
+-make[5]: Warning: File `.deps/thread-exits.Po' has modification time 0.45 s in the future
++make[5]: Warning: File `.deps/vgprintf.Po' has modification time 89 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1158,7 +1158,7 @@ gcc -Winline -Wall -Wshadow -g -m32 -Winline -Wall -O -lm -g -mregnames -DHAS_DF
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc32'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc32'
+-make[5]: Warning: File `.deps/test_dfp5-test_dfp5.Po' has modification time 0.83 s in the future
++make[5]: Warning: File `.deps/xlc_dbl_u32.Po' has modification time 88 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1226,7 +1226,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Winline -Wall -O -lm -g -mregnames -DHAS_DF
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc64'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc64'
+-make[5]: Warning: File `.deps/test_dfp5-test_dfp5.Po' has modification time 0.79 s in the future
++make[5]: Warning: File `.deps/twi_tdi.Po' has modification time 88 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1255,7 +1255,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/linux'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/linux'
+-make[5]: Warning: File `.deps/mremap3.Po' has modification time 0.94 s in the future
++make[5]: Warning: File `.deps/mremap3.Po' has modification time 91 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1418,7 +1418,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/helgrind/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/helgrind/tests'
+-make[4]: Warning: File `.deps/tc24_nonzero_sem.Po' has modification time 0.22 s in the future
++make[4]: Warning: File `.deps/tc24_nonzero_sem.Po' has modification time 90 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1628,7 +1628,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wextra -Wno-inline -Wno-unused-parameter -W
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/drd/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/drd/tests'
+-make[4]: Warning: File `.deps/pth_spinlock.Po' has modification time 0.4 s in the future
++make[4]: Warning: File `.deps/unit_vc-unit_vc.Po' has modification time 85 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1689,7 +1689,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-sgcheck/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-sgcheck/tests'
+-make[4]: Warning: File `.deps/stackerr.Po' has modification time 0.94 s in the future
++make[4]: Warning: File `.deps/stackerr.Po' has modification time 91 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1759,7 +1759,7 @@ gcc -Winline -Wall -Wshadow -g -Wno-long-long  -Wno-pointer-sign -fno-stack-prot
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-bbv/tests/ppc32-linux'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-bbv/tests/ppc32-linux'
+-make[5]: Warning: File `.deps/million.Po' has modification time 0.94 s in the future
++make[5]: Warning: File `.deps/million.Po' has modification time 91 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1773,8 +1773,10 @@ make[3]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/e
+ make[2]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-bbv'
+ Making check in exp-dhat
+ make[2]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-dhat'
++make[2]: Warning: File `.deps/exp_dhat_ppc32_linux-dh_main.Po' has modification time 0.3 s in the future
+ Making check in .
+ make[3]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-dhat'
++make[3]: Warning: File `.deps/exp_dhat_ppc32_linux-dh_main.Po' has modification time 0.28 s in the future
+ mkdir -p ../.in_place; \
+ for f in exp-dhat-ppc64-linux exp-dhat-ppc32-linux vgpreload_exp-dhat-ppc64-linux.so vgpreload_exp-dhat-ppc32-linux.so ; do \
+   rm -f ../.in_place/$f; \
+@@ -1791,11 +1793,13 @@ for f in ; do \
+   rm -f ../.in_place/$f.dSYM; \
+   ln -f -s ../exp-dhat/$f.dSYM ../.in_place; \
+ done
++make[3]: warning:  Clock skew detected.  Your build may be incomplete.
+ make[3]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-dhat'
+ Making check in tests
+ make[3]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-dhat/tests'
+ make[3]: Nothing to be done for `check'.
+ make[3]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-dhat/tests'
++make[2]: warning:  Clock skew detected.  Your build may be incomplete.
+ make[2]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-dhat'
+ Making check in tests
+ make[2]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/tests'
+@@ -1819,7 +1823,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[3]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/tests'
+ make  check-local
+ make[3]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/tests'
+-make[3]: Warning: File `.deps/x86_amd64_features-x86_amd64_features.Po' has modification time 0.81 s in the future
++make[3]: Warning: File `.deps/x86_amd64_features-x86_amd64_features.Po' has modification time 91 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1863,7 +1867,7 @@ gcc -Winline -Wall -Wshadow -g -O -m64 -Wno-shadow -Wno-inline -Wno-long-long  -
+ make[3]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/perf'
+ make  check-local
+ make[3]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/perf'
+-make[3]: Warning: File `.deps/tinycc-tinycc.Po' has modification time 0.64 s in the future
++make[3]: Warning: File `.deps/tinycc-tinycc.Po' has modification time 90 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1901,7 +1905,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[3]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/gdbserver_tests'
+ make  check-local
+ make[3]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/gdbserver_tests'
+-make[3]: Warning: File `.deps/watchpoints.Po' has modification time 0.92 s in the future
++make[3]: Warning: File `.deps/watchpoints.Po' has modification time 91 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1980,7 +1984,7 @@ badfree-2trace:  valgrind   --num-callers=2 -q ./badfree
+ badfree:         valgrind   -q ./badfree 
+ badfree3:        valgrind   -q --fullpath-after=/proj/ppc/DT/labhome/anmol/valgrind-3.8.1/ ./badfree 
+ badjump:         valgrind   ./badjump 
+-sh: line 1: 22785 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
++sh: line 1:  1622 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
+ badjump2:        valgrind   -q ./badjump2 
+ badloop:         valgrind   -q ./badloop 
+ badpoll:         valgrind   -q ./badpoll 
+@@ -1997,7 +2001,7 @@ clo_redzone_default: valgrind   --leak-check=no -q ./clo_redzone
+ custom-overlap:  valgrind   --leak-check=summary -q ./custom-overlap 
+ custom_alloc:    valgrind   -q ./custom_alloc 
+ deep-backtrace:  valgrind   -q --num-callers=500 ./deep-backtrace 
+-sh: line 1: 23346 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
++sh: line 1:  2208 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
+ deep_templates:  valgrind   -q ./deep_templates 
+ describe-block:  valgrind   ./describe-block 
+ doublefree:      valgrind   -q ./doublefree 
+@@ -2110,7 +2114,7 @@ supp-dir:        valgrind   --suppressions=x86/ ./../../tests/true
+ supp1:           valgrind   --suppressions=supp.supp -q ./supp1 
+ supp2:           valgrind   --suppressions=supp.supp -q ./supp2 
+ supp_unknown:    valgrind   -q --suppressions=supp_unknown.supp ./badjump 
+-sh: line 1: 28005 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
++sh: line 1:  8200 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
+ *** supp_unknown failed (stderr) ***
+ suppfree:        valgrind   --suppressions=suppfree.supp -q ./suppfree 
+ test-plo-no:     valgrind   -q ./test-plo 
+@@ -2247,10 +2251,19 @@ gxx304:          valgrind   ./gxx304
+ ifunc:           (skipping, prereq failed: test -e ifunc)
+ -- Running  tests in none/tests/linux ----------------------------------
+ blockfault:      valgrind   ./blockfault 
+-sh: line 1: 32492 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
++sh: line 1: 12673 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
+ mremap:          valgrind   ./mremap 
+ mremap2:         valgrind   ./mremap2 
+ mremap3:         valgrind   ./mremap3 
++-- Running  tests in none/tests/linux/utils ----------------------------
++gcc:             valgrind   --tool=none /usr/bin/gcc ./gcc-test-input.c -o hello-world
++grep:            valgrind   --tool=none /bin/grep -E "M([a-z])+y" ./grep-test-input.txt
++head:            valgrind   --tool=none /usr/bin/head --lines=43 ./head-test-input.txt
++hello, world!
++hello-world:     valgrind   --tool=none ./hello-world 
++ls:              valgrind   --tool=none /bin/ls ./ls-test-input.txt
++wc:              valgrind   --tool=none /usr/bin/wc ./wc-test-input.txt
++-- Finished tests in none/tests/linux/utils ----------------------------
+ -- Finished tests in none/tests/linux ----------------------------------
+ manythreads:     valgrind   ./manythreads 
+ map_unaligned:   valgrind   ./map_unaligned 
+@@ -2413,7 +2426,7 @@ tc20_verifywrap: valgrind   --read-var-info=yes ./tc20_verifywrap
+ *** tc20_verifywrap failed (stderr) ***
+ tc21_pthonce:    valgrind   --read-var-info=yes ./tc21_pthonce 
+ tc22_exit_w_lock: valgrind   ./tc22_exit_w_lock 
+-sh: line 1: 17704 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1: 30265 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   ./tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --hg-sanity-flags=111111 ./tc24_nonzero_sem 
+ -- Finished tests in helgrind/tests ------------------------------------
+@@ -2530,7 +2543,7 @@ tc18_semabuse:   valgrind   ./../../helgrind/tests/tc18_semabuse
+ tc19_shadowmem:  valgrind   --error-limit=no --read-var-info=yes --show-confl-seg=no --num-callers=3 ./../../helgrind/tests/tc19_shadowmem 
+ tc21_pthonce:    valgrind   --num-callers=3 ./../../helgrind/tests/tc21_pthonce 
+ tc22_exit_w_lock: valgrind   --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock 
+-sh: line 1: 23049 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1:  3336 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   --num-callers=3 ./../../helgrind/tests/tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --read-var-info=yes ./../../helgrind/tests/tc24_nonzero_sem 
+ thread_name:     valgrind   --read-var-info=yes --check-stack-var=yes --num-callers=3 ./thread_name 
+@@ -2553,7 +2566,7 @@ ll:              valgrind   --interval-size=1000 --bb-out-file=ll.out.bb ./ll
+ million:         valgrind   --interval-size=100000 --bb-out-file=million.out.bb ./million  
+ -- Finished tests in exp-bbv/tests/ppc32-linux -------------------------
+ 
+-== 529 tests, 8 stderr failures, 2 stdout failures, 1 stderrB failure, 1 stdoutB failure, 2 post failures ==
++== 535 tests, 8 stderr failures, 2 stdout failures, 1 stderrB failure, 1 stdoutB failure, 2 post failures ==
+ gdbserver_tests/mcmain_pic               (stdout)
+ gdbserver_tests/mcmain_pic               (stderr)
+ gdbserver_tests/mcmain_pic               (stdoutB)
+diff --git a/regtest-power7-64.log b/regtest-power7-64.log
+index f3879a6..847d71d 100644
+--- a/regtest-power7-64.log
++++ b/regtest-power7-64.log
+@@ -461,7 +461,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -gdwarf-4 -fdebug-types-section -Wno-long-lo
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests'
+-make[5]: Warning: File `.deps/writev1.Po' has modification time 0.19 s in the future
++make[5]: Warning: File `.deps/xml1.Po' has modification time 86 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -484,7 +484,7 @@ gcc -Winline -Wall -Wshadow -g -Wno-long-long  -Wno-pointer-sign -fno-stack-prot
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/ppc32'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/ppc32'
+-make[5]: Warning: File `.deps/test_spe.Po' has modification time 0.87 s in the future
++make[5]: Warning: File `.deps/test_spe.Po' has modification time 91 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -504,7 +504,7 @@ gcc -Winline -Wall -Wshadow -g  -Winline -Wall -Wshadow -g -I../../../include -m
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/ppc64'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/ppc64'
+-make[5]: Warning: File `.deps/power_ISA2_05-power_ISA2_05.Po' has modification time 0.96 s in the future
++make[5]: Warning: File `.deps/power_ISA2_05-power_ISA2_05.Po' has modification time 91 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -551,7 +551,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/linux'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/memcheck/tests/linux'
+-make[5]: Warning: File `.deps/timerfd-syscall.Po' has modification time 0.91 s in the future
++make[5]: Warning: File `.deps/timerfd-syscall.Po' has modification time 91 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -605,7 +605,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -fPIC -Wno-long-long  -Wno-pointer-sign -fno
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/cachegrind/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/cachegrind/tests'
+-make[5]: Warning: File `.deps/myprint_so-myprint.Po' has modification time 0.95 s in the future
++make[5]: Warning: File `.deps/myprint_so-myprint.Po' has modification time 91 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -656,7 +656,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/callgrind/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/callgrind/tests'
+-make[5]: Warning: File `.deps/threads.Po' has modification time 0.95 s in the future
++make[5]: Warning: File `.deps/threads.Po' has modification time 91 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -764,7 +764,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/massif/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/massif/tests'
+-make[4]: Warning: File `.deps/zero.Po' has modification time 0.82 s in the future
++make[4]: Warning: File `.deps/zero.Po' has modification time 91 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1066,7 +1066,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests'
+-make[5]: Warning: File `.deps/thread-exits.Po' has modification time 0.45 s in the future
++make[5]: Warning: File `.deps/vgprintf.Po' has modification time 89 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1158,7 +1158,7 @@ gcc -Winline -Wall -Wshadow -g -m32 -Winline -Wall -O -lm -g -mregnames -DHAS_DF
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc32'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc32'
+-make[5]: Warning: File `.deps/test_dfp5-test_dfp5.Po' has modification time 0.82 s in the future
++make[5]: Warning: File `.deps/xlc_dbl_u32.Po' has modification time 86 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1226,7 +1226,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Winline -Wall -O -lm -g -mregnames -DHAS_DF
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc64'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/ppc64'
+-make[5]: Warning: File `.deps/test_dfp5-test_dfp5.Po' has modification time 0.86 s in the future
++make[5]: Warning: File `.deps/twi_tdi.Po' has modification time 88 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1255,7 +1255,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/linux'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/none/tests/linux'
+-make[5]: Warning: File `.deps/mremap3.Po' has modification time 0.95 s in the future
++make[5]: Warning: File `.deps/mremap3.Po' has modification time 91 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1418,7 +1418,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/helgrind/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/helgrind/tests'
+-make[4]: Warning: File `.deps/tc24_nonzero_sem.Po' has modification time 0.2 s in the future
++make[4]: Warning: File `.deps/tc24_nonzero_sem.Po' has modification time 90 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1628,7 +1628,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wextra -Wno-inline -Wno-unused-parameter -W
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/drd/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/drd/tests'
+-make[4]: Warning: File `.deps/pth_spinlock.Po' has modification time 0.66 s in the future
++make[4]: Warning: File `.deps/unit_vc-unit_vc.Po' has modification time 84 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1689,7 +1689,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[4]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-sgcheck/tests'
+ make  check-local
+ make[4]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-sgcheck/tests'
+-make[4]: Warning: File `.deps/stackerr.Po' has modification time 0.9 s in the future
++make[4]: Warning: File `.deps/stackerr.Po' has modification time 91 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1759,7 +1759,7 @@ gcc -Winline -Wall -Wshadow -g -Wno-long-long  -Wno-pointer-sign -fno-stack-prot
+ make[5]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-bbv/tests/ppc32-linux'
+ make  check-local
+ make[5]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/exp-bbv/tests/ppc32-linux'
+-make[5]: Warning: File `.deps/million.Po' has modification time 0.93 s in the future
++make[5]: Warning: File `.deps/million.Po' has modification time 90 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1819,7 +1819,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[3]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/tests'
+ make  check-local
+ make[3]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/tests'
+-make[3]: Warning: File `.deps/x86_amd64_features-x86_amd64_features.Po' has modification time 0.85 s in the future
++make[3]: Warning: File `.deps/x86_amd64_features-x86_amd64_features.Po' has modification time 91 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1863,7 +1863,7 @@ gcc -Winline -Wall -Wshadow -g -O -m64 -Wno-shadow -Wno-inline -Wno-long-long  -
+ make[3]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/perf'
+ make  check-local
+ make[3]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/perf'
+-make[3]: Warning: File `.deps/tinycc-tinycc.Po' has modification time 0.62 s in the future
++make[3]: Warning: File `.deps/tinycc-tinycc.Po' has modification time 90 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1901,7 +1901,7 @@ gcc -Winline -Wall -Wshadow -g -m64 -Wno-long-long  -Wno-pointer-sign -fno-stack
+ make[3]: Leaving directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/gdbserver_tests'
+ make  check-local
+ make[3]: Entering directory `/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/gdbserver_tests'
+-make[3]: Warning: File `.deps/watchpoints.Po' has modification time 0.92 s in the future
++make[3]: Warning: File `.deps/watchpoints.Po' has modification time 91 s in the future
+ for f in ; do \
+   if [ ! -e $f.dSYM  -o  $f -nt $f.dSYM ] ; then \
+       echo "dsymutil $f"; \
+@@ -1980,7 +1980,7 @@ badfree-2trace:  valgrind   --num-callers=2 -q ./badfree
+ badfree:         valgrind   -q ./badfree 
+ badfree3:        valgrind   -q --fullpath-after=/proj/ppc/DT/labhome/anmol/valgrind-3.8.1/ ./badfree 
+ badjump:         valgrind   ./badjump 
+-sh: line 1: 26789 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
++sh: line 1:  4673 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck ./badjump > badjump.stdout.out 2> badjump.stderr.out
+ badjump2:        valgrind   -q ./badjump2 
+ badloop:         valgrind   -q ./badloop 
+ badpoll:         valgrind   -q ./badpoll 
+@@ -1997,7 +1997,7 @@ clo_redzone_default: valgrind   --leak-check=no -q ./clo_redzone
+ custom-overlap:  valgrind   --leak-check=summary -q ./custom-overlap 
+ custom_alloc:    valgrind   -q ./custom_alloc 
+ deep-backtrace:  valgrind   -q --num-callers=500 ./deep-backtrace 
+-sh: line 1: 27347 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
++sh: line 1:  5231 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --num-callers=500 ./deep-backtrace > deep-backtrace.stdout.out 2> deep-backtrace.stderr.out
+ deep_templates:  valgrind   -q ./deep_templates 
+ describe-block:  valgrind   ./describe-block 
+ doublefree:      valgrind   -q ./doublefree 
+@@ -2111,7 +2111,7 @@ supp-dir:        valgrind   --suppressions=x86/ ./../../tests/true
+ supp1:           valgrind   --suppressions=supp.supp -q ./supp1 
+ supp2:           valgrind   --suppressions=supp.supp -q ./supp2 
+ supp_unknown:    valgrind   -q --suppressions=supp_unknown.supp ./badjump 
+-sh: line 1: 32024 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
++sh: line 1: 10008 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=memcheck -q --suppressions=supp_unknown.supp ./badjump > supp_unknown.stdout.out 2> supp_unknown.stderr.out
+ *** supp_unknown failed (stderr) ***
+ suppfree:        valgrind   --suppressions=suppfree.supp -q ./suppfree 
+ test-plo-no:     valgrind   -q ./test-plo 
+@@ -2247,10 +2247,19 @@ gxx304:          valgrind   ./gxx304
+ ifunc:           (skipping, prereq failed: test -e ifunc)
+ -- Running  tests in none/tests/linux ----------------------------------
+ blockfault:      valgrind   ./blockfault 
+-sh: line 1:  4199 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
++sh: line 1: 14512 Segmentation fault      (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=none ./blockfault > blockfault.stdout.out 2> blockfault.stderr.out
+ mremap:          valgrind   ./mremap 
+ mremap2:         valgrind   ./mremap2 
+ mremap3:         valgrind   ./mremap3 
++-- Running  tests in none/tests/linux/utils ----------------------------
++gcc:             valgrind   --tool=none /usr/bin/gcc ./gcc-test-input.c -o hello-world
++grep:            valgrind   --tool=none /bin/grep -E "M([a-z])+y" ./grep-test-input.txt
++head:            valgrind   --tool=none /usr/bin/head --lines=43 ./head-test-input.txt
++hello, world!
++hello-world:     valgrind   --tool=none ./hello-world 
++ls:              valgrind   --tool=none /bin/ls ./ls-test-input.txt
++wc:              valgrind   --tool=none /usr/bin/wc ./wc-test-input.txt
++-- Finished tests in none/tests/linux/utils ----------------------------
+ -- Finished tests in none/tests/linux ----------------------------------
+ manythreads:     valgrind   ./manythreads 
+ map_unaligned:   valgrind   ./map_unaligned 
+@@ -2413,7 +2422,7 @@ tc20_verifywrap: valgrind   --read-var-info=yes ./tc20_verifywrap
+ *** tc20_verifywrap failed (stderr) ***
+ tc21_pthonce:    valgrind   --read-var-info=yes ./tc21_pthonce 
+ tc22_exit_w_lock: valgrind   ./tc22_exit_w_lock 
+-sh: line 1: 21738 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1: 32162 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=helgrind ./tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   ./tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --hg-sanity-flags=111111 ./tc24_nonzero_sem 
+ -- Finished tests in helgrind/tests ------------------------------------
+@@ -2532,7 +2541,7 @@ tc18_semabuse:   valgrind   ./../../helgrind/tests/tc18_semabuse
+ tc19_shadowmem:  valgrind   --error-limit=no --read-var-info=yes --show-confl-seg=no --num-callers=3 ./../../helgrind/tests/tc19_shadowmem 
+ tc21_pthonce:    valgrind   --num-callers=3 ./../../helgrind/tests/tc21_pthonce 
+ tc22_exit_w_lock: valgrind   --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock 
+-sh: line 1: 27083 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
++sh: line 1:  5235 Aborted                 (core dumped) VALGRIND_LIB=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place VALGRIND_LIB_INNER=/proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/.in_place /proj/.ppc_DT_labhome/labhome/anmol/valgrind-3.8.1/./coregrind/valgrind --command-line-only=yes --memcheck:leak-check=no --tool=drd --num-callers=3 ./../../helgrind/tests/tc22_exit_w_lock > tc22_exit_w_lock.stdout.out 2> tc22_exit_w_lock.stderr.out
+ tc23_bogus_condwait: valgrind   --num-callers=3 ./../../helgrind/tests/tc23_bogus_condwait 
+ tc24_nonzero_sem: valgrind   --read-var-info=yes ./../../helgrind/tests/tc24_nonzero_sem 
+ thread_name:     valgrind   --read-var-info=yes --check-stack-var=yes --num-callers=3 ./thread_name 
+@@ -2555,7 +2564,7 @@ ll:              valgrind   --interval-size=1000 --bb-out-file=ll.out.bb ./ll
+ million:         valgrind   --interval-size=100000 --bb-out-file=million.out.bb ./million  
+ -- Finished tests in exp-bbv/tests/ppc32-linux -------------------------
+ 
+-== 529 tests, 10 stderr failures, 2 stdout failures, 1 stderrB failure, 1 stdoutB failure, 2 post failures ==
++== 535 tests, 10 stderr failures, 2 stdout failures, 1 stderrB failure, 1 stdoutB failure, 2 post failures ==
+ gdbserver_tests/mcmain_pic               (stdout)
+ gdbserver_tests/mcmain_pic               (stderr)
+ gdbserver_tests/mcmain_pic               (stdoutB)
+-- 
+1.7.3.4
+

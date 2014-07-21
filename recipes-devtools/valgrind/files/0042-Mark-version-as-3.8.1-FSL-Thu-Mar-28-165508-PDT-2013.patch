@@ -1,0 +1,25 @@
+From 20d6df7c8b4df4e43a33ff9c91172a03c2c9f73d Mon Sep 17 00:00:00 2001
+From: Anmol P. Paralkar <anmol@freescale.com>
+Date: Thu, 28 Mar 2013 17:11:12 -0700
+Subject: [PATCH 42/65] Mark version as: 3.8.1-FSL-Thu-Mar-28-165508-PDT-2013
+
+---
+ configure.in |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/configure.in b/configure.in
+index 3445879..75e479c 100644
+--- a/configure.in
++++ b/configure.in
+@@ -8,7 +8,7 @@
+ ##------------------------------------------------------------##
+ 
+ # Process this file with autoconf to produce a configure script.
+-AC_INIT([Valgrind],[3.8.1],[valgrind-users@lists.sourceforge.net])
++AC_INIT([Valgrind],[3.8.1-FSL-Thu-Mar-28-165508-PDT-2013],[valgrind-users@lists.sourceforge.net])
+ AC_CONFIG_SRCDIR(coregrind/m_main.c)
+ AC_CONFIG_HEADERS([config.h])
+ AM_INIT_AUTOMAKE([foreign])
+-- 
+1.7.3.4
+
