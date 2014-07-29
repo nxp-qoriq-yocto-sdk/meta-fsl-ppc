@@ -15,13 +15,15 @@ S = "${WORKDIR}/git"
 
 export SYSROOT = "${STAGING_DIR_TARGET}"
 
-PACKAGES =+ "${PN}-vtss-api"
-FILES_${PN}-vtss-api = "${includedir}/*"
+PACKAGES =+ "libvtss_api libvtss_api-dev"
 FILES_${PN} += "${bindir}/l2sw_bin \
         ${bindir}/l2switch-cfg \
         /etc/init.d/l2switch \
         /etc/sysconfig/l2switch \
 "
+FILES_libvtss_api= "${libdir}/*.so.*"
+FILES_libvtss_api-dev = "${libdir}/*.so \
+        ${includedir}/*"
 
 INITSCRIPT_NAME = "l2switch"
 INITSCRIPT_PARAMS = "defaults 10 85"
