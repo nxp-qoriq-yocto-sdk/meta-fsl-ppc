@@ -1,0 +1,20 @@
+diff -uNr sysvinit/rcS sysvinit-new/rcS
+--- sysvinit/rcS	2014-07-09 11:19:59.000000000 +0800
++++ sysvinit-new/rcS	2014-08-01 15:01:54.000000000 +0800
+@@ -21,6 +21,16 @@
+ #
+ . /etc/default/rcS
+ 
++# auto detect hostname
++#
++if test -r /proc/cmdline && grep -q ip=.*:.*: /proc/cmdline; then
++  sed -e "s,.*ip=.*:.*:.*:.*:\(\S*\):.*:.*,\1," /proc/cmdline >/etc/hostname
++elif test -r /proc/cmdline && grep -q hostname= /proc/cmdline; then
++  sed -e "s,.*hostname=\(\S*\)\s*.*,\1," /proc/cmdline >/etc/hostname
++elif test -r /proc/cpuinfo && grep -q ^model.*, /proc/cpuinfo; then
++  grep ^model /proc/cpuinfo | cut -d, -f2 | tr [A-Z] [a-z] >/etc/hostname
++fi
++
+ #
+ #	Trap CTRL-C &c only in this shell so we can interrupt subprocesses.
+ #
