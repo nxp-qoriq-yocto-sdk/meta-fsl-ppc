@@ -95,14 +95,20 @@ do_compile () {
             if [ "${UBOOT_TARGET}" = "u-boot-nand" ];then
                 if echo $board |egrep -q "(P1010RDB|P1020RDB|P1021RDB|P2020RDB|P1022DS|BSC913|C293)";then
                     UBOOT_SOURCE=u-boot-with-spl
+                elif echo $board |egrep -q "(T1024)";then
+                    UBOOT_SOURCE=u-boot-with-spl-pbl
                 fi
             elif [ "${UBOOT_TARGET}" = "u-boot-spi" ];then
                 if echo $board |egrep -q "(P1010RDB|P1020RDB|P1021RDB|P2020RDB|P1022DS)";then
                     UBOOT_SOURCE=u-boot-with-spl
+                elif echo $board |egrep -q "(T1024)";then
+                    UBOOT_SOURCE=u-boot-with-spl-pbl
                 fi
             elif [ "${UBOOT_TARGET}" = "u-boot-sd" ];then
                 if echo $board |egrep -q "(P1010RDB|P1020RDB|P1021RDB|P2020RDB|P1022DS)";then
                     UBOOT_SOURCE=u-boot-with-spl
+                elif echo $board |egrep -q "(T1024)";then
+                    UBOOT_SOURCE=u-boot-with-spl-pbl
                 fi
             fi
             cp ${S}/${board}/${UBOOT_SOURCE}.bin  ${S}/${board}/${UBOOT_TARGET}.bin
