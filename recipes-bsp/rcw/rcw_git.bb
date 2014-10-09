@@ -22,7 +22,7 @@ do_install () {
     make install
 
     M=`echo ${MACHINE} | sed s/-64b//g`
-    if [ "t1042rdb" = "${M}" ];then
+    if [ "t1042rdb" = "${M}" ] || [ "t1042rdb-pi" = "${M}" ];then
         M=${M}_pi
     fi
     install -d ${D}/boot/rcw
@@ -31,7 +31,7 @@ do_install () {
 
 do_deploy () {
     M=`echo ${MACHINE} | sed s/-64b//g`
-    if [ "t1042rdb" = "${M}" ];then
+    if [ "t1042rdb" = "${M}" ] || [ "t1042rdb-pi" = "${M}" ];then
         M=${M}_pi
     fi
     install -d ${DEPLOYDIR}/rcw
