@@ -25,7 +25,14 @@ find . -type f | xargs perl -p -i -e "s/havana-NN-host/$controller_ip/g"
 find . -type f | xargs perl -p -i -e "s/mng_interface/$mng_interface/g"
 find . -type f | xargs perl -p -i -e "s/data_interface/$data_interface/g"
 
-cp mysql/my.cnf /etc/my.cnf
+path=`which ls`
+if echo `file $path.coreutils`|grep 64-bit > /dev/null 2>&1
+then
+    cp mysql/mysql_64_bit/my.cnf /etc/my.cnf
+else
+    cp mysql/mysql_32_bit/my.cnf /etc/my.cnf
+fi
+
 /etc/init.d/mysqld restart
 sleep 10 
 
