@@ -1,6 +1,6 @@
 FILESEXTRAPATHS_prepend := "${THISDIR}/${BPN}:"
 
-SRC_URI_append_qoriq-ppc = \ 
+SRC_URI_append_qoriq-ppc = "\ 
     file://72-fsl-dpaa-persistent-networking.rules \
     file://71-fsl-dpaa-persistent-networking.rules \
 "
