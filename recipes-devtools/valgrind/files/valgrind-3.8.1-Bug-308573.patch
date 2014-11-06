@@ -26,7 +26,7 @@ diff --git a/VEX/priv/guest_ppc_toIR.c b/VEX/priv/guest_ppc_toIR.c
 index f7d8d0f..035bf86 100644
 --- a/VEX/priv/guest_ppc_toIR.c
 +++ b/VEX/priv/guest_ppc_toIR.c
-@@ -16653,6 +16653,7 @@ DisResult disInstr_PPC_WRK (
+@@ -20182,6 +20182,7 @@ DisResult disInstr_PPC_WRK (
  
     /* 64bit Integer Rotate Instructions */
     case 0x1E: // rldcl, rldcr, rldic, rldicl, rldicr, rldimi
@@ -34,7 +34,7 @@ index f7d8d0f..035bf86 100644
        if (dis_int_rot( theInstr )) goto decode_success;
        goto decode_failure;
  
-@@ -16687,7 +16688,12 @@ DisResult disInstr_PPC_WRK (
+@@ -20216,7 +20217,12 @@ DisResult disInstr_PPC_WRK (
        goto decode_failure;
  
     /* Trap Instructions */
@@ -48,7 +48,7 @@ index f7d8d0f..035bf86 100644
        if (dis_trapi(theInstr, &dres)) goto decode_success;
        goto decode_failure;
  
-@@ -17288,7 +17294,12 @@ DisResult disInstr_PPC_WRK (
+@@ -20817,7 +20823,12 @@ DisResult disInstr_PPC_WRK (
           goto decode_failure;
  
           /* 64bit Integer Parity Instructions */
@@ -62,7 +62,7 @@ index f7d8d0f..035bf86 100644
           if (dis_int_parity( theInstr )) goto decode_success;
           goto decode_failure;
  
-@@ -17333,9 +17344,13 @@ DisResult disInstr_PPC_WRK (
+@@ -20862,9 +20873,13 @@ DisResult disInstr_PPC_WRK (
           goto decode_failure;
  
        /* Integer Load and Store with Byte Reverse Instructions */
@@ -79,7 +79,7 @@ index f7d8d0f..035bf86 100644
           if (dis_int_ldst_rev( theInstr )) goto decode_success;
           goto decode_failure;
           
-@@ -17385,7 +17400,12 @@ DisResult disInstr_PPC_WRK (
+@@ -20914,7 +20929,12 @@ DisResult disInstr_PPC_WRK (
  //zz          goto decode_failure;
  
        /* Trap Instructions */
@@ -93,7 +93,7 @@ index f7d8d0f..035bf86 100644
           if (dis_trap(theInstr, &dres)) goto decode_success;
           goto decode_failure;
  
-@@ -17479,6 +17499,7 @@ DisResult disInstr_PPC_WRK (
+@@ -21008,6 +21028,7 @@ DisResult disInstr_PPC_WRK (
      	  goto decode_failure;
  
        case 0x0FC: // bpermd
