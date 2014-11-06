@@ -37,10 +37,6 @@ Subject: [PATCH 65/65] misc updates for sdk 1.6
  docs/html/drd-manual.html                     | 1471 --------------
  docs/html/faq.html                            |  766 --------
  docs/html/hg-manual.html                      | 1110 -----------
- docs/html/images/home.png                     |  Bin 299 -> 0 bytes
- docs/html/images/next.png                     |  Bin 337 -> 0 bytes
- docs/html/images/prev.png                     |  Bin 337 -> 0 bytes
- docs/html/images/up.png                       |  Bin 317 -> 0 bytes
  docs/html/index.html                          |   64 -
  docs/html/license.gfdl.html                   |  436 -----
  docs/html/license.gpl.html                    |  380 ----
@@ -16164,68 +16160,6 @@ index f0d4b32..0000000
 -</div>
 -</body>
 -</html>
-diff --git a/docs/html/images/home.png b/docs/html/images/home.png
-deleted file mode 100644
-index 1ccfb7b2274e145c21793bac8d5e372a9e3f0890..0000000000000000000000000000000000000000
-GIT binary patch
-literal 0
-HcmV?d00001
-
-literal 299
-zcmeAS@N?(olHy`uVBq!ia0vp^5<o1%!3HF!Z~fa0q}Y<Y-CY>|gW!U_%O?XxI14-?
-ziy0WWg+Z8+Vb&aw9`+JXUsv`k9KuYZ3Kl;?X9I<Hc)B=-RNT5c<sj!_10L7Zg^Wh7
-z=_lBBK9Mo<IQBwe>GPOfj_D^vWEB?7VL5gp<o>&*|1;iv*U`~lspV>%(=8-e`|iAm
-z?c_yF&Cx!S)>kLFJuvcD`TT?{JCP;NQKjcVf8o;Pn3W=CoHjdHCmL|MtKMN+@43hP
-zVOT}TA=?ifE!7Y2tHeyZ!nA&_>^9e<zdu#xy=Q09J>KS$SN2Z7-1ZZ{N>rWYi8{0H
-os?YzK9Cx$b)t{K>xLf-?YjkwhcX{K-Am1~1y85}Sb4q9e02@AT@&Et;
-
-diff --git a/docs/html/images/next.png b/docs/html/images/next.png
-deleted file mode 100644
-index 6d0c11a6e420c7f2ddb30d9407b174e924c1d95e..0000000000000000000000000000000000000000
-GIT binary patch
-literal 0
-HcmV?d00001
-
-literal 337
-zcmeAS@N?(olHy`uVBq!ia0vp^LO?9a!3HF~Pw#sVq}Y<Y-CY>|gW!U_%O?XxI14-?
-ziy0WWg+Z8+Vb&Z8pdfpRr>`sf6%Ju0QRRgnSrmanvL&t&CC>S|xv6<249-QVi6yBi
-z3gww4844j8sS56%z5(x3RP%rew|crbhE&{Id*vYSAp;(Vi}N+U8?hRfG{;rxzLHDr
-z;cK!ePGnAdA;Qy;;^!KA<wjo1(m67FE&4=VS}tWRbKLT$%(cfNR=-KvN8{^U?(TV)
-zZDw$PN?16PZDYeyS<C%-3^j88_deUcaa#HQO4hV8mVk}&Tk^IoYS~#mC4Bn#HwGbx
-zRxPkyBXz1;^nYVW?Ak9`n)d^&-7|eNCg&<LIJ#WXPqF^0`Xr#=<OpwM2lpohy%Wt0
-aHH<Nl%XlW=nV<&r0E4HipUXO@geCxLeR?YZ
-
-diff --git a/docs/html/images/prev.png b/docs/html/images/prev.png
-deleted file mode 100644
-index 9fdf29e9fe63013bfd9671fb0f40689094e41b96..0000000000000000000000000000000000000000
-GIT binary patch
-literal 0
-HcmV?d00001
-
-literal 337
-zcmeAS@N?(olHy`uVBq!ia0vp^LO?9a!3HF~Pw#sVq}Y<Y-CY>|gW!U_%O?XxI14-?
-ziy0WWg+Z8+Vb&Z8pdfpRr>`sf6%Ju0VTHU!pJahTvL&t&CC>S|xv6<249-QVi6yBi
-z3gww4844j8sS56%z5(x3RP%rew|crbhE&{Idu1c<Ap?Qdhxfy(W+)kNVC2>9uubUU
-z5n5XInAeCoIHkeE{V7LE@wP%gFVWYRU;aGT!J&HpVWH^T{Yw}0ouB>W+zp{6yXRy!
-zc?pWHa%AY~SaITY$@2N`Vb4QXoL0Q;xODf`pYQwX6r)=6a=C?C?{+cVuoYm~%`=(P
-z{L=Zy{{;@n-4H9&7UNCP+AJe;Ht=+c`ob&g)}GtUGkIm)t@CGQZQCz)+Ae2l#Kqv%
-dslu;#=iguc!*IpCg+LE5c)I$ztaD0e0szOPfyMv;
-
-diff --git a/docs/html/images/up.png b/docs/html/images/up.png
-deleted file mode 100644
-index a75f0b3aede7feaf2bf26701b3f924e1bd7b7092..0000000000000000000000000000000000000000
-GIT binary patch
-literal 0
-HcmV?d00001
-
-literal 317
-zcmeAS@N?(olHy`uVBq!ia0vp^qChOf!3HF^2u;-kQfx`y?k)`fL2$v|<&%LToCO|{
-z#S9GG!XV7ZFl&wkP>{XE)7O>#3WqS0sAT%zyC8M4C9V-A&iT2ysd*&~&PAz-C8;S2
-z<(VZJ3LzP(3hti10q;{(^MDE$db&7<RNQ)cX(Mm5fdK1;_xj%rT+<SmrJ@49H5f{$
-zELxVxoR+}F=CCV7b5YEpasko!qQ|?dTWbxBHPo}SgR40eE3Zea@p=-Q>}4M+zz{M+
-zYlld=WE$6sLm>ylMP_I&;4&5sN%+V7?%=^Q_Z;$1oX)MQxs&_2Wvjf?iCed7-$YE^
-z{ld&IPj}s4fj#G&B=YB3D2ls3UcYF&S^I_j*NdKTK3FnoqvJZWP@rQOJYD@<);T3K
-F0RYXEaOnU5
 
 diff --git a/docs/html/index.html b/docs/html/index.html
 deleted file mode 100644
