@@ -26,13 +26,13 @@ do_compile_prepend () {
         b4420qds|b4420qds-64b|b4860qds|b4860qds-64b)
             SOC=B4860;
             FMAN_VARIANT=B4860;;
-        t1024qds|t1024qds-64b|t1024rdb|t1024rdb-64b|t1040qds|t1040qds-64b|t1040rdb|t1040rdb-64b|t1042rdb|t1042rdb-64b)
+        t1024qds|t1024qds-64b|t1024rdb|t1024rdb-64b|t1040qds|t1040qds-64b|t1040rdb|t1040rdb-64b|t1042rdb|t1042rdb-64b|t1042rdb-pi|t1042rdb-pi-64b)
             SOC=T1040;
             FMAN_VARIANT=B4860;;
         t2080qds|t2080qds-64b|t2080rdb|t2080rdb-64b)
             SOC=T2080;
             FMAN_VARIANT=B4860;;
-        t4240qds|t4240qds-64b|t4240rdb|t4240rdb-64b)
+        t4240qds|t4240qds-64b|t4240rdb|t4240rdb-64b|t4160qds|t4160qds-64b)
             SOC=T4240;
             FMAN_VARIANT=B4860;;
         p1023rdb)
@@ -58,9 +58,9 @@ do_compile_prepend () {
 do_install () {
     case ${MACHINE} in
         b4420qds|b4420qds-64b|b4860qds|b4860qds-64b) SOC=B4860;;
-        t1024qds|t1024qds-64b|t1024rdb|t1024rdb-64b|t1040qds|t1040qds-64b|t1040rdb|t1040rdb-64b|t1042rdb|t1042rdb-64b) SOC=T1040;;
+        t1024qds|t1024qds-64b|t1024rdb|t1024rdb-64b|t1040qds|t1040qds-64b|t1040rdb|t1040rdb-64b|t1042rdb|t1042rdb-64b|t1042rdb-pi|t1042rdb-pi-64b) SOC=T1040;;
         t2080qds|t2080qds-64b|t2080rdb|t2080rdb-64b) SOC=T2080;;
-        t4240qds|t4240qds-64b|t4240rdb|t4240rdb-64b) SOC=T4240;;
+        t4240qds|t4240qds-64b|t4240rdb|t4240rdb-64b|t4160qds|t4160qds-64b) SOC=T4240;;
         p1023rdb) SOC=P1023;;
         *) SOC=P4080;;
     esac
