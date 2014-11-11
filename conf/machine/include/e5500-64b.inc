@@ -9,4 +9,5 @@ MACHINEOVERRIDES .= ":e5500-64b"
 require conf/multilib.conf
 MULTILIBS = "multilib:lib32"
 DEFAULTTUNE_virtclass-multilib-lib32 = "ppce5500"
+USER_CLASSES = "buildstats image-mklibs"
 
