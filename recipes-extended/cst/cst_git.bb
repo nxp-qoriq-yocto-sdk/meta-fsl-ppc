@@ -12,7 +12,7 @@ SRCREV = "321b798b84cb5fe6564dfb233dea046e779d6f74"
 
 S = "${WORKDIR}/git"
 
-EXTRA_OEMAKE = 'OPENSSL_LIB_PATH=${STAGING_LIBDIR} OPENSSL_INC_PATH=${STAGING_INCDIR} CC="${CC}" LD="${CC}" LDFLAGS="${LDFLAGS}"'
+EXTRA_OEMAKE = 'ARCH="${TUNE_ARCH}" CC="${CC}" LD="${CC}"'
 
 do_install () {
 	install -d ${D}/${bindir}/cst
