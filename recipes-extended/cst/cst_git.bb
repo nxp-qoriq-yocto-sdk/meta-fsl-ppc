@@ -12,7 +12,8 @@ SRCREV = "321b798b84cb5fe6564dfb233dea046e779d6f74"
 
 S = "${WORKDIR}/git"
 
-EXTRA_OEMAKE = 'ARCH="${TUNE_ARCH}" CC="${CC}" LD="${CC}"'
+EXTRA_OEMAKE = 'CC="${CC}" LD="${CC}"'
+EXTRA_OEMAKE_append_ls102xa = ' ARCH=arm'
 
 do_install () {
 	install -d ${D}/${bindir}/cst
