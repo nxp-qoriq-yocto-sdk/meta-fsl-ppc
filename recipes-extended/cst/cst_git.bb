@@ -16,12 +16,7 @@ EXTRA_OEMAKE = 'CC="${CC}" LD="${CC}"'
 EXTRA_OEMAKE_append_ls102xa = ' ARCH=arm'
 
 do_install () {
-	install -d ${D}/${bindir}/cst
-	install -m 755 ${S}/gen_keys ${D}/${bindir}/cst/
-	install -m 755 ${S}/gen_otpmk ${D}/${bindir}/cst/
-	install -m 755 ${S}/uni_cfsign ${D}/${bindir}/cst/
-	install -m 755 ${S}/uni_sign ${D}/${bindir}/cst/
-	cp -rf ${S}/input_files ${D}/${bindir}/cst
+    oe_runmake install DESTDIR=${D} BIN_DEST_DIR=${bindir}
 }
 
 BBCLASSEXTEND = "native nativesdk"
