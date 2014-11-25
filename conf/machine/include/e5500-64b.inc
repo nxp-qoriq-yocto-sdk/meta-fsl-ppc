@@ -7,7 +7,7 @@ require conf/machine/include/qoriq-base.inc
 MACHINEOVERRIDES .= ":e5500-64b"
 
 require conf/multilib.conf
-MULTILIBS = "multilib:lib32"
+MULTILIBS ?= "multilib:lib32"
 DEFAULTTUNE_virtclass-multilib-lib32 = "ppce5500"
 USER_CLASSES_remove = "image-prelink"
 
