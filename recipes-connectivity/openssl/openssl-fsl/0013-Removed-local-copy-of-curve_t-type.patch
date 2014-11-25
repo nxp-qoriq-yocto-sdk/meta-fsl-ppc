@@ -1,7 +1,7 @@
 From 6aaa306cdf878250d7b6eaf30978de313653886b Mon Sep 17 00:00:00 2001
 From: Yashpal Dutta <yashpal.dutta@freescale.com>
 Date: Thu, 17 Apr 2014 06:57:59 +0545
-Subject: [PATCH 13/16] Removed local copy of curve_t type
+Subject: [PATCH 13/17] Removed local copy of curve_t type
 
 Upstream-status: Pending
 

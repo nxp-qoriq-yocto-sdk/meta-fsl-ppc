@@ -1,7 +1,7 @@
 From 14623ca9e417ccef1ad3f4138acfac0ebe682f1f Mon Sep 17 00:00:00 2001
 From: Yashpal Dutta <yashpal.dutta@freescale.com>
 Date: Tue, 22 Apr 2014 22:58:33 +0545
-Subject: [PATCH 14/16] Modulus parameter is not populated by dhparams
+Subject: [PATCH 14/17] Modulus parameter is not populated by dhparams
 
 Upstream-status: Pending
 

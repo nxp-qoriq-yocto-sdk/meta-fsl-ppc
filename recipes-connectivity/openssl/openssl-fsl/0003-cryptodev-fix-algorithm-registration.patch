@@ -1,7 +1,7 @@
 From 084fa469a8fef530d71a0870364df1c7997f6465 Mon Sep 17 00:00:00 2001
 From: Cristian Stoica <cristian.stoica@freescale.com>
 Date: Thu, 31 Jul 2014 14:06:19 +0300
-Subject: [PATCH 03/16] cryptodev: fix algorithm registration
+Subject: [PATCH 03/17] cryptodev: fix algorithm registration
 
 Cryptodev specific algorithms must register only if available in kernel.
 

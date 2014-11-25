@@ -1,7 +1,7 @@
 From 81c4c62a4f5f5542843381bfb34e39a6171d5cdd Mon Sep 17 00:00:00 2001
 From: Yashpal Dutta <yashpal.dutta@freescale.com>
 Date: Tue, 11 Mar 2014 06:42:59 +0545
-Subject: [PATCH 09/16] Added hwrng dev file as source of RNG
+Subject: [PATCH 09/17] Added hwrng dev file as source of RNG
 
 Upstream-status: Pending
 

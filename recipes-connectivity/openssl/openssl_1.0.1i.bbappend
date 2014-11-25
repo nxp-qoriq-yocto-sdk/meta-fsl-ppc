@@ -21,6 +21,7 @@ SRC_URI = "git://git.openssl.org/openssl.git;branch=${SRCBRANCH} \
 	file://0014-Modulus-parameter-is-not-populated-by-dhparams.patch \
 	file://0015-SW-Backoff-mechanism-for-dsa-keygen.patch \
 	file://0016-Fixed-DH-keygen-pair-generator.patch \
+	file://0017-cryptodev-add-support-for-aes-gcm-algorithm-offloadi.patch \
 "
 SRCREV = "2b456034457b58454aae3998a2765b6a5b9bc837"
 
