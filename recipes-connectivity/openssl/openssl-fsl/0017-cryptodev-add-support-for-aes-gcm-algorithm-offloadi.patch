@@ -1,4 +1,4 @@
-From 11b55103463bac614e00d74e9f196ec4ec6bade1 Mon Sep 17 00:00:00 2001
+From 159feb1f1c50c40ac373cc933098d7ee42dd55e8 Mon Sep 17 00:00:00 2001
 From: Cristian Stoica <cristian.stoica@freescale.com>
 Date: Mon, 16 Jun 2014 14:06:21 +0300
 Subject: [PATCH 17/17] cryptodev: add support for aes-gcm algorithm offloading
@@ -8,8 +8,8 @@ Signed-off-by: Cristian Stoica <cristian.stoica@freescale.com>
 Reviewed-on: http://git.am.freescale.net:8181/17226
 ---
  apps/speed.c                  |   6 +-
- crypto/engine/eng_cryptodev.c | 229 +++++++++++++++++++++++++++++++++++++++++-
- 2 files changed, 233 insertions(+), 2 deletions(-)
+ crypto/engine/eng_cryptodev.c | 230 +++++++++++++++++++++++++++++++++++++++++-
+ 2 files changed, 234 insertions(+), 2 deletions(-)
 
 diff --git a/apps/speed.c b/apps/speed.c
 index 9886ca3..099dede 100644
@@ -29,10 +29,18 @@ index 9886ca3..099dede 100644
  
  static int mr=0;
 diff --git a/crypto/engine/eng_cryptodev.c b/crypto/engine/eng_cryptodev.c
-index 13d924f..4493490 100644
+index 13d924f..79b2678 100644
 --- a/crypto/engine/eng_cryptodev.c
 +++ b/crypto/engine/eng_cryptodev.c
-@@ -78,8 +78,10 @@ struct dev_crypto_state {
+@@ -2,6 +2,7 @@
+  * Copyright (c) 2002 Bob Beck <beck@openbsd.org>
+  * Copyright (c) 2002 Theo de Raadt
+  * Copyright (c) 2002 Markus Friedl
++ * Copyright (c) 2013-2014 Freescale Semiconductor, Inc.
+  * All rights reserved.
+  *
+  * Redistribution and use in source and binary forms, with or without
+@@ -78,8 +79,10 @@ struct dev_crypto_state {
  	struct session_op d_sess;
  	int d_fd;
  	unsigned char *aad;
@@ -44,7 +52,7 @@ index 13d924f..4493490 100644
  
  #ifdef USE_CRYPTODEV_DIGESTS
  	char dummy_mac_key[HASH_MAX_LEN];
-@@ -251,6 +253,7 @@ static struct {
+@@ -251,6 +254,7 @@ static struct {
  	{ CRYPTO_SKIPJACK_CBC,  NID_undef,        0,  0,  0},
  	{ CRYPTO_TLS10_AES_CBC_HMAC_SHA1, NID_aes_128_cbc_hmac_sha1, 16, 16, 20},
  	{ CRYPTO_TLS10_AES_CBC_HMAC_SHA1, NID_aes_256_cbc_hmac_sha1, 16, 32, 20},
@@ -52,7 +60,7 @@ index 13d924f..4493490 100644
  	{ 0, NID_undef,	0, 0, 0},
  };
  
-@@ -271,6 +274,19 @@ static struct {
+@@ -271,6 +275,19 @@ static struct {
  };
  #endif
  
@@ -72,7 +80,7 @@ index 13d924f..4493490 100644
  /*
   * Return a fd if /dev/crypto seems usable, 0 otherwise.
   */
-@@ -762,6 +778,197 @@ static int cryptodev_cbc_hmac_sha1_ctrl(EVP_CIPHER_CTX *ctx, int type, int arg,
+@@ -762,6 +779,197 @@ static int cryptodev_cbc_hmac_sha1_ctrl(EVP_CIPHER_CTX *ctx, int type, int arg,
  	}
  }
  
@@ -270,7 +278,7 @@ index 13d924f..4493490 100644
  /*
   * libcrypto EVP stuff - this is how we get wired to EVP so the engine
   * gets called when libcrypto requests a cipher NID.
-@@ -901,6 +1108,23 @@ const EVP_CIPHER cryptodev_aes_256_cbc_hmac_sha1 = {
+@@ -901,6 +1109,23 @@ const EVP_CIPHER cryptodev_aes_256_cbc_hmac_sha1 = {
  	cryptodev_cbc_hmac_sha1_ctrl,
  	NULL
  };
@@ -294,7 +302,7 @@ index 13d924f..4493490 100644
  /*
   * Registered by the ENGINE when used to find out how to deal with
   * a particular NID in the ENGINE. this says what we'll do at the
-@@ -944,6 +1168,9 @@ cryptodev_engine_ciphers(ENGINE *e, const EVP_CIPHER **cipher,
+@@ -944,6 +1169,9 @@ cryptodev_engine_ciphers(ENGINE *e, const EVP_CIPHER **cipher,
  	case NID_aes_256_cbc_hmac_sha1:
  		*cipher = &cryptodev_aes_256_cbc_hmac_sha1;
  		break;
@@ -305,5 +313,5 @@ index 13d924f..4493490 100644
  		*cipher = NULL;
  		break;
 -- 
-1.8.3.1
+2.2.0
 
