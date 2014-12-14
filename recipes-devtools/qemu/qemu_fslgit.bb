@@ -7,7 +7,7 @@ LIC_FILES_CHKSUM = "file://COPYING;md5=441c28d2cf86e15a37fa47e15a72fbac \
 PV = "1.7+fsl"
 
 SRC_URI = "git://git.freescale.com/ppc/sdk/qemu.git;nobranch=1"
-SRCREV = "9e38e640275beabf6468a04cec5c403b2ac566ad"
+SRCREV = "6ac4597c059d35e2737b234747243e56d340f4db"
 
 S = "${WORKDIR}/git"
 
