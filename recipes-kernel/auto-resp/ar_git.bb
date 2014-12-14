@@ -7,7 +7,7 @@ DEPENDS="virtual/kernel"
 inherit module
 
 SRC_URI = "git://git.freescale.com/ppc/sdk/auto-resp.git;nobranch=1"
-SRCREV =  "7e755eb855fcbc3930cd6e46bb492a599e0ff812"
+SRCREV =  "dbede76fb4020a370baa393f7c53af4c0db8f175"
 
 S = "${WORKDIR}/git"
 
