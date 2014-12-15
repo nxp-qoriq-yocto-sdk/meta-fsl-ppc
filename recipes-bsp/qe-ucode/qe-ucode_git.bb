@@ -13,7 +13,8 @@ S = "${WORKDIR}/git"
 do_install () {
 	case ${MACHINE} in
 	    p1025rdb|p1021rdb|p1025twr) QE_UCODE="fsl_qe_ucode_1021_10_A.bin";;
-	    t1040rdb|t1040rdb-64b|t1024rdb-64b|t1024qds-64b|t1024rdb|t1024qds|t1042rdb|t1042rdb-64b) QE_UCODE="iram_Type_A_T1040_r1.0.bin";;
+	    t1040rdb|t1040rdb-64b|t1042rdb|t1042rdb-64b) QE_UCODE="iram_Type_A_T1040_r1.0.bin";;
+	    t1024rdb-64b|t1024qds-64b|t1024rdb|t1024qds) QE_UCODE="iram_Type_A_T1024_r1.0.bin";;
 	    *) QE_UCODE="";;
 	esac
 	install -d ${D}/
@@ -23,7 +24,8 @@ do_install () {
 do_deploy () {
 	case ${MACHINE} in
 	    p1025rdb|p1021rdb|p1025twr) QE_UCODE="fsl_qe_ucode_1021_10_A.bin";;
-	    t1040rdb|t1040rdb-64b|t1024rdb-64b|t1024qds-64b|t1024rdb|t1024qds|t1042rdb|t1042rdb-64b) QE_UCODE="iram_Type_A_T1040_r1.0.bin";;
+	    t1040rdb|t1040rdb-64b|t1042rdb|t1042rdb-64b) QE_UCODE="iram_Type_A_T1040_r1.0.bin";;
+	    t1024rdb-64b|t1024qds-64b|t1024rdb|t1024qds) QE_UCODE="iram_Type_A_T1024_r1.0.bin";;
 	    *) QE_UCODE="";;
 	esac
 	install -d ${DEPLOYDIR}/
