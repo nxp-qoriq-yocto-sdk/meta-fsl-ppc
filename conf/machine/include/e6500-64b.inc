@@ -8,6 +8,5 @@ MACHINEOVERRIDES .= ":e6500-64b"
 
 require conf/multilib.conf
 MULTILIBS ?= "multilib:lib32"
-DEFAULTTUNE_virtclass-multilib-lib32 = "ppce6500"
-USER_CLASSES_remove = "image-prelink"
+DEFAULTTUNE_virtclass-multilib-lib32 ?= "ppce6500"
 
