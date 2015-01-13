@@ -1,4 +1,0 @@
-PREFERRED_VERSION_qemu = "1.7+fsl"
-PREFERRED_VERSION_valgrind_e500v2 = "3.8.1+fsl"
-PREFERRED_VERSION_ptpd = "2.3.0"
-
