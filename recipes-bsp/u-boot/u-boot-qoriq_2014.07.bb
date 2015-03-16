@@ -70,6 +70,7 @@ do_compile () {
         UBOOT_MACHINES=${UBOOT_MACHINE}
     fi
 
+    python ./tools/genboardscfg.py
     for board in ${UBOOT_MACHINES}; do
         if ! grep -wq $board ${S}/boards.cfg;then
             echo "WARNING: $board not supported in boards.cfg"
