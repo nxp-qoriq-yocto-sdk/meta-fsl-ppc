@@ -23,7 +23,7 @@ EXTRA_OEMAKE = "DESTDIR=${D} PREFIX=${prefix} LIB_DEST_DIR=${libdir} \
         CROSS_COMPILE=${TARGET_PREFIX} KERNEL_SRC=${STAGING_KERNEL_DIR}"
 
 FMLIB_TARGET = "libfm-${TARGET_ARCH_FMLIB}"
-FMLIB_TARGET_t1 = "libfm-${TARGET_ARCH_FMLIB}-fmv3"
+FMLIB_TARGET_t1 = "libfm-${TARGET_ARCH_FMLIB}-fmv3l"
 do_compile () {
     oe_runmake ${FMLIB_TARGET}.a
 }
