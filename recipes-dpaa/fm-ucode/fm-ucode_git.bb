@@ -16,7 +16,7 @@ ALLOW_EMPTY_${PN} = "1"
 do_install () {
     case ${MACHINE} in
         t1024qds|t1024qds-64b|t1024rdb|t1024rdb-64b|t1023rdb|t1023rdb-64b) UCODE=t1024;;
-        t1040qds|t1040qds-64b|t1040rdb|t1040rdb-64b|t1042rdb|t1042rdb-64b|t1042rdb-pi|t1042rdb-pi-64b) UCODE=t1040;;
+        t1040d4rdb|t1040d4rdb-64b|t1042d4rdb|t1042d4rdb-64b|t1040qds|t1040qds-64b|t1040rdb|t1040rdb-64b|t1042rdb|t1042rdb-64b|t1042rdb-pi|t1042rdb-pi-64b) UCODE=t1040;;
         t2080qds|t2080qds-64b|t2080rdb|t2080rdb-64b) UCODE=t2080;;
         b4420qds|b4420qds-64b|b4860qds|b4860qds-64b) UCODE=b4860;;
         t4240qds|t4240qds-64b|t4240rdb|t4240rdb-64b|t4160qds|t4160qds-64b) UCODE=t4240;;
@@ -32,7 +32,7 @@ do_install () {
 do_deploy () {
     case ${MACHINE} in
         t1024qds|t1024qds-64b|t1024rdb|t1024rdb-64b|t1023rdb|t1023rdb-64b) UCODE=t1024;;
-        t1040qds|t1040qds-64b|t1040rdb|t1040rdb-64b|t1042rdb|t1042rdb-64b|t1042rdb-pi|t1042rdb-pi-64b) UCODE=t1040;;
+        t1040d4rdb|t1040d4rdb-64b|t1042d4rdb|t1042d4rdb-64b|t1040qds|t1040qds-64b|t1040rdb|t1040rdb-64b|t1042rdb|t1042rdb-64b|t1042rdb-pi|t1042rdb-pi-64b) UCODE=t1040;;
         t2080qds|t2080qds-64b|t2080rdb|t2080rdb-64b) UCODE=t2080;;
         b4420qds|b4420qds-64b|b4860qds|b4860qds-64b) UCODE=b4860;;
         t4240qds|t4240qds-64b|t4240rdb|t4240rdb-64b|t4160qds|t4160qds-64b) UCODE=t4240;;
