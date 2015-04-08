@@ -27,7 +27,7 @@ do_install () {
 	make install
 
 	M=`echo ${MACHINE} | sed s/-64b//g`
-	if [ "t1042rdb" = "${M}" ] || [ "t1042d4rdb" = "${M}" ];then
+	if [ "t1040d4rdb" = "${M}" ] || [ "t1042rdb" = "${M}" ] || [ "t1042d4rdb" = "${M}" ];then
 		M=t1040rdb
 	fi
 	install -d ${D}/boot/hv-cfg
@@ -36,7 +36,7 @@ do_install () {
 
 do_deploy () {
 	M=`echo ${MACHINE} | sed s/-64b//g`
-	if [ "t1042rdb" = "${M}" ] || [ "t1042d4rdb" = "${M}" ];then
+	if [ "t1040d4rdb" = "${M}" ] || [ "t1042rdb" = "${M}" ] || [ "t1042d4rdb" = "${M}" ];then
 		M=t1040rdb
 	fi
 	install -d ${DEPLOYDIR}/hv-cfg
