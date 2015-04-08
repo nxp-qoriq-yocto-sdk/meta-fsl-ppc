@@ -13,4 +13,9 @@ do_install () {
         install -m 755 mux_server ${D}${bindir}
 }
 
+do_install_append_class-native () {
+        install -d ${DEPLOY_DIR_IMAGE}/hv
+        install -m 755 mux_server ${DEPLOY_DIR_IMAGE}/hv
+}
+
 BBCLASSEXTEND = "native nativesdk"
