@@ -12,7 +12,6 @@ SRCREV = "4cda2e3f36408ded79022cf599260add07769786"
 
 S = "${WORKDIR}/git"
 
-ALLOW_EMPTY_${PN} = "1"
 do_install () {
     case ${MACHINE} in
         t1024qds|t1024qds-64b|t1024rdb|t1024rdb-64b|t1023rdb|t1023rdb-64b) UCODE=t1024;;

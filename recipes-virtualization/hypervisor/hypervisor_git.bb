@@ -88,7 +88,6 @@ do_deploy_append() {
 
 INSANE_SKIP_${PN} = 'already-stripped'
 INHIBIT_PACKAGE_DEBUG_SPLIT = "1"
-ALLOW_EMPTY_${PN} = "1"
 PACKAGES_prepend = "${PN}-image ${PN}-partman "
 FILES_${PN}-image = "/boot/"
 FILES_${PN}-partman = "${bindir}/partman"

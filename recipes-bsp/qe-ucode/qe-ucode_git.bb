@@ -28,6 +28,5 @@ addtask deploy before do_build after do_install
 
 PACKAGES += "${PN}-image"
 FILES_${PN}-image += "/*"
-ALLOW_EMPTY_${PN} = "1"
 COMPATIBLE_MACHINE = "(p1021rdb|p1025twr|t1040|t1042|t1024)"
 
