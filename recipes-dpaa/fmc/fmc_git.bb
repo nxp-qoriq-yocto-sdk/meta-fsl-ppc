@@ -23,14 +23,13 @@ EXTRA_OEMAKE_virtclass-native = 'FMCHOSTMODE=1 FMD_USPACE_HEADER_PATH="${STAGING
 
 PARALLEL_MAKE = ""
 
+EXTRA_OEMAKE_PLATFORM ?= ""
+EXTRA_OEMAKE_PLATFORM_b4 = "b4860qds"
+EXTRA_OEMAKE_PLATFORM_t2 = "b4860qds"
+EXTRA_OEMAKE_PLATFORM_t4 = "b4860qds"
+EXTRA_OEMAKE_PLATFORM_t1 = "t1040qds"
+
 do_compile () {
-    if echo ${MACHINE} | egrep -q "^(b4|t1|t2|t4)"; then
-        EXTRA_OEMAKE_PLATFORM="b4860qds"
-    elif [ "p1023rds" = "${MACHINE}" ];then
-        EXTRA_OEMAKE_PLATFORM="p1023rds"
-    else
-        EXTRA_OEMAKE_PLATFORM=""
-    fi
     oe_runmake MACHINE=${EXTRA_OEMAKE_PLATFORM} -C source
 }
 
