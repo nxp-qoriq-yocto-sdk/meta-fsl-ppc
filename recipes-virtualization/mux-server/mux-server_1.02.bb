@@ -8,14 +8,18 @@ SRC_URI = "file://mux-server-${PV}.tar.gz;name=mux_server"
 
 EXTRA_OEMAKE='HOSTCC="${CC}"'
 
-do_install () {
-        install -d ${D}${bindir}
-        install -m 755 mux_server ${D}${bindir}
+inherit deploy
+
+do_install() {
+    install -d ${D}${bindir}
+    install -m 755 mux_server ${D}${bindir}
 }
 
-do_install_append_class-native () {
-        install -d ${DEPLOY_DIR_IMAGE}/hv
-        install -m 755 mux_server ${DEPLOY_DIR_IMAGE}/hv
+do_deploy() {
+    install -d ${DEPLOYDIR}/hv
+    install -m 755 mux_server ${DEPLOYDIR}/hv/
 }
+addtask deploy after do_install
 
 BBCLASSEXTEND = "native nativesdk"
+
