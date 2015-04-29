@@ -1,7 +1,7 @@
 From 159feb1f1c50c40ac373cc933098d7ee42dd55e8 Mon Sep 17 00:00:00 2001
 From: Cristian Stoica <cristian.stoica@freescale.com>
 Date: Mon, 16 Jun 2014 14:06:21 +0300
-Subject: [PATCH 17/17] cryptodev: add support for aes-gcm algorithm offloading
+Subject: [PATCH 17/26] cryptodev: add support for aes-gcm algorithm offloading
 
 Change-Id: I3b77dc5ef8b8f707309549244a02852d95b36168
 Signed-off-by: Cristian Stoica <cristian.stoica@freescale.com>
@@ -313,5 +313,5 @@ index 13d924f..79b2678 100644
  		*cipher = NULL;
  		break;
 -- 
-2.2.0
+2.3.5
 
