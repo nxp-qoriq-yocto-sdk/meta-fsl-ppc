@@ -10,7 +10,18 @@ inherit update-rc.d
 
 S = "${WORKDIR}/git"
 
-RDEPENDS_${PN} = "lighttpd"
+RDEPENDS_${PN} = " \
+    coreutils \
+    cronie \
+    bc \
+    lighttpd \
+    lighttpd-module-cgi \
+    lmsensors-sensors \
+    cairo \
+    rrdtool \
+    liberation-fonts \
+    make \
+"
 
 EXTRA_OEMAKE += "D=${D}"
 do_install () {
