@@ -34,6 +34,10 @@ file://0013-clean-up-code-layout.patch \
 file://0014-remove-redundant-data-copy-for-pkc-operations.patch \
 file://0015-fix-pkc-request-deallocation.patch \
 file://0016-add-basic-detection-of-asym-features.patch \
+file://0017-remove-dead-code.patch \
+file://0018-fix-compat-warnings.patch \
+file://0019-fix-size_t-print-format.patch \
+file://0020-fix-uninitialized-variable-compiler-warning.patch \
 "
 
 # NOTE: remove this patch and all traces of DISTRO_FEATURE c29x_pkc
