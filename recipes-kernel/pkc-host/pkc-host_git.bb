@@ -1,33 +1,34 @@
 DESCRIPTION = "pkc host driver"
 SECTION = "pkc-host"
-LICENSE = "GPLv2"
-LIC_FILES_CHKSUM = "file://Makefile;endline=30;md5=6a26ed8e76a8ea2e019c525369ed0f03"
+LICENSE = "BSD & GPLv2+"
+LIC_FILES_CHKSUM = "file://COPYING;md5=99803d8e9a595c0bdb45ca710f353813"
 
 inherit  module qoriq_build_64bit_kernel
-RDEPENDS_${PN} += "cryptodev-module"
+RDEPENDS_${PN} += "cryptodev-module bc"
 
 # NOTE: remove this requirement and all traces of DISTRO_FEATURE c29x_pkc
 # if pkc-host does not need customized cryptodev patches anymore
 REQUIRED_DISTRO_FEATURES = "c29x_pkc"
 
 SRC_URI = "git://git.freescale.com/ppc/sdk/pkc-host.git;nobranch=1"
-SRCREV = "cae512c94e2a26cc6b0d6393d307cdea2d7282c9"
+SRCREV = "31a80a6134e69541eaa0b4ec58c9e63d00680c75"
 
 S = "${WORKDIR}/git"
 
 EXTRA_OEMAKE='KERNEL_DIR="${STAGING_KERNEL_DIR}" PREFIX="${D}"'
 
 do_install() {
-        install -d ${D}/lib/modules/c2x0
+        oe_runmake INSTALL_MOD_PATH="${D}" modules_install
         install -d ${D}/etc/crypto
         install -d ${D}/${bindir}
-        cp ${S}/*.ko ${D}/lib/modules/c2x0
         cp ${S}/crypto.cfg ${D}/etc/crypto
         cp ${S}/images/pkc-firmware.bin ${D}/etc/crypto
-        cp ${S}/perf/mini_calc/mini_calc ${D}/${bindir}
         cp ${S}/apps/cli/cli ${D}/${bindir}
         cp ${S}/perf/c29x_driver_perf_profile.sh ${D}/${bindir}
 }
 
-
-FILES_${PN} += "${bindir}/mini_calc ${bindir}/cli ${bindir}/c29x_driver_perf_profile.sh /etc/crypto/crypto.cfg /etc/crypto/pkc-firmware.bin"
+FILES_${PN} = "${bindir}/cli \
+        ${bindir}/c29x_driver_perf_profile.sh \
+        /etc/crypto/crypto.cfg \
+        /etc/crypto/pkc-firmware.bin \
+"
