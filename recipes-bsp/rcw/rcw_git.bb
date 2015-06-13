@@ -12,7 +12,7 @@ PACKAGE_ARCH = "${MACHINE_ARCH}"
 inherit deploy
 
 SRC_URI = "git://git.freescale.com/ppc/sdk/rcw.git;nobranch=1"
-SRCREV = "3e89f378ed70e9b856756de8c3dbdfccb045fa0c"
+SRCREV = "426f7a6535d93dac76f5125035e0938a85e778d2"
 
 S = "${WORKDIR}/git"
 
