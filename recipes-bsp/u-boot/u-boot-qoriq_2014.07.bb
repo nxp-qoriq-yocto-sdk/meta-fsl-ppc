@@ -18,7 +18,7 @@ DEPENDS = "boot-format-native libgcc ${@base_contains('TCMODE', 'external-fsl', 
 inherit deploy
 
 SRC_URI = "git://git.freescale.com/ppc/sdk/u-boot.git;nobranch=1"
-SRCREV = "659b6a23a8b1f3026200bc6352dbacef53f4dcb1"
+SRCREV = "6ba8eedbcdc4b063f59a63e6288b938af739e8ad"
 
 python () {
     if d.getVar("TCMODE", True) == "external-fsl":
