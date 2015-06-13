@@ -9,7 +9,7 @@ DEPENDS += "virtual/kernel"
 DEPENDS_virtclass-native = ""
 
 SRC_URI = "git://git.freescale.com/ppc/sdk/fmlib.git;nobranch=1"
-SRCREV = "661d7822aa182f720029134008d7e1db07b0d504"
+SRCREV = "4938e099561d441c947d4ccdf2e601ab2966d8cc"
 
 S = "${WORKDIR}/git"
 
