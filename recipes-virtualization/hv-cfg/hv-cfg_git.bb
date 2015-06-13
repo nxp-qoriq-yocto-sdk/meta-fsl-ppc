@@ -19,7 +19,7 @@ PACKAGE_ARCH = "${MACHINE_ARCH}"
 inherit deploy
 
 SRC_URI = "git://git.freescale.com/ppc/sdk/hv-cfg.git;nobranch=1"
-SRCREV = "f79080739851b3a3dfcd435f2ef1572459a4313c"
+SRCREV = "b9287b07390d17bfba936a806a72b91b89507c22"
 
 S = "${WORKDIR}/git"
 
